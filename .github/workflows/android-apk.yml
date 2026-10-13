@@ -1,0 +1,72 @@
+# Baut bei jedem Push auf "main" automatisch eine installierbare Debug-APK.
+# Ergebnis: unter "Releases" (direkter APK-Download, auch am Handy) und unter "Actions" als Artefakt.
+name: Android-APK bauen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # erlaubt auch einen Start per Knopfdruck unter "Actions"
+
+permissions:
+  contents: write # nötig, um das Release mit der APK anzulegen
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Java einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Abhängigkeiten installieren
+        run: npm install --no-audit --no-fund
+
+      - name: Android-Projekt erzeugen und anpassen
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          npx cap add android
+          node tools/patch-android.mjs
+          npx cap sync android
+
+      - name: APK bauen
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: APK umbenennen
+        id: apk
+        run: |
+          VERSION=$(node -p "require('./package.json').version").${{ github.run_number }}
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk "out/schleuderwerk-$VERSION.apk"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Als Artefakt speichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: schleuderwerk-${{ steps.apk.outputs.version }}
+          path: out/*.apk
+
+      - name: Release mit APK anlegen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.apk.outputs.version }}
+          name: Schleuderwerk ${{ steps.apk.outputs.version }}
+          body: |
+            Automatisch gebaute Test-Version.
+            Am Handy die .apk-Datei unten unter „Assets“ antippen und installieren.
+            Commit: ${{ github.event.head_commit.message }}
+          files: out/*.apk
+          make_latest: true

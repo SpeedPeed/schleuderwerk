@@ -1,0 +1,21 @@
+{
+  "name": "schleuderwerk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Schleuderwerk – Launch-&-Upgrade-Spiel",
+  "scripts": {
+    "serve": "python tools/serve.py",
+    "android:prepare": "npx cap add android && node tools/patch-android.mjs && npx cap sync android",
+    "android:sync": "npx cap sync android",
+    "android:build": "cd android && gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/haptics": "8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}

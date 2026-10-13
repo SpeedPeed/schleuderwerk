@@ -1,0 +1,8 @@
+# wird automatisch erzeugt
+node_modules/
+android/
+*.apk
+
+# lokale Werkzeug-Einstellungen
+.claude/
+__pycache__/
