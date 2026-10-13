@@ -26,11 +26,12 @@ export class Results {
 
   show(on) { show(this.el, on); }
 
-  present(r, { newDist, newHeight, canUpgrade }) {
+  present(r, { newDist, newHeight, canUpgrade, unlocked = [] }) {
     const q = this.q;
     q.title.textContent = TITLES[r.reason] || TITLES.stop;
     q.badges.innerHTML = (newDist ? '<span class="badge">🏁 NEUER WEITEN-REKORD!</span>' : '')
-      + (newHeight ? '<span class="badge">↑ NEUER HÖHEN-REKORD!</span>' : '');
+      + (newHeight ? '<span class="badge">↑ NEUER HÖHEN-REKORD!</span>' : '')
+      + unlocked.map((w) => `<span class="badge badge-world">🗺️ NEUE WELT: ${w.name.toUpperCase()}!<small>Wechsle in der Werkstatt mit ▶</small></span>`).join('');
     const rows = [
       ['Distanz', `${fmt(r.dist)} m`, r.parts.dist],
       ['Max. Höhe', `${fmt(r.height)} m`, r.parts.height],
@@ -40,8 +41,8 @@ export class Results {
     q.rows.innerHTML = rows.map(([a, b, c], i) =>
       `<div class="res-row" style="animation-delay:${i * 0.12}s"><span>${a}</span><span class="res-sub">${b}</span><b>+${fmt(c)}</b></div>`).join('')
       + (r.factor !== 1 ? `<div class="res-row"><span>Weltbonus</span><span></span><b>×${r.factor}</b></div>` : '');
-    q.ws.classList.toggle('glow', canUpgrade);
-    q.tip.textContent = canUpgrade ? 'Du kannst dir ein Upgrade leisten!' : '';
+    q.ws.classList.toggle('glow', canUpgrade || unlocked.length > 0);
+    q.tip.textContent = unlocked.length ? 'Eine neue Welt wartet in der Werkstatt!' : canUpgrade ? 'Du kannst dir ein Upgrade leisten!' : '';
     this.show(true);
 
     // Gesamtsumme hochzählen

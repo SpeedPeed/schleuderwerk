@@ -6,7 +6,15 @@ export const OBJ = {
   ringRadius: 3.0,
   tires: { w: 1.9, h: 2.1 },
   scrap: { w: 3.0, h: 4.6 },
+  cactus: { w: 1.6, h: 3.8 },
+  pillar: { w: 3.2, h: 6.0 },
 };
+
+function pickWeighted(rng, weights) {
+  const keys = Object.keys(weights);
+  let roll = rng() * keys.reduce((a, k) => a + weights[k], 0);
+  return keys.find((k) => (roll -= weights[k]) < 0) || keys[0];
+}
 
 // Münzen, Boost-Ringe und Hindernisse eines Runs (zufällig pro Run).
 export class Objects {
@@ -17,20 +25,37 @@ export class Objects {
     this.coins = [];
     this.rings = [];
     this.obstacles = [];
+    this.thermals = [];
     this.spawnX = 30;
+    this.thermalX = world.thermals ? world.thermals.firstX : Infinity;
     this.cleanupTimer = 0;
   }
 
   ground(x) { return this.terrain.heightAt(x); }
 
+  // Aufwind an Position x in Höhe alt über dem Boden (m/s²)
+  thermalAt(x, alt) {
+    for (const t of this.thermals) {
+      const d = Math.abs(x - t.x);
+      if (d < t.w / 2) {
+        const edge = 1 - Math.pow(d / (t.w / 2), 4);           // am Rand weicher
+        const fade = alt < t.top ? 1 : Math.max(0, 1 - (alt - t.top) / t.top);
+        return t.strength * edge * fade;
+      }
+    }
+    return 0;
+  }
+
   spawnUntil(xMax) {
     const r = this.rng;
-    const w = this.world.spawn.weights;
-    const total = Object.values(w).reduce((a, b) => a + b, 0);
+    const th = this.world.thermals;
+    while (th && this.thermalX < xMax) {
+      this.thermals.push({ x: this.thermalX, w: range(r, th.width[0], th.width[1]), strength: th.strength, top: th.top });
+      this.thermalX += range(r, th.every[0], th.every[1]);
+    }
     while (this.spawnX < xMax) {
       const x = this.spawnX;
-      let roll = r() * total;
-      const pick = Object.keys(w).find((k) => (roll -= w[k]) < 0) || 'coinArc';
+      const pick = pickWeighted(r, this.world.spawn.weights);
       const maxAlt = Math.min(70, 10 + x * 0.03);
       if (pick === 'coinArc') this.coinArc(x, range(r, 3, maxAlt));
       else if (pick === 'coinGround') this.coinGround(x);
@@ -70,7 +95,7 @@ export class Objects {
 
   obstacle(x) {
     if (this.terrain.rampBetween(x - 10, x + 14)) { this.coinArc(x, 4); return; }
-    const type = this.rng() < 0.65 ? 'tires' : 'scrap';
+    const type = pickWeighted(this.rng, this.world.spawn.obstacles);
     const { w, h } = OBJ[type];
     const y0 = Math.min(this.ground(x - w / 2), this.ground(x), this.ground(x + w / 2));
     this.obstacles.push({ x, y0, w, h, type, alive: true, passed: false });
@@ -136,6 +161,7 @@ export class Objects {
       this.coins = this.coins.filter((c) => c.alive && c.x > minX);
       this.rings = this.rings.filter((r) => r.x > minX);
       this.obstacles = this.obstacles.filter((o) => o.x > minX);
+      this.thermals = this.thermals.filter((t) => t.x + t.w > minX);
     }
   }
 }

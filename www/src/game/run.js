@@ -2,6 +2,7 @@ import { PHYSICS as P, LAUNCH, KOMBO, ECONOMY, FX } from '../config/balance.js';
 import { Car } from './car.js';
 import { Objects } from './objects.js';
 import { PLATEAU_H } from './terrain.js';
+import { mulberry32, range } from './rng.js';
 
 const DEG = Math.PI / 180;
 export const REST = { x: 0, y: PLATEAU_H + 3.2 };
@@ -12,6 +13,8 @@ export class Run {
   constructor({ world, terrain, stats, seed, hooks, save }) {
     this.world = world;
     this.terrain = terrain;
+    // Welt-Physik (z. B. Sand bremst stärker)
+    stats = { ...stats, rollFriction: stats.rollFriction * (world.physics?.rollFriction ?? 1) };
     this.stats = stats;
     this.hooks = hooks;
     this.save = save;
@@ -19,6 +22,17 @@ export class Run {
     this.car.reset(REST.x, REST.y, 0.35);
     this.objects = new Objects(world, terrain, seed);
     this.objects.spawnUntil(300);
+
+    // Wetter für diesen Run auswürfeln
+    const wr = mulberry32(seed ^ 0x5eed);
+    const list = world.weather || [{ name: 'Windstill', icon: '☀️', weight: 1, wind: [0, 0] }];
+    let roll = wr() * list.reduce((a, w) => a + w.weight, 0);
+    const wx = list.find((w) => (roll -= w.weight) < 0) || list[0];
+    this.weather = { ...wx, base: range(wr, wx.wind[0], wx.wind[1]), gust: wx.gust || 0, phase: wr() * 10 };
+    this.env = {
+      wind: this.weather.base,
+      lift: (x, alt) => this.objects.thermalAt(x, alt),
+    };
 
     this.phase = 'aim';
     this.aim = { active: false, power: 0, angle: 35 * DEG, band: 0.7, t: 0, lastTick: 0 };
@@ -105,8 +119,9 @@ export class Run {
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < 4; j++) {
         const h = step / 4;
-        const v = Math.hypot(vx, vy);
-        vx += -k * v * vx * h;
+        const rvx = vx - this.env.wind;
+        const v = Math.hypot(rvx, vy);
+        vx += -k * v * rvx * h;
         vy += (-k * v * vy - this.world.gravity) * h;
         x += vx * h;
         y += vy * h;
@@ -171,11 +186,13 @@ export class Run {
     const ev = this.ev;
     while (this.acc >= P.dt) {
       this.acc -= P.dt;
-      car.step(P.dt, ctl, this.terrain, ev);
+      car.step(P.dt, ctl, this.terrain, ev, this.env);
       ctl.da = 0;
       ctl.flickW = 0;
       this.objects.collide(car, this.stats, P.dt, ev);
       this.time += P.dt;
+      const w = this.weather;
+      this.env.wind = w.base + (w.gust ? w.gust * Math.sin(this.time * 0.8 + w.phase) * Math.sin(this.time * 0.31 + w.phase * 2) : 0);
       this.afterStep(P.dt);
       for (const e of ev) this.handle(e);
       ev.length = 0;
@@ -198,6 +215,9 @@ export class Run {
 
     const alt = this.altitude;
     if (alt > this.maxAlt) this.maxAlt = alt;
+    const inThermal = !car.onGround && this.objects.thermalAt(car.x, alt) > 0;
+    if (inThermal && !this.inThermal) { this.hooks.popup('AUFWIND ↑', 'info'); this.hooks.sfx('whoosh'); }
+    this.inThermal = inThermal;
     const marks = KOMBO.heightMarks;
     if (this.altMarks < marks.length && alt >= marks[this.altMarks]) {
       this.trick('height', `HÖHENRAUSCH ${marks[this.altMarks]} m`);
@@ -328,6 +348,6 @@ export class Run {
     };
     const sum = parts.dist + parts.height + parts.coins + parts.tricks;
     const total = Math.round(sum * this.world.moneyFactor);
-    this.hooks.end({ reason, dist, height, parts, total, factor: this.world.moneyFactor });
+    this.hooks.end({ reason, dist, height, parts, total, factor: this.world.moneyFactor, world: this.world.id });
   }
 }

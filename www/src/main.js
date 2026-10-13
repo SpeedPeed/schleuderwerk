@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLDS } from './config/worlds.js';
+import { WORLDS, worldById } from './config/worlds.js';
 import { FX } from './config/balance.js';
 import { UPGRADES } from './config/upgrades.js';
 import { loadSave, writeSave, exportSave, importSave, clearSave, defaultSave } from './save/save.js';
@@ -25,17 +25,28 @@ import { confirmDialog } from './ui/dom.js';
 
 // ---------- Grundaufbau ----------
 let save = loadSave();
-const world = WORLDS[0];
-const pal = world.palette;
 const canvas = document.getElementById('game');
 const uiRoot = document.getElementById('ui');
-
 const view = createView(canvas);
-view.applyPalette(pal);
 
-const terrain = new Terrain(world);
-const terrainView = new TerrainView(view.scene, terrain, pal);
-const background = new Background(view.scene, pal);
+// Aktuelle Welt (wird beim Weltwechsel komplett neu aufgebaut)
+let world, pal, terrain, terrainView, background;
+function setWorld(id) {
+  if (!save.unlocked.includes(id)) id = 'steppe';
+  world = worldById(id);
+  pal = world.palette;
+  save.world = world.id;
+  if (!save.worlds[world.id]) save.worlds[world.id] = { bestDist: 0, bestHeight: 0, runs: 0 };
+  if (terrainView) terrainView.dispose();
+  if (background) background.dispose();
+  view.applyPalette(pal);
+  terrain = new Terrain(world);
+  terrainView = new TerrainView(view.scene, terrain, world);
+  background = new Background(view.scene, pal);
+}
+const worldRec = () => save.worlds[world.id];
+setWorld(save.world);
+
 const objectsView = new ObjectsView(view.scene);
 const particles = new Particles(view.scene, FX.maxParticles);
 const carModel = buildCar(pal.car);
@@ -70,7 +81,7 @@ let flyHintTimer = 0;
 const popups = new Popups(uiRoot);
 const hud = new Hud(uiRoot, { onPause: () => pauseGame() });
 const workshop = new Workshop(uiRoot, {
-  worldName: world.name,
+  onWorld: (dir) => switchWorld(dir),
   onBuy: (u, card) => buy(u, card),
   onStart: () => { sfx.click(); startRun(); },
   onSettings: () => { sfx.click(); menus.openSettings(); },
@@ -113,8 +124,42 @@ function applySettings() {
 function afterSaveChange() {
   applySettings();
   stats = computeStats(save);
-  workshop.render(save);
+  setWorld(save.world);
+  if (state === 'workshop') openWorkshop();
+  else workshop.render(save, world, nextGoal());
 }
+
+// Weltauswahl in der Werkstatt (dir = -1 / +1)
+function switchWorld(dir) {
+  const i = WORLDS.findIndex((w) => w.id === world.id);
+  const next = WORLDS[i + dir];
+  if (!next) return;
+  if (!save.unlocked.includes(next.id)) {
+    sfx.denied();
+    popups.show(`🔒 ${next.name}: ${unlockText(next)}`, 'info');
+    return;
+  }
+  sfx.click();
+  setWorld(next.id);
+  writeSave(save);
+  openWorkshop();
+}
+
+// Nächstes Freischalt-Ziel für die Anzeige in der Werkstatt
+function nextGoal() {
+  const w = WORLDS.find((x) => !save.unlocked.includes(x.id));
+  if (!w) return null;
+  const have = (save.worlds[w.unlock.world] || {}).bestDist || 0;
+  return { name: w.name, text: unlockText(w), progress: Math.min(1, have / w.unlock.dist) };
+}
+
+function unlockText(w) {
+  if (!w.unlock) return '';
+  const from = worldById(w.unlock.world);
+  const have = (save.worlds[from.id] || {}).bestDist || 0;
+  return `${fmtN(w.unlock.dist)} m in „${from.name}“ (Rekord ${fmtN(have)} m)`;
+}
+const fmtN = (n) => Math.round(n).toLocaleString('de-DE');
 
 // ---------- Effekte ----------
 function emitFx(kind, x, y, o = {}) {
@@ -131,7 +176,12 @@ function emitFx(kind, x, y, o = {}) {
       break;
     }
     case 'smash': {
-      const cols = o.type === 'tires' ? ['#26262b', '#3a3a40', '#e8b830'] : o.type === 'scrap' ? pal.wreck : [pal.car.body, pal.car.trim, '#cccccc'];
+      const cols = {
+        tires: ['#26262b', '#3a3a40', '#e8b830'],
+        scrap: pal.wreck,
+        cactus: ['#4f8a4a', '#5c9a52', '#ff6b8a'],
+        pillar: ['#c2703f', '#d08050', '#e9a466'],
+      }[o.type] || [pal.car.body, pal.car.trim, '#cccccc'];
       particles.emit(x, y, { n: 26, colors: cols, speed: 11, life: 1.1, gravity: 16, size: 0.55, jitter: 1.5, zSpread: 3 });
       break;
     }
@@ -162,8 +212,8 @@ function startRun() {
   workshop.show(false);
   results.show(false);
   menus.showPause(false);
-  hud.show(true, { best: save.stats.bestDist, tutorial: save.tutorial.runs < 3 });
-  const bd = save.stats.bestDist;
+  hud.show(true, { best: worldRec().bestDist, tutorial: save.tutorial.runs < 3, weather: run.weather });
+  const bd = worldRec().bestDist;
   flag.visible = bd > 20;
   flag.position.set(bd, terrain.heightAt(bd), -2.4);
   flyHintTimer = 0;
@@ -172,14 +222,27 @@ function startRun() {
 
 function endRun(r) {
   const s = save.stats;
-  const newDist = r.dist > s.bestDist && s.runs > 0;
-  const newHeight = r.height > s.bestHeight && s.runs > 0;
+  const wr = worldRec();
+  const newDist = r.dist > wr.bestDist && wr.runs > 0;
+  const newHeight = r.height > wr.bestHeight && wr.runs > 0;
   save.money += r.total;
   s.totalEarned += r.total;
   s.runs++;
+  wr.runs++;
+  wr.bestDist = Math.max(wr.bestDist, r.dist);
+  wr.bestHeight = Math.max(wr.bestHeight, r.height);
   s.bestDist = Math.max(s.bestDist, r.dist);
   s.bestHeight = Math.max(s.bestHeight, r.height);
   s.bestTricks = Math.max(s.bestTricks, r.parts.tricks);
+  // Neue Welten freischalten?
+  const unlockedNow = [];
+  for (const w of WORLDS) {
+    if (save.unlocked.includes(w.id) || !w.unlock) continue;
+    if (((save.worlds[w.unlock.world] || {}).bestDist || 0) >= w.unlock.dist) {
+      save.unlocked.push(w.id);
+      unlockedNow.push(w);
+    }
+  }
   save.tutorial.runs++;
   writeSave(save);
   state = 'results';
@@ -190,8 +253,8 @@ function endRun(r) {
   });
   setTimeout(() => {
     hud.show(false);
-    results.present(r, { newDist, newHeight, canUpgrade });
-    if (newDist || newHeight) { sfx.record(); platform.haptic('success'); }
+    results.present(r, { newDist, newHeight, canUpgrade, unlocked: unlockedNow });
+    if (newDist || newHeight || unlockedNow.length) { sfx.record(); platform.haptic('success'); }
   }, 700);
 }
 
@@ -202,7 +265,7 @@ function openWorkshop() {
   results.show(false);
   hud.show(false);
   menus.showPause(false);
-  workshop.render(save);
+  workshop.render(save, world, nextGoal());
   workshop.show(true);
   particles.clear();
   camRig.snap(REST.x + 1.2, REST.y - 6, 15);
@@ -226,7 +289,7 @@ function buy(u, card) {
   stats = computeStats(save);
   sfx.buy();
   platform.haptic('success');
-  workshop.render(save);
+  workshop.render(save, world, nextGoal());
   workshop.flash(card);
   emitFx('sparkle', REST.x, REST.y + 1);
 }
@@ -310,6 +373,15 @@ function frame(now) {
     if (car.onGround && Math.abs(car.s) > 8 && Math.random() < 0.4) {
       particles.emit(car.x - 1.4, car.y - 0.9, { n: 1, colors: pal.dirt, dir: Math.PI * 0.75, spread: 0.8, speed: 3, life: 0.6, gravity: 3, size: 0.45, zSpread: 2.2 });
     }
+  }
+  // Wind sichtbar machen: feine Sandkörner/Staub ziehen durchs Bild
+  if (run && state === 'run' && !paused && Math.abs(run.env.wind) > 0.5 && Math.random() < Math.abs(run.env.wind) * 0.06) {
+    const w = camRig.width;
+    const h = w / Math.min(view.camera.aspect, 1.6);
+    particles.emit(camRig.x + (Math.random() - 0.5) * w * 1.2, camRig.y + (Math.random() - 0.5) * h, {
+      n: 1, colors: [pal.skyBottom, '#ffffff', pal.grass[0]], speed: 0, vx: run.env.wind * 3, vy: -0.5,
+      life: 1.4, size: 0.18 + w * 0.004, jitter: 0, zSpread: 6, zSpeed: 0,
+    });
   }
   particles.update(vdt);
 

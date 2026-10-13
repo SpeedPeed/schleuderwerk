@@ -164,7 +164,7 @@ Builds sind keine Klassenwahl, sondern ergeben sich aus Fahrzeug, Graph, Teilen 
 | # | Welt | Physik-Besonderheit | Gefahren/Objekte | Palette | Weltfaktor 💰 | Freischaltung |
 |---|---|---|---|---|---|---|
 | 1 | **Schrottplatz-Steppe** | Standard | Reifenstapel, Rampen, Boost-Ringe | Ocker, Rostrot, Himmelblau | ×1 | Start |
-| 2 | **Glutwüste** | Thermik-Säulen (Aufwind) | Kakteen, Sandsturm, **Boss: Sandwurm** | Sand, Orange, Türkis | ×3 | 2,5 km Bestweite |
+| 2 | **Glutwüste** | Thermik-Säulen (Aufwind) | Kakteen, Sandsturm, **Boss: Sandwurm** | Sand, Orange, Türkis | ×3 | 3,5 km Bestweite |
 | 3 | **Frostgipfel** | Eis: kaum Rollreibung | Eiszapfen, Lawinen, **Boss: Gletscherwand** | Weiß, Eisblau, Violett | ×8 | 6 km |
 | 4 | **Neonstadt** | Dächer als Rampen, Fahrtwind zwischen Häusern | Kräne, Drohnen, **Boss: Abrissbirne** | Nachtblau, Pink, Neongelb | ×20 | Prestige 1 |
 | 5 | **Vulkaninsel** | Lava = Schaden, Eruptionen = Mega-Boost | Lavafontänen, Ascheregen, **Boss: Feuerberg** | Schwarz, Glutrot, Gold | ×60 | Prestige 2 |

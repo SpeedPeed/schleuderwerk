@@ -11,11 +11,30 @@ const _c = new THREE.Color();
 
 // Erzeugt die sichtbare Landschaft stückweise aus der Höhenlinie.
 export class TerrainView {
-  constructor(scene, terrain, pal) {
+  constructor(scene, terrain, world) {
     this.scene = scene;
     this.terrain = terrain;
-    this.pal = pal;
+    this.pal = world.palette;
+    this.decorWeights = world.decor;
     this.chunks = new Map();
+  }
+
+  dispose() {
+    for (const mesh of this.chunks.values()) {
+      this.scene.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    this.chunks.clear();
+  }
+
+  // Welche Deko an dieser Stelle? (h = Zufallswert 0..1)
+  decorType(h) {
+    let acc = 0;
+    for (const [k, v] of Object.entries(this.decorWeights)) {
+      acc += v;
+      if (h < acc) return k;
+    }
+    return null;
   }
 
   rowOffset(z, x) {
@@ -120,14 +139,23 @@ export class TerrainView {
       const z = -5 - r(i * 3.1) * 10;
       const y = this.topY(x, z > -7 ? -4 : -10) - 0.1;
       const k = i * 11.7;
-      if (h < 0.11) {
+      const type = this.decorType(h);
+      if (type === 'rock') {
         const s = 0.5 + r(k) * 1.2;
         parts.push(part('ico', pal.rock[i % pal.rock.length], { x, y: y + s * 0.4, z, s, sy: s * 0.7, ry: r(k + 1) * 6 }, 0.15));
-      } else if (h < 0.21) {
+      } else if (type === 'bush') {
         const s = 0.6 + r(k) * 0.8;
         parts.push(part('dodeca', pal.bush[i % pal.bush.length], { x, y: y + s * 0.6, z, s }, 0.15));
         parts.push(part('dodeca', pal.bush[(i + 1) % pal.bush.length], { x: x + s * 0.8, y: y + s * 0.4, z: z + 0.3, s: s * 0.7 }, 0.15));
-      } else if (h < 0.26) {
+      } else if (type === 'cactus') {
+        const s = 0.8 + r(k) * 0.7;
+        const c = pal.cactus[i % pal.cactus.length];
+        parts.push(part('cyl6', c, { x, y: y + 1.6 * s, z, sx: 0.35 * s, sz: 0.35 * s, sy: 3.2 * s }, 0.12));
+        parts.push(part('cyl6', c, { x: x + 0.55 * s, y: y + 2.0 * s, z, sx: 0.22 * s, sz: 0.22 * s, sy: 1.2 * s }, 0.12));
+        parts.push(part('cyl6', c, { x: x + 0.3 * s, y: y + 1.45 * s, z, sx: 0.2 * s, sz: 0.2 * s, sy: 0.7 * s, rz: Math.PI / 2 }, 0.12));
+        parts.push(part('cyl6', c, { x: x - 0.5 * s, y: y + 2.4 * s, z, sx: 0.2 * s, sz: 0.2 * s, sy: 1.0 * s }, 0.12));
+        parts.push(part('cyl6', c, { x: x - 0.28 * s, y: y + 1.95 * s, z, sx: 0.18 * s, sz: 0.18 * s, sy: 0.6 * s, rz: Math.PI / 2 }, 0.12));
+      } else if (type === 'wreck') {
         // Autowrack
         const c = pal.wreck[i % pal.wreck.length];
         const ry = (r(k) - 0.5) * 1.2;
@@ -135,7 +163,7 @@ export class TerrainView {
         parts.push(part('box', c, { x, y: y + 0.55, z: z - 2, sx: 3.6, sy: 0.9, sz: 1.7, ry, rz }, 0.2));
         parts.push(part('box', c, { x: x - 0.3, y: y + 1.25, z: z - 2, sx: 1.7, sy: 0.6, sz: 1.5, ry, rz: rz + 0.1 }, 0.2));
         parts.push(part('cyl8', '#2a2a2e', { x: x + 2.2, y: y + 0.4, z: z - 0.8, sx: 0.5, sz: 0.5, sy: 0.35, rz: 1.4 }));
-      } else if (h < 0.29) {
+      } else if (type === 'tires') {
         // Reifenhaufen
         parts.push(part('cyl10', '#2c2c30', { x, y: y + 0.2, z, sx: 0.8, sz: 0.8, sy: 0.35 }));
         parts.push(part('cyl10', '#34343a', { x: x + 0.3, y: y + 0.55, z: z + 0.2, sx: 0.8, sz: 0.8, sy: 0.35, rz: 0.2 }));

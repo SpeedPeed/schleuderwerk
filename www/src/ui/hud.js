@@ -13,6 +13,7 @@ export class Hud {
       <div class="hud-sub">
         <span data-id="alt">↑ 0 m</span>
         <span data-id="hp"></span>
+        <span data-id="wind" class="hud-wind"></span>
         <span data-id="best">🏁 0 m</span>
       </div>
       <div class="combo hidden" data-id="combo"><div class="combo-mult" data-id="mult">×1,0</div><div class="combo-pts" data-id="pts">0</div></div>
@@ -27,6 +28,7 @@ export class Hud {
           <div class="pm-label">KRAFT</div>
         </div>
         <div class="aim-angle" data-id="angle">35°</div>
+        <div class="weather" data-id="weather"></div>
         <div class="aim-hint" data-id="aimhint">Finger aufs Display, <b>nach hinten ziehen</b><br>und loslassen!<br><small>Grüne Zone = perfekter Abschuss</small></div>
       </div>
       <div class="hint hidden" data-id="flyhint">👆 <b>Wischen</b> = drehen &nbsp;·&nbsp; <b>Halten</b> = Boost</div>
@@ -44,10 +46,20 @@ export class Hud {
     fn(value);
   }
 
-  show(on, { best = 0, tutorial = false } = {}) {
+  show(on, { best = 0, tutorial = false, weather = null } = {}) {
     show(this.el, on);
     this.last = {};
     this.q.best.textContent = `🏁 ${fmt(best)} m`;
+    this.weather = weather;
+    const calm = !weather || (weather.wind[0] === 0 && weather.wind[1] === 0 && !weather.gust);
+    show(this.q.weather, !calm);
+    show(this.q.wind, !calm);
+    if (!calm) {
+      const b = Math.round(weather.base);
+      const dir = weather.gust ? '↔' : b >= 0 ? '→' : '←';
+      this.q.weather.innerHTML = `${weather.icon} <b>${weather.name}</b> ${dir} ${weather.gust ? `bis ${Math.round(weather.gust)}` : Math.abs(b)} m/s`
+        + `<small>${weather.gust ? 'Wind wechselt ständig' : b >= 0 ? 'schiebt dich an – flach & weit fliegen!' : 'bremst – lieber hoch & mit Boost'}</small>`;
+    }
     this.tutorial = tutorial;
     show(this.q.flyhint, false);
     show(this.q.combo, false);
@@ -76,6 +88,10 @@ export class Hud {
     this.set('dist', Math.max(0, Math.round(car.x)), (v) => { q.dist.textContent = fmt(v); });
     this.set('coins', run.coins, (v) => { q.coins.textContent = fmt(v); q.coins.parentElement.classList.remove('bump'); void q.coins.offsetWidth; q.coins.parentElement.classList.add('bump'); });
     this.set('alt', Math.max(0, Math.round(run.altitude)), (v) => { q.alt.textContent = `↑ ${fmt(v)} m`; });
+    if (this.weather) {
+      const w = Math.round(run.env.wind);
+      this.set('wind', w, (v) => { this.q.wind.textContent = `${v > 0 ? '→' : v < 0 ? '←' : '·'} ${Math.abs(v)} m/s`; });
+    }
     this.set('hp', car.hp, (v) => { q.hp.textContent = '❤'.repeat(Math.max(0, v)) + '♡'.repeat(Math.max(0, run.stats.hp - v)); });
     const b = Math.round((car.boost / run.stats.boostMax) * 100);
     this.set('boost', b, (v) => { q.boost.style.width = `${v}%`; });

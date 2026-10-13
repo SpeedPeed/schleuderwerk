@@ -3,6 +3,8 @@ import { PHYSICS as P, KOMBO } from '../config/balance.js';
 const TAU = Math.PI * 2;
 const DEG = Math.PI / 180;
 
+const NO_ENV = { wind: 0, lift: () => 0 };
+
 export function wrapAngle(a) {
   a = (a + Math.PI) % TAU;
   if (a < 0) a += TAU;
@@ -45,16 +47,17 @@ export class Car {
   get speed() { return this.onGround ? Math.abs(this.s) : Math.hypot(this.vx, this.vy); }
 
   // ctl: { touching, da (Drehung durch Wischen), flickW (Schwung beim Loslassen), boost }
-  step(dt, ctl, terrain, ev) {
+  // env: { wind (m/s, + = Rückenwind), lift(x, alt) -> Aufwind m/s² }
+  step(dt, ctl, terrain, ev, env = NO_ENV) {
     const boost = ctl.boost && this.boost > 0;
     this.boosting = boost;
     if (boost) this.boost = Math.max(0, this.boost - P.boostDrain * dt);
-    if (this.onGround) this.stepGround(dt, terrain, ev, boost);
-    else this.stepAir(dt, ctl, terrain, ev, boost);
+    if (this.onGround) this.stepGround(dt, terrain, ev, boost, env);
+    else this.stepAir(dt, ctl, terrain, ev, boost, env);
     if (this.x > this.maxX) this.maxX = this.x;
   }
 
-  stepAir(dt, ctl, terrain, ev, boost) {
+  stepAir(dt, ctl, terrain, ev, boost, env) {
     const st = this.stats;
     const m = st.mass;
     const a0 = this.angle;
@@ -74,13 +77,15 @@ export class Car {
       this.w *= Math.exp(-P.airSpinDamp * dt);
     }
 
-    // Kräfte: Schwerkraft, Luftwiderstand, Auftrieb, Boost
+    // Kräfte: Schwerkraft, Luftwiderstand (relativ zum Wind), Auftrieb, Thermik, Boost
     const sp = Math.hypot(this.vx, this.vy) || 1e-6;
     const aoa = wrapAngle(this.angle - Math.atan2(this.vy, this.vx));
     const sinA = Math.sin(aoa);
     const k = (st.drag * (1 + P.broadsideDrag * sinA * sinA)) / m;
-    let ax = -k * sp * this.vx;
-    let ay = -k * sp * this.vy - this.g;
+    const rvx = this.vx - env.wind;
+    const rsp = Math.hypot(rvx, this.vy);
+    let ax = -k * rsp * rvx;
+    let ay = -k * rsp * this.vy - this.g + env.lift(this.x, this.y - P.rideHeight - terrain.heightAt(this.x));
     if (Math.abs(aoa) < Math.PI / 2) {
       const L = Math.min(this.g * 2.5, (st.lift * sp * sp * Math.sin(2 * aoa)) / m);
       ax += L * (-this.vy / sp);
@@ -129,7 +134,7 @@ export class Car {
     this.rotAccum = 0;
   }
 
-  stepGround(dt, terrain, ev, boost) {
+  stepGround(dt, terrain, ev, boost, env) {
     const st = this.stats;
     const m = st.mass;
     const g0 = Math.atan(terrain.slopeAt(this.x));
@@ -138,13 +143,14 @@ export class Car {
     s -= this.g * Math.sin(g0) * dt;
     const f = st.rollFriction * Math.cos(g0) * dt;
     s = Math.abs(s) <= f ? 0 : s - Math.sign(s) * f;
-    s -= (st.drag / m) * s * Math.abs(s) * dt;
+    const rs = s - env.wind * Math.cos(g0);
+    s -= (st.drag / m) * rs * Math.abs(rs) * dt;
     this.s = s;
 
     const vx = s * Math.cos(g0);
     const vy = s * Math.sin(g0);
     const nx = this.x + vx * dt;
-    const ny = this.y + vy * dt - 0.5 * this.g * dt * dt;
+    const ny = this.y + vy * dt + 0.5 * (env.lift(this.x, 0) - this.g) * dt * dt;
     const gy = terrain.heightAt(nx) + P.rideHeight;
     this.wheelSpin += (s / 0.5) * dt;
 

@@ -141,7 +141,7 @@ export class Slingshot {
       scene.add(m);
       return m;
     });
-    const pouchGeo = merge([part('box', '#4a2d1c', { sx: 0.4, sy: 1.2, sz: 1.6 })]);
+    const pouchGeo = merge([part('box', '#4a2d1c', { sx: 0.35, sy: 1.1, sz: 2.4 })]);
     this.pouch = new THREE.Mesh(pouchGeo, flatMat);
     scene.add(this.pouch);
     this.end = new THREE.Vector3(this.postX, this.topY, 0);
@@ -162,7 +162,7 @@ export class Slingshot {
     const up = new THREE.Vector3(0, 1, 0);
     for (const b of this.bands) {
       const from = new THREE.Vector3(this.postX, this.topY + 0.1, b.userData.z);
-      const to = new THREE.Vector3(this.end.x, this.end.y, b.userData.z * 0.25);
+      const to = new THREE.Vector3(this.end.x, this.end.y, Math.sign(b.userData.z) * 1.15); // seitlich am Auto vorbei
       const dir = to.clone().sub(from);
       const len = dir.length() || 0.01;
       b.position.copy(from);

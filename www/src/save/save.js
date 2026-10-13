@@ -8,6 +8,9 @@ export function defaultSave() {
     money: 0,
     upgrades: {},
     stats: { runs: 0, bestDist: 0, bestHeight: 0, totalEarned: 0, bestTricks: 0 },
+    world: 'steppe',
+    worlds: { steppe: { bestDist: 0, bestHeight: 0, runs: 0 } },
+    unlocked: ['steppe'],
     settings: { sound: true, vibration: true, shake: true, shadows: true },
     tutorial: { runs: 0 },
     createdAt: Date.now(),
@@ -28,8 +31,14 @@ export function migrate(data) {
   if (!data || typeof data !== 'object') throw new Error('Kein gültiger Spielstand');
   const v = data.version || 0;
   if (v > SAVE_VERSION) throw new Error('Spielstand stammt aus einer neueren Spielversion');
-  // Hier kommen später Umbauten zwischen Versionen hin, z. B.:
-  // if (v < 2) { data.parts = []; }
+  // Umbauten zwischen Versionen
+  if (v < 2) {
+    // v2: Rekorde pro Welt
+    const s = data.stats || {};
+    data.worlds = { steppe: { bestDist: s.bestDist || 0, bestHeight: s.bestHeight || 0, runs: s.runs || 0 } };
+    data.world = 'steppe';
+    data.unlocked = ['steppe'];
+  }
   fill(data, defaultSave());
   data.version = SAVE_VERSION;
   if (typeof data.money !== 'number' || !isFinite(data.money)) data.money = 0;

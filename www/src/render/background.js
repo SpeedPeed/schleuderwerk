@@ -3,10 +3,12 @@ import { part, merge, flatMat } from './models.js';
 import { hash1 } from '../game/rng.js';
 
 const TILE = 900;
+const MESA = new THREE.CylinderGeometry(0.7, 1, 1, 6).toNonIndexed();
 
 // Berge und Wolken in der Ferne. Sie wandern langsamer mit (Parallaxe) und wiederholen sich.
 export class Background {
   constructor(scene, pal) {
+    this.scene = scene;
     const mGeo = this.mountains(pal);
     const cGeo = this.clouds(pal);
     this.layers = [
@@ -30,8 +32,15 @@ export class Background {
       const r = 45 + hash1(i + 90) * 45;
       const z = -320 - hash1(i + 20) * 140;
       const y0 = -25;
+      if (pal.mountainShape === 'mesa') {
+        // Tafelberge: flach oben, mit Gesteinsschicht
+        const hm = h * 0.75;
+        parts.push(part(MESA, pal.mountain[i % pal.mountain.length], { x, y: y0 + hm / 2, z, sx: r * 0.8, sz: r * 0.55, sy: hm, ry: hash1(i + 3) * 3 }, 0.12));
+        parts.push(part(MESA, pal.peak, { x, y: y0 + hm * 0.8, z: z + 0.5, sx: r * 0.88, sz: r * 0.6, sy: hm * 0.08, ry: hash1(i + 3) * 3 }));
+        continue;
+      }
       parts.push(part('cone7', pal.mountain[i % pal.mountain.length], { x, y: y0 + h / 2, z, sx: r, sz: r * 0.7, sy: h, ry: hash1(i + 3) * 3 }, 0.12));
-      if (h > 70) parts.push(part('cone7', '#f4efe6', { x, y: y0 + h * 0.875, z: z + 0.5, sx: r * 0.26, sz: r * 0.19, sy: h * 0.25, ry: hash1(i + 3) * 3 }));
+      if (h > 70) parts.push(part('cone7', pal.peak, { x, y: y0 + h * 0.875, z: z + 0.5, sx: r * 0.26, sz: r * 0.19, sy: h * 0.25, ry: hash1(i + 3) * 3 }));
     }
     return merge(parts);
   }
@@ -58,6 +67,13 @@ export class Background {
         m.position.x = camX + offset + (k - 1.5) * TILE;
         m.position.y = camY * (l.follow * 0.6);
       });
+    }
+  }
+
+  dispose() {
+    for (const l of this.layers) {
+      for (const m of l.meshes) this.scene.remove(m);
+      l.geo.dispose();
     }
   }
 }
