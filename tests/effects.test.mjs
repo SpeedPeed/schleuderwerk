@@ -304,3 +304,35 @@ test('ModState: Buffs altern, Stapel bis max, Zähler', () => {
   assert.equal(m.charge('c', 1, 3), false);
   assert.ok(BASE_STATS.coolRate > 0);
 });
+
+test('emit: unbekannte Ereignis-Namen (Tippfehler in Inhaltsdaten) werden verworfen statt still weitergereicht', () => {
+  const t = flying();
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (m) => warned.push(String(m));
+  try {
+    run({ fx: 'emit', event: 'tippfehler', data: {} }, t.ctx);
+    run({ fx: 'emit', event: 'tippfehler', data: {} }, t.ctx);
+  } finally { console.warn = warn; }
+  t.stage.flushEvents();
+  assert.equal(counted(t, 'tippfehler').length, 0);
+  assert.equal(warned.filter((m) => m.includes('tippfehler')).length, 1, 'nur einmal gewarnt');
+});
+
+test('maxHp/maxFuel: der aktuelle Wert steigt um die echte Änderung des Maximums und bleibt ≤ Maximum', () => {
+  // Einkaufswagen: durabilityMax × 0,6 → +10 Basis sind nur +6 Maximum
+  const t = makeStage({ chassis: 'einkaufswagen' });
+  airborne(t.stage);
+  const v = t.stage.vehicle;
+  const m0 = t.stage.stats.durabilityMax;
+  run({ fx: 'maxHp', amount: 10 }, t.stage.ctx);
+  near(t.stage.stats.durabilityMax, m0 + 6, 1e-9);
+  near(v.durability, t.stage.stats.durabilityMax, 1e-9, 'voll, aber nicht darüber');
+  // negativ: Maximum sinkt, aktueller Wert wird gekürzt
+  const s = makeStage();
+  airborne(s.stage);
+  run({ fx: 'maxHp', amount: -20 }, s.stage.ctx);
+  near(s.stage.vehicle.durability, s.stage.stats.durabilityMax, 1e-9);
+  run({ fx: 'maxFuel', amount: -30 }, s.stage.ctx);
+  assert.ok(s.stage.vehicle.fuel <= s.stage.stats.fuelMax + 1e-9);
+});

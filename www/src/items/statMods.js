@@ -15,20 +15,12 @@ export const STATS = [
   'perfectLandDeg', 'magnet', 'speedSoftCap', 'luck', 'boltGain', 'scrapGain', 'itemSlots', 'abilitySlots',
   'abilityCooldown', 'bounce', 'shopDiscount', 'rerollDiscount', 'itemChoices', 'repairBonus',
 ];
-const STAT_SET = new Set(STATS);
-export const isStat = (k) => STAT_SET.has(k);
 
 // Leerer Sammler: je Stat { add, mul, xmul }
 export function emptyAcc() {
   const acc = {};
   for (const k of STATS) acc[k] = { add: 0, mul: 0, xmul: 1 };
   return acc;
-}
-
-export function cloneAcc(acc) {
-  const out = {};
-  for (const k of STATS) out[k] = { add: acc[k].add, mul: acc[k].mul, xmul: acc[k].xmul };
-  return out;
 }
 
 // Modifikatoren aufaddieren. scale skaliert add und mul (★-Stufen, Teile-Stufen), xmul wird mit xpow potenziert

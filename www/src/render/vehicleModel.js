@@ -10,6 +10,7 @@ import { chassisById, chassisVisual } from '../data/index.js';
 // Räder (Drehung), Propeller/Turbinen (Drehung) und die Schrott-Ladung der Mülltonne sind eigene Meshes.
 //
 // buildVehicle({ chassisId, parts: { slot: partId }, visual? }) → THREE.Group mit userData:
+//   upper (Gruppe des Aufbaus ohne Räder), top (Oberkante über der Mitte, m), axleHalf (halber Radstand, m),
 //   wheels[], spinners[{ mesh, speed }], exhaust {x, y} (Flammen-/Rauch-Austritt), rear (Abstand Mitte → Heck),
 //   setScrap(n) (Mülltonne), dispose()
 
@@ -44,14 +45,15 @@ function wheelGeometry(spec, i) {
       disc('#232327', r * 0.86, w);
       for (let k = 0; k < 10; k++) {
         const a = (k / 10) * PI * 2;
-        P.push(part('box', '#2c2c31', { x: Math.cos(a) * r * 0.9, y: Math.sin(a) * r * 0.9, sx: 0.16, sy: 0.12, sz: w, rz: a + 0.5 }));
+        // Stollen ragen höchstens bis zum Radius r (sonst stecken sie beim Rollen im Boden)
+        P.push(part('box', '#2c2c31', { x: Math.cos(a) * (r - 0.1), y: Math.sin(a) * (r - 0.1), sx: 0.16, sy: 0.12, sz: w, rz: a + 0.5 }));
       }
       disc('#f2c230', r * 0.5, w + 0.04);
       disc('#c9a020', r * 0.2, w + 0.1, 0, 'cyl6');
       break;
     case 'ball': {
       const c = BALL_COLORS[i % BALL_COLORS.length];
-      P.push(part('ico', c, { s: r }, 0.12));
+      P.push(part('ico1', c, { s: r * 1.02 }, 0.12));   // feinerer Polyeder: rollt ohne zu hüpfen
       P.push(part('box', '#ffffff', { sx: r * 2.02, sy: 0.06, sz: r * 0.5 }));
       break;
     }
@@ -117,8 +119,10 @@ function driver(m, x, y, helmet = '#ffd23f') {
 // ---------- Chassis ----------
 // Jede Bauform bekommt k = { b (Unterkante Aufbau), axle (Radmitte y), r (Radius), color, accent }
 // und liefert Ankerpunkte: wheels [[x, z]], seat [x, y], rear [x, y] (Antrieb), tail [x, y] (Heck oben),
-// roof [x, y] (über dem Fahrer), side {x0, x1, y0, y1, z} (Panzerung), tank [x, y, z], front [x, y] (Kühlung),
-// nose [x, y] (Gadget), helmet (Helmfarbe)
+// roof [x, y] (über dem Fahrer), deck (y der tragenden Fläche unter roof – dort stehen Stützen von Dach-Teilen),
+// side {x0, x1, y0, y1, z} (Panzerung), tank [x, y, z] (Unterkante auf einer Fläche), front [x, y] (Kühlung, an
+// einer senkrechten Stirnfläche), nose [x, y] (Gadget, auf einer Fläche), vent [x, y, z] (optional: Stelle der
+// Seitenwand für Lüftungsschlitze, von der Kamera sichtbar), scrapAt [x, y] (Mülltonne), helmet (Helmfarbe)
 const CHASSIS_BUILDERS = {
   seifenkiste(m, k) {
     const { b, color: c, accent: a } = k;
@@ -134,12 +138,12 @@ const CHASSIS_BUILDERS = {
     m.box(a, { y: b + 0.57, sx: 2.62, sy: 0.07, sz: 1.14 });
     m.box(c, { x: -1.24, y: b + 0.78, sx: 0.08, sy: 0.5, sz: 1.0 }, 0.1);
     for (const x of [0.95, -0.95]) m.rodZ('#3a3a40', x, k.axle, -0.62, 0.62, 0.07);
-    steeringWheel(m, 0.55, b + 0.95);
+    steeringWheel(m, 0.1, b + 0.95);   // in Reichweite der Hände
     return {
       wheels: [[0.95, 0.62], [0.95, -0.62], [-0.95, 0.62], [-0.95, -0.62]],
-      seat: [-0.45, b + 0.42], rear: [-1.3, b + 0.3], tail: [-1.25, b + 1.03], roof: [-0.4, b + 1.5],
+      seat: [-0.45, b + 0.42], rear: [-1.3, b + 0.3], tail: [-1.25, b + 1.03], roof: [-0.4, b + 1.5], deck: b + 0.6,
       side: { x0: -1.0, x1: 1.0, y0: b + 0.08, y1: b + 0.52, z: 0.56 }, tank: [-1.0, b + 0.6, 0.0],
-      front: [1.68, b + 0.25], nose: [1.05, b + 0.6], helmet: '#ffd23f',
+      front: [1.68, b + 0.25], nose: [1.05, b + 0.6], vent: [1.12, b + 0.3, 0.55], helmet: '#ffd23f',
     };
   },
 
@@ -161,9 +165,9 @@ const CHASSIS_BUILDERS = {
     m.box('#e8742a', { x: 1.0, y: b + 0.97, z: 0.25, sx: 0.1, sy: 0.03, sz: 0.06 });
     return {
       wheels: [[0.95, 0.68], [0.95, -0.68], [-0.95, 0.68], [-0.95, -0.68]],
-      seat: [-0.1, b + 0.4], rear: [-1.55, b + 0.45], tail: [-1.4, b + 0.95], roof: [-0.1, b + 1.45],
-      side: { x0: -0.95, x1: 0.95, y0: b + 0.15, y1: b + 0.75, z: 0.6 }, tank: [-1.2, b + 0.92, -0.25],
-      front: [1.55, b + 0.5], nose: [1.15, b + 0.95], helmet: '#ff8a3d',
+      seat: [-0.1, b + 0.4], rear: [-1.55, b + 0.45], tail: [-1.4, b + 0.92], roof: [-0.1, b + 1.75], deck: b + 0.9,
+      side: { x0: -0.95, x1: 0.95, y0: b + 0.15, y1: b + 0.75, z: 0.6 }, tank: [0.62, b + 0.92, -0.28],
+      front: [1.55, b + 0.5], nose: [1.15, b + 0.92], vent: [1.04, b + 0.5, 0.6], helmet: '#ff8a3d',
     };
   },
 
@@ -187,11 +191,12 @@ const CHASSIS_BUILDERS = {
     m.box(a, { x: x0 - 0.32, y: y1 + 0.3, sx: 0.1, sy: 0.1, sz: 1.15 });
     m.box(a, { x: x0 + 0.02, y: y1 - 0.1, z: z + 0.02, sx: 0.4, sy: 0.12, sz: 0.02 });
     m.box('#f2c230', { x: x0 - 0.32, y: y1 + 0.3, z: 0.4, sx: 0.12, sy: 0.12, sz: 0.06 });   // Pfandchip
+    m.box(a, { x: x0 + 0.2, y: b + 0.83, sx: 0.4, sy: 0.04, sz: 1.1 });                      // Ablage hinten im Korb (trägt den Tank)
     return {
       wheels: [[0.8, 0.5], [0.8, -0.5], [-0.8, 0.5], [-0.8, -0.5]],
-      seat: [0.05, b + 0.45], rear: [-1.0, b + 0.55], tail: [-1.3, b + 1.5], roof: [0.0, b + 1.55],
-      side: { x0: -0.9, x1: 0.9, y0: b + 0.4, y1: b + 0.9, z: 0.57 }, tank: [0.7, b + 0.55, -0.3],
-      front: [1.0, b + 0.75], nose: [0.8, b + 1.2], helmet: '#e23b3b',
+      seat: [0.05, b + 0.45], rear: [-1.0, b + 0.55], tail: [-1.3, b + 1.5], roof: [0.0, b + 1.62], deck: y0,
+      side: { x0: -0.9, x1: 0.9, y0: b + 0.4, y1: b + 0.9, z: 0.57 }, tank: [x0 + 0.15, b + 0.85, -0.15],
+      front: [1.0, b + 0.75], nose: [x1, y1 + 0.02], helmet: '#e23b3b',
     };
   },
 
@@ -213,9 +218,9 @@ const CHASSIS_BUILDERS = {
     m.box(a, { x: 0.62, y: b + 0.79, z: 0.0, sx: 0.8, sy: 0.02, sz: 0.2 });
     return {
       wheels: [[0.8, 0.6], [0.8, -0.6], [-0.85, 0.6], [-0.85, -0.6]],
-      seat: [-0.35, b + 0.52], rear: [-1.55, b + 0.35], tail: [-1.2, b + 0.95], roof: [-0.35, b + 1.6],
+      seat: [-0.35, b + 0.52], rear: [-1.55, b + 0.35], tail: [-1.2, b + 0.92], roof: [-0.35, b + 1.6], deck: b + 0.37,
       side: { x0: -0.6, x1: 1.05, y0: b + 0.08, y1: b + 0.38, z: 0.52 }, tank: [0.55, b + 0.78, -0.25],
-      front: [1.15, b + 0.4], nose: [0.9, b + 0.8], helmet: '#f2c230',
+      front: [1.15, b + 0.4], nose: [0.9, b + 0.8], vent: [0.85, b + 0.58, 0.45], helmet: '#f2c230',
     };
   },
 
@@ -235,9 +240,9 @@ const CHASSIS_BUILDERS = {
     m.rod('#8a8f96', -1.0, b + 0.2, -1.2, b + 0.25, -0.3, 0.07);
     return {
       wheels: [[0.62, 0.62], [0.62, -0.62], [-0.62, 0.62], [-0.62, -0.62]],
-      seat: [-0.15, b + 1.47], rear: [-0.82, b + 0.4], tail: [-0.75, b + 1.5], roof: [-0.15, b + 2.55],
+      seat: [-0.15, b + 1.47], rear: [-0.82, b + 0.4], tail: [-0.75, b + 1.45], roof: [-0.15, b + 2.55], deck: b + 1.45,
       side: { x0: -0.78, x1: -0.3, y0: b + 0.1, y1: b + 1.2, z: 0.7 }, tank: [0.55, b + 1.47, -0.3],
-      front: [0.82, b + 0.72], nose: [0.6, b + 1.45], helmet: '#3a7bd5',
+      front: [0.82, b + 0.72], nose: [0.6, b + 1.45], vent: [0.72, b + 1.14, 0.7], helmet: '#3a7bd5',
     };
   },
 
@@ -255,9 +260,10 @@ const CHASSIS_BUILDERS = {
     m.box('#5a5f66', { x: -0.1, y: b + 1.95, sx: 1.2, sy: 0.04, sz: 1.12 });
     return {
       wheels: [[0.75, 0.62], [0.75, -0.62], [-0.75, 0.62], [-0.75, -0.62]],
-      seat: [-0.2, b + 2.0], rear: [-1.0, b + 0.3], tail: [-0.65, b + 2.0], roof: [-0.2, b + 3.0],
-      side: { x0: -0.95, x1: 0.95, y0: b + 0.0, y1: b + 0.12, z: 0.57 }, tank: [0.75, b + 0.13, 0.25],
-      front: [0.52, b + 0.6], nose: [0.4, b + 2.0], helmet: '#5fb7d9',
+      seat: [-0.2, b + 2.0], rear: [-1.0, b + 0.3], tail: [-0.65, b + 1.97], roof: [-0.2, b + 3.0], deck: b + 1.97,
+      // Panzerung auf der Tür-/Rückwand (nicht auf der Palette), Kühlung oben an der Stirnseite (über dem Tank)
+      side: { x0: -0.62, x1: 0.28, y0: b + 0.2, y1: b + 1.2, z: 0.56 }, tank: [0.75, b + 0.13, 0.25],
+      front: [0.52, b + 1.25], nose: [0.4, b + 1.97], vent: [0.4, b + 0.32, 0.56], helmet: '#5fb7d9',
     };
   },
 
@@ -279,11 +285,15 @@ const CHASSIS_BUILDERS = {
     for (const [y, z] of [[0.3, 0], [0, 0.3], [0, -0.3]]) m.box(c, { x: -1.15, y: b + 0.6 + y, z, sx: 0.4, sy: y ? 0.3 : 0.06, sz: z ? 0.3 : 0.06 });
     m.tubeX('#3a3a40', -1.36, b + 0.6, 0, 0.2, 0.15, 'cyl8');
     m.box('#3a3a40', { x: -0.5, y: b + 0.32, sx: 0.08, sy: 0.18, sz: 0.4 });
+    // Bug: zusätzliche Latte über den Kufenspitzen + Bugschild, an dem Kühlung und Gadgets sitzen
+    m.box('#b07a42', { x: 1.47, y: b + 0.2, sx: 0.34, sy: 0.08, sz: 1.12 }, 0.15);
+    for (const z of [0.5, -0.5]) m.rod('#7d848c', 1.47, sk + 0.18, 1.47, b + 0.16, z, 0.05);
+    m.box(a, { x: 1.42, y: b + 0.45, sx: 0.08, sy: 0.44, sz: 0.9 }, 0.06);
     return {
       wheels: [[1.05, 0.68], [1.05, -0.68], [-1.0, 0.68], [-1.0, -0.68]],
-      seat: [0.75, b + 0.3], rear: [-1.42, b + 0.6], tail: [-1.0, b + 0.95], roof: [0.7, b + 1.4],
-      side: { x0: -1.0, x1: 1.2, y0: sk + 0.06, y1: b + 0.18, z: 0.58 }, tank: [1.2, b + 0.26, -0.35],
-      front: [1.45, b + 0.35], nose: [1.25, b + 0.6], helmet: '#f5f5f5',
+      seat: [0.75, b + 0.3], rear: [-1.42, b + 0.6], tail: [-1.0, b + 0.9], roof: [0.7, b + 1.4], deck: b + 0.24,
+      side: { x0: -1.0, x1: 1.2, y0: sk + 0.06, y1: b + 0.18, z: 0.56 }, tank: [1.08, b + 0.24, -0.6],
+      front: [1.46, b + 0.45], nose: [1.42, b + 0.67], helmet: '#f5f5f5',
     };
   },
 
@@ -298,9 +308,10 @@ const CHASSIS_BUILDERS = {
     m.rodZ('#7d848c', -0.62, b + 1.45, -0.55, 0.55, 0.07);
     return {
       wheels: [[0.6, 0.6], [0.6, -0.6], [-0.6, 0.6], [-0.6, -0.6]],
-      seat: [0.0, b + 1.0], rear: [-0.56, b + 0.5], tail: [-0.62, b + 1.6], roof: [0.05, b + 2.1],
-      side: { x0: -0.5, x1: 0.5, y0: b + 0.1, y1: b + 0.95, z: 0.51 }, tank: [0.4, b + 1.62, -0.3],
-      front: [0.56, b + 0.6], nose: [0.45, b + 1.6], helmet: '#e8553d', scrapAt: [0.32, b + 1.62],
+      seat: [0.0, b + 1.0], rear: [-0.56, b + 0.5], tail: [-0.55, b + 1.6], roof: [0.05, b + 2.35], deck: b + 1.6,
+      side: { x0: -0.5, x1: 0.5, y0: b + 0.1, y1: b + 0.95, z: 0.51 }, tank: [0.4, b + 1.6, -0.3],
+      front: [0.56, b + 0.6], nose: [0.45, b + 1.6], vent: [0.42, b + 1.3, 0.5], helmet: '#e8553d',
+      scrapAt: [-0.36, b + 1.6],   // Schrott stapelt sich hinter dem Fahrer auf dem Rand (nicht in der Öffnung)
     };
   },
 
@@ -319,9 +330,9 @@ const CHASSIS_BUILDERS = {
     for (const [x, z] of [[1.15, 0.45], [1.15, -0.45], [-1.15, 0.45], [-1.15, -0.45]]) m.cone('#5a3a20', { x, y: b - 0.04, z, s: 0.08, sy: 0.12, rz: PI }, 0, 'cone5');
     return {
       wheels: [[0.95, 0.62], [0.95, -0.62], [-0.95, 0.62], [-0.95, -0.62]],
-      seat: [-0.1, b + 0.66], rear: [-1.4, b + 0.3], tail: [-1.24, b + 0.9], roof: [-0.1, b + 1.75],
-      side: { x0: -1.1, x1: 1.1, y0: b + 0.05, y1: b + 0.45, z: 0.56 }, tank: [-1.24, b + 0.88, 0.2],
-      front: [1.4, b + 0.3], nose: [1.24, b + 0.9], helmet: '#ffd23f',
+      seat: [-0.1, b + 0.66], rear: [-1.4, b + 0.3], tail: [-1.24, b + 0.88], roof: [-0.1, b + 1.75], deck: b + 0.67,
+      side: { x0: -1.1, x1: 1.1, y0: b + 0.05, y1: b + 0.45, z: 0.56 }, tank: [0.68, b + 0.67, 0.38],
+      front: [1.39, b + 0.55], nose: [1.24, b + 0.88], vent: [1.24, b + 0.66, 0.55], helmet: '#ffd23f',
     };
   },
 };
@@ -333,6 +344,7 @@ const PART_BUILDERS = {
   drive_rasenmaehermotor(m, A) {
     const [x, y] = A.rear;
     m.box('#5d6166', { x: x - 0.25, y, sx: 0.5, sy: 0.42, sz: 0.5 }, 0.08);
+    m.box('#7d848c', { x: x - 0.25, y: y + 0.3, sx: 0.2, sy: 0.2, sz: 0.2 });   // Zylinderkopf trägt die Kühlrippen
     for (let i = 0; i < 3; i++) m.box('#9aa4ae', { x: x - 0.25, y: y + 0.24 + i * 0.06, sx: 0.44, sy: 0.03, sz: 0.44 });
     m.disc('#e23b3b', x - 0.25, y, 0.27, 0.15, 0.05);
     m.tubeX('#2a2a30', x - 0.6, y + 0.1, 0, 0.06, 0.3, 'cyl6');
@@ -352,9 +364,9 @@ const PART_BUILDERS = {
   },
   drive_elektromotor(m, A) {
     const [x, y] = A.rear;
-    m.tubeX('#2f6fb5', x - 0.28, y, 0, 0.2, 0.5, 'cyl10', 0.06);
-    m.tubeX('#9aa4ae', x - 0.55, y, 0, 0.13, 0.08);
-    for (let i = 0; i < 4; i++) m.tubeX('#245a94', x - 0.12 - i * 0.1, y, 0, 0.21, 0.03);
+    m.tubeX('#2f6fb5', x - 0.25, y, 0, 0.2, 0.5, 'cyl10', 0.06);
+    m.tubeX('#9aa4ae', x - 0.52, y, 0, 0.13, 0.08);
+    for (let i = 0; i < 4; i++) m.tubeX('#245a94', x - 0.1 - i * 0.1, y, 0, 0.21, 0.03);
     m.box('#f2c230', { x: x - 0.2, y: y + 0.3, sx: 0.32, sy: 0.18, sz: 0.4 });
     m.box('#1f2124', { x: x - 0.2, y: y + 0.4, sx: 0.32, sy: 0.04, sz: 0.4 });
     m.rod('#e8742a', x - 0.32, y + 0.4, x - 0.45, y + 0.15, 0.1, 0.03);
@@ -362,9 +374,9 @@ const PART_BUILDERS = {
   },
   drive_staubsaugerturbine(m, A) {
     const [x, y] = A.rear;
-    m.tubeX('#d23a2a', x - 0.32, y, 0, 0.26, 0.55, 'cyl10', 0.05);
+    m.tubeX('#d23a2a', x - 0.29, y, 0, 0.26, 0.58, 'cyl10', 0.05);
     m.tubeX('#9aa4ae', x - 0.04, y, 0, 0.3, 0.06);
-    m.cone('#7d848c', { x: x - 0.7, y, rz: PI / 2, sx: 0.22, sz: 0.22, sy: 0.3 });
+    m.cone('#7d848c', { x: x - 0.71, y, rz: PI / 2, sx: 0.22, sz: 0.22, sy: 0.3 });
     m.box('#f4f4f4', { x: x - 0.32, y: y + 0.27, sx: 0.3, sy: 0.04, sz: 0.06 });
     // Turbinenschaufeln (drehen sich)
     const blades = [];
@@ -375,7 +387,7 @@ const PART_BUILDERS = {
   // Aerodynamik
   aero_fahrtwind(m, A) {
     const [x, y] = A.tail;
-    m.box('#8a8f96', { x, y: y + 0.02, sx: 0.3, sy: 0.04, sz: 0.9, rz: 0.15 });
+    m.box('#8a8f96', { x: x - 0.06, y: y + 0.02, sx: 0.22, sy: 0.04, sz: 0.9, rz: 0.15 });   // Abrisskante hinter dem Heck
   },
   aero_regenschirm(m, A) {
     const [x, y] = A.roof;
@@ -390,9 +402,12 @@ const PART_BUILDERS = {
     m.box('#a8d0ec', { x: x - 0.15, y: y + 0.08, sx: 1.9, sy: 0.06, sz: 0.7 }, 0.04);
     m.cyl('#a8d0ec', { x: x + 0.8, y: y + 0.08, sx: 0.35, sz: 0.35, sy: 0.06 }, 0.04, 'cyl10');
     for (let i = 0; i < 5; i++) m.ico('#ffffff', { x: x - 0.9 + i * 0.4, y: y + 0.11, z: (i % 2 ? 0.15 : -0.12), s: 0.07, sy: 0.02 });
-    for (const z of [0.3, -0.3]) {
-      m.rod('#8a8f96', x - 0.5, y - 0.4, x + 0.1, y + 0.05, z, 0.035);
-      m.rod('#8a8f96', x + 0.1, y - 0.4, x - 0.5, y + 0.05, z, 0.035);
+    // X-Beine stehen auf dem Aufbau (A.deck) – links und rechts am Fahrer vorbei
+    const d = A.deck ?? y - 0.4;
+    for (const z of [0.34, -0.34]) {
+      m.rod('#8a8f96', x - 0.5, d, x + 0.1, y + 0.05, z, 0.035);
+      m.rod('#8a8f96', x + 0.1, d, x - 0.5, y + 0.05, z, 0.035);
+      m.rodZ('#6a6f76', x - 0.2, (d + y) / 2 + 0.02, z - 0.03, z + 0.03, 0.05);   // Gelenk
     }
   },
   aero_heckspoiler(m, A) {
@@ -472,7 +487,7 @@ const PART_BUILDERS = {
   },
   tank_gasflasche(m, A) {
     const [x, y, z] = A.tank;
-    m.cyl('#2f6fd0', { x, y: y + 0.27, z, sx: 0.16, sz: 0.16, sy: 0.5 }, 0.05);
+    m.cyl('#2f6fd0', { x, y: y + 0.25, z, sx: 0.16, sz: 0.16, sy: 0.5 }, 0.05);
     m.ico('#2f6fd0', { x, y: y + 0.52, z, s: 0.16, sy: 0.09 });
     m.cyl('#c9a43a', { x, y: y + 0.63, z, sx: 0.04, sz: 0.04, sy: 0.12 }, 0, 'cyl6');
     m.box('#c9a43a', { x: x + 0.05, y: y + 0.66, z, sx: 0.1, sy: 0.03, sz: 0.03 });
@@ -483,6 +498,11 @@ const PART_BUILDERS = {
   cooling_fahrtwind(m, A) {
     const [x, y] = A.front;
     for (let i = 0; i < 3; i++) m.box('#1f2124', { x: x + 0.01, y: y - 0.1 + i * 0.1, sx: 0.04, sy: 0.035, sz: 0.55 });
+    // Schlitze auch in der Seitenwand (die Spielkamera sieht nur die Seite)
+    if (A.vent) {
+      const [vx, vy, vz] = A.vent;
+      for (const sg of [1, -1]) for (let i = 0; i < 3; i++) m.box('#1f2124', { x: vx - 0.1 + i * 0.1, y: vy, z: sg * (vz + 0.01), sx: 0.045, sy: 0.24, sz: 0.03 });
+    }
   },
   cooling_ventilator(m, A) {
     const [x, y] = A.nose;
@@ -500,6 +520,15 @@ const PART_BUILDERS = {
     for (let i = 0; i < 6; i++) m.box('#4a4f55', { x: x + 0.16, y: y - 0.22 + i * 0.09, sx: 0.03, sy: 0.03, sz: 0.8 });
     m.cyl('#e23b3b', { x: x + 0.08, y: y + 0.31, sx: 0.06, sz: 0.06, sy: 0.06 }, 0, 'cyl6');
     m.rod('#1f2124', x + 0.02, y + 0.2, x - 0.25, y + 0.1, 0.35, 0.06);
+  },
+  cooling_heizluefter(m, A) {
+    // Bad-Heizlüfter: cremefarbenes Gehäuse, glühendes Gitter, Drehknopf (im Umriss des Autokühlers)
+    const [x, y] = A.front;
+    m.box('#e8e0cc', { x: x + 0.08, y: y + 0.02, sx: 0.16, sy: 0.42, sz: 0.55 }, 0.04);
+    for (let i = 0; i < 4; i++) m.box('#ff7a1a', { x: x + 0.165, y: y - 0.1 + i * 0.08, sx: 0.02, sy: 0.03, sz: 0.42 });
+    m.cyl('#3a3a40', { x: x + 0.08, y: y + 0.26, z: 0.15, sx: 0.05, sz: 0.05, sy: 0.06 }, 0, 'cyl6');
+    // Halteklammern nach hinten (der Einkaufswagen hat vorn nur ein Gitter)
+    for (const z of [0.2, -0.2]) m.rod('#1f2124', x + 0.02, y - 0.12, x - 0.12, y - 0.12, z, 0.04);
   },
   cooling_trockeneis(m, A) {
     const [x, y] = A.front;
@@ -536,18 +565,20 @@ const PART_BUILDERS = {
   },
   gadget_schneeschaufel(m, A) {
     const [x, y] = A.front;
-    m.box('#e8742a', { x: x + 0.35, y: y - 0.08, sx: 0.05, sy: 0.5, sz: 0.95, rz: 0.3 }, 0.05);
-    m.box('#c75e1d', { x: x + 0.27, y: y + 0.16, sx: 0.12, sy: 0.04, sz: 0.95, rz: 0.3 });
-    m.rod('#a0703c', x + 0.3, y + 0.1, x - 0.25, y + 0.55, 0, 0.06);
+    // Schaufelblatt vor allen Kühlteilen (Trockeneis-Kiste reicht bis x + 0.28)
+    m.box('#e8742a', { x: x + 0.42, y: y - 0.08, sx: 0.05, sy: 0.5, sz: 0.95, rz: 0.3 }, 0.05);
+    m.box('#c75e1d', { x: x + 0.34, y: y + 0.16, sx: 0.12, sy: 0.04, sz: 0.95, rz: 0.3 });
+    m.rod('#a0703c', x + 0.37, y + 0.1, x - 0.25, y + 0.55, 0, 0.06);
   },
   gadget_gluecksbringer(m, A) {
     const [x, y] = A.nose;
-    m.box('#1f2124', { x, y: y + 0.16, z: 0.2, sx: 0.14, sy: 0.22, sz: 0.12 });
-    m.ico('#f1c191', { x, y: y + 0.33, z: 0.2, s: 0.08 });
-    m.cyl('#1f2124', { x, y: y + 0.45, z: 0.2, sx: 0.07, sz: 0.07, sy: 0.14 }, 0, 'cyl8');
-    m.cyl('#1f2124', { x, y: y + 0.39, z: 0.2, sx: 0.12, sz: 0.12, sy: 0.02 }, 0, 'cyl8');
-    m.rod('#a0703c', x + 0.12, y, x + 0.2, y + 0.45, 0.2, 0.025);
-    for (const [dx, dy] of [[0, 0], [0.07, 0.06], [-0.07, 0.06]]) m.ico('#3fae4a', { x: x - 0.15 + dx, y: y + 0.3 + dy, z: 0.24, s: 0.05 });
+    m.box('#1f2124', { x, y: y + 0.11, z: 0.2, sx: 0.14, sy: 0.22, sz: 0.12 });    // steht auf der Fläche
+    m.ico('#f1c191', { x, y: y + 0.28, z: 0.2, s: 0.08 });
+    m.cyl('#1f2124', { x, y: y + 0.4, z: 0.2, sx: 0.07, sz: 0.07, sy: 0.14 }, 0, 'cyl8');
+    m.cyl('#1f2124', { x, y: y + 0.34, z: 0.2, sx: 0.12, sz: 0.12, sy: 0.02 }, 0, 'cyl8');
+    m.rod('#a0703c', x + 0.12, y, x + 0.2, y + 0.4, 0.2, 0.025);
+    for (const [dx, dy] of [[0, 0], [0.07, 0.06], [-0.07, 0.06]]) m.ico('#3fae4a', { x: x - 0.15 + dx, y: y + 0.25 + dy, z: 0.24, s: 0.05 });
+    m.rod('#a0703c', x - 0.15, y + 0.25, x - 0.05, y + 0.15, 0.24, 0.02);
   },
 };
 
@@ -561,7 +592,7 @@ function scrapPiles(at) {
     const row = Math.floor(i / 4);
     const col = i % 4;
     const g = part(i % 3 ? 'box' : 'ico', cols[i % cols.length], {
-      x: at[0] - col * 0.12 + (row % 2) * 0.05, y: at[1] + 0.08 + row * 0.14, z: -0.3 + col * 0.2,
+      x: at[0] - col * 0.05 + (row % 2) * 0.05, y: at[1] + 0.08 + row * 0.14, z: -0.3 + col * 0.2,
       s: 0.13, sy: 0.09, rx: i * 0.7, ry: i * 1.3,
     });
     counts.push(counts[counts.length - 1] + g.attributes.position.count);
@@ -588,6 +619,9 @@ export function buildVehicle({ chassisId, parts = {}, visual = null }) {
   driver(m, A.seat[0], A.seat[1], A.helmet);
 
   const group = new THREE.Group();
+  // Aufbau (alles außer den Rädern) in eigener Gruppe: das Garagen-Wippen hebt nur ihn, die Räder bleiben am Boden
+  const upper = new THREE.Group();
+  group.add(upper);
   const spinners = [];
   let exhaust = A.rear;
   for (const slot of ['drive', 'aero', 'armor', 'tank', 'cooling', 'gadget']) {
@@ -600,13 +634,13 @@ export function buildVehicle({ chassisId, parts = {}, visual = null }) {
       const mesh = new THREE.Mesh(s.geo, flatMat);
       mesh.position.set(s.x, s.y, s.z);
       mesh.castShadow = true;
-      group.add(mesh);
+      upper.add(mesh);
       spinners.push({ mesh, speed: s.speed });
     }
   }
   const body = new THREE.Mesh(merge(P), flatMat);
   body.castShadow = true;
-  group.add(body);
+  upper.add(body);
 
   // Räder (eigene Meshes, damit sie sich drehen)
   const wheels = [];
@@ -625,8 +659,18 @@ export function buildVehicle({ chassisId, parts = {}, visual = null }) {
   let scrap = null;
   if (A.scrapAt) {
     scrap = scrapPiles(A.scrapAt);
-    group.add(scrap.mesh);
+    upper.add(scrap.mesh);
   }
+
+  // Höhe über der Fahrzeugmitte (für die Garagen-Kamera) und halber Radstand (Bodenkontakt am Hang), in Metern
+  body.geometry.computeBoundingBox();
+  let top = body.geometry.boundingBox.max.y;
+  for (const sp of spinners) {
+    sp.mesh.geometry.computeBoundingSphere();
+    top = Math.max(top, sp.mesh.position.y + sp.mesh.geometry.boundingSphere.radius);
+  }
+  let axleMin = Infinity, axleMax = -Infinity;
+  for (const [x] of A.wheels) { axleMin = Math.min(axleMin, x); axleMax = Math.max(axleMax, x); }
 
   let minX = 0;
   for (const [x] of A.wheels) minX = Math.min(minX, x - spec.r);
@@ -634,6 +678,9 @@ export function buildVehicle({ chassisId, parts = {}, visual = null }) {
   group.scale.setScalar(SCALE);
   group.userData = {
     chassisId: c.id,
+    upper,
+    top: top * SCALE,
+    axleHalf: ((axleMax - axleMin) / 2) * SCALE,
     wheels,
     spinners,
     exhaust: { x: exhaust[0] * SCALE, y: exhaust[1] * SCALE },   // in Metern (nach der Skalierung)

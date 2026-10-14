@@ -1,8 +1,9 @@
 import { el, fmt, show } from './dom.js';
-import { KOMBO, RESOURCES } from '../data/balance.js';
+import { KOMBO, RESOURCES, SOFTCAPS } from '../data/balance.js';
 import { DEG } from '../core/math.js';
 
-const MAX_ABILITY_BUTTONS = 3;
+// Höchstens so viele Fähigkeits-Slots wie die Soft-Caps erlauben, plus die Spezialfähigkeit des Chassis
+export const MAX_ABILITY_BUTTONS = SOFTCAPS.abilitySlots.max + 1;
 
 // Anzeige während der Etappe: Distanz, Höhe, Schrauben, Treibstoff/Hitze/Haltbarkeit, Fähigkeits-Knöpfe,
 // Kombo, Boden-Pfeil und die Kraftleiste beim Zielen.
@@ -28,7 +29,7 @@ export class Hud {
       <div class="res-bars" data-id="bars">
         <div class="rbar rb-fuel"><b>⛽</b><div class="rb-track"><div class="rb-fill" data-id="fuel"></div></div></div>
         <div class="rbar rb-heat" data-id="heatrow"><b>🌡</b><div class="rb-track"><div class="rb-fill" data-id="heat"></div><em data-id="stall">ÜBERHITZT</em></div></div>
-        <div class="rbar rb-dur"><b>🔧</b><div class="rb-track"><div class="rb-fill" data-id="dur"></div><em class="rb-num" data-id="durnum">100</em></div></div>
+        <div class="rbar rb-dur" data-id="durrow"><b>🔧</b><div class="rb-track"><div class="rb-fill" data-id="dur"></div><em class="rb-num" data-id="durnum">100</em></div></div>
       </div>
       ${abBtns}
       <div class="aim hidden" data-id="aim">
@@ -143,9 +144,11 @@ export class Hud {
     this.set('heatWarn', hf >= RESOURCES.heatWarn, (on) => q.heatrow.classList.toggle('warn', on));
     this.set('stall', v.stall > 0, (on) => { show(q.stall, on); q.heatrow.classList.toggle('stalled', on); });
     const df = Math.max(0, Math.min(1, v.durabilityFrac));
-    this.set('dur', Math.round(df * 200), (p) => {
-      q.dur.style.width = `${p / 2}%`;
-      q.dur.style.background = p > 100 ? '' : p > 50 ? 'linear-gradient(90deg, #ffb23f, #ffd23f)' : 'linear-gradient(90deg, #ff3a3a, #ff7a3d)';
+    this.set('dur', Math.round(df * 200), (p) => { q.dur.style.width = `${p / 2}%`; });
+    // Farbe: grün → gelb unter RESOURCES.durWarn → rot unter RESOURCES.durCrit (Klassen in style.css)
+    this.set('durLevel', df < RESOURCES.durCrit ? 2 : df < RESOURCES.durWarn ? 1 : 0, (l) => {
+      q.durrow.classList.toggle('warn', l === 1);
+      q.durrow.classList.toggle('crit', l === 2);
     });
     this.set('durnum', Math.ceil(v.durability), (d) => { q.durnum.textContent = fmt(d); });
 

@@ -1,4 +1,5 @@
 import { el, fmt, show } from './dom.js';
+import { FX } from '../data/balance.js';
 
 const TITLES = { stop: 'Testfahrt beendet', wreck: 'Totalschaden!', time: 'Zeit abgelaufen' };
 
@@ -51,7 +52,8 @@ export class Results {
 
     // Gesamtsumme hochzählen
     const start = performance.now();
-    const dur = Math.min(1400, 500 + r.scrap * 4);
+    const RC = FX.resultCount;
+    const dur = Math.min(RC.max, RC.base + r.scrap * RC.perScrap);
     const tick = (now) => {
       const k = Math.min(1, (now - start) / dur);
       const e = 1 - Math.pow(1 - k, 3);

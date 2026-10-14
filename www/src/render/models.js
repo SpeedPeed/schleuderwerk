@@ -4,6 +4,9 @@ import * as THREE from 'three';
 // mit Vertex-Farben zusammengefügt -> wenige Draw Calls, flacher Low-Poly-Look.
 
 export const flatMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+// Eigenes Material für InstancedMeshes: teilen sich normale und instanzierte Meshes ein Material, wählt three.js
+// bei jedem Wechsel das Shader-Programm neu aus (jedes Bild).
+export const flatMatInstanced = flatMat.clone();
 
 const _c = new THREE.Color();
 const _m = new THREE.Matrix4();
@@ -21,6 +24,7 @@ export const SHAPES = {
   cone5: new THREE.ConeGeometry(1, 1, 5).toNonIndexed(),
   cone7: new THREE.ConeGeometry(1, 1, 7).toNonIndexed(),
   ico: new THREE.IcosahedronGeometry(1, 0),       // Polyeder sind schon ohne Index
+  ico1: new THREE.IcosahedronGeometry(1, 1),      // feinerer Polyeder (z. B. rollende Bälle)
   dodeca: new THREE.DodecahedronGeometry(1, 0),
   tetra: new THREE.TetrahedronGeometry(1, 0),
 };

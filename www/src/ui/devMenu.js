@@ -28,7 +28,8 @@ export const TWEAKS = [
 const ORIGINAL = TWEAKS.map(([g, k]) => GROUPS[g][k]);
 
 // Verstecktes Entwickler-Menü (7× schnell auf die Versionsnummer in den Einstellungen tippen).
-// h: { getSave(), getStage(), onCurrency(kind, n), onUnlockAll(), onGiftParts(), onUnlockWorlds(), onEndStage(), onTweak(group, key) }
+// h: { getSave(), getStage(), onCurrency(kind, n), onResearch(), onUnlockAll(), onGiftParts(), onUnlockWorlds(), onEndStage(),
+//      onTweak(group, key) }
 export class DevMenu {
   constructor(root, h) {
     this.h = h;
@@ -43,6 +44,7 @@ export class DevMenu {
       </div>
       <h3>Freischalten</h3>
       <div class="dev-grid">
+        <button class="btn btn-secondary" data-a="research">📘 Forschung erfüllen</button>
         <button class="btn btn-secondary" data-a="unlock">🔓 Alles freischalten</button>
         <button class="btn btn-secondary" data-a="gift">🎁 Alle Teile geschenkt</button>
         <button class="btn btn-secondary" data-a="worlds">🗺️ Alle Strecken</button>
@@ -66,6 +68,7 @@ export class DevMenu {
     on('scrap10k', () => { h.onCurrency('scrap', 10000); this.say('+10.000 Schrott'); });
     on('bp', () => { h.onCurrency('blueprints', 10); this.say('+10 Blaupausen'); });
     on('cores', () => { h.onCurrency('cores', 3); this.say('+3 Kerne'); });
+    on('research', () => { h.onResearch(); this.say('Forschungs-Bedingungen erfüllt – Chassis jetzt mit 💠 kaufbar, Teile mit ⚙'); });
     on('unlock', () => { h.onUnlockAll(); this.say('Alle Chassis, Fähigkeiten und Forschungs-Bedingungen freigeschaltet'); });
     on('gift', () => { h.onGiftParts(); this.say('Alle Teile gehören dir'); });
     on('worlds', () => { h.onUnlockWorlds(); this.say('Alle Strecken freigeschaltet'); });

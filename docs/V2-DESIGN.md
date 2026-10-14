@@ -21,15 +21,16 @@ Du baust in deiner Garage aus Schrott eine verrückte Kiste (Badewanne, Einkaufs
 2. **Flug & Fahrt**: Neigen in der Luft, Landungen (perfekt < 8°, sauber < Landetoleranz, holprig, Bruch), am Boden rollt die Kiste physikalisch weiter; der **Antrieb** (Garage-Teil) schiebt am Boden automatisch und verbraucht Treibstoff.
 3. **Ressourcen** (pro Etappe neu befüllt, Maximum durch Build/Run veränderbar):
    - **Treibstoff** – Antrieb und Boost. Leer → `fuelEmpty`, die Kiste rollt aus.
-   - **Hitze** – Boost (+30/s), Antrieb (+5/s), Biom (Wüste +4/s). Kühlung senkt (15/s). Bei 100: **Überhitzung** → `overheat`, 2 s kein Boost/Antrieb, 5 Schaden, Hitze fällt auf 50.
-   - **Haltbarkeit** – gilt für den **ganzen Run** (Lebenspunkte). Harte Aufpralle (Normaltempo > 9 m/s), Bruchlandungen, Hindernisse, Schluchtsturz. Bei 0 ist der Run vorbei.
+   - **Hitze** – Boost (+30/s), Antrieb (+5/s), Biom (Wüste +4/s). Kühlung senkt (10/s) – Dauer-Boost überhitzt nach ≈ 5 s. Bei 100: **Überhitzung** → `overheat`, 2 s kein Boost/Antrieb, 3 Schaden, Hitze fällt auf 50.
+   - **Haltbarkeit** – gilt für den **ganzen Run** (Lebenspunkte, ≈ 20 Etappen). Harte Aufpralle (Normaltempo > 14 m/s, 1 je m/s), Bruchlandungen (+10), Hindernisse (5), Schluchtsturz. Ein sauberer Abschuss mit Landung kostet ≤ 3–5 %, eine harte Bruchlandung 10–20 %. Bei 0 ist der Run vorbei.
+   - *Zahlen und Begründung: `data/balance.js` bzw. PHASEN.md, Phase 2 „Nachjustiert“.*
 4. **Ziel**: Zielmarke (Bronze). Silber = ×1,25, Gold = ×1,5 der Zielmarke. Danach läuft die Etappe aus, bis die Kiste steht.
 5. **Nicht geschafft?** „Abschleppen“: 15 % der max. Haltbarkeit Strafe, dann Neuversuch derselben Etappe (neuer Abschuss). *Begründung: Ein einzelner verpatzter Abschuss soll nicht den ganzen Run beenden, kostet aber die Run-Lebensressource.*
 
 **Bonus während der Etappe** (Schrauben): Salto 3, Mehrfachsalto +4 je zusätzlichem, perfekte Landung 4, saubere Landung 1, je volle Flugsekunde 1, Near-Miss 2.
 
 ### Streckenbausteine (Biom-abhängig)
-Hügel, Rampen, **Schluchten** (Sturz = Etappenende + 25 Schaden), **Schlamm** (Rollreibung ×4), **Sand** (×1,6), **Loopings** (ab 16 m/s durchfahrbar, sonst zurückrollen), **Schrottberge** (Hindernis, 15 Schaden, überspringen oder rammen), **Schrottpressen** (zeitgesteuert hoch/runter), **Windzonen** (Gegen-/Rückenwind, Böen), **Thermik** (Aufwind), **Blitze** (Gewitter: Einschlag in Zone → `shock`).
+Hügel, Rampen, **Schluchten** (Sturz = Etappenende + 25 Schaden), **Schlamm** (Rollreibung ×4), **Sand** (×1,6), **Loopings** (ab 16 m/s durchfahrbar, sonst zurückrollen), **Schrottberge** (Hindernis, `RESOURCES.obstacleDamage` = 5 Schaden, überfliegen oder rammen), **Schrottpressen** (zeitgesteuert hoch/runter), **Windzonen** (Gegen-/Rückenwind, Böen), **Thermik** (Aufwind), **Blitze** (Gewitter: Einschlag in Zone → `shock`).
 
 ## 4. Run-Struktur
 - 3 Akte = 3 Biome, je **verzweigte Karte**: 6 Etagen mit 2–4 Knoten (≈ 12–15 Knoten), danach **Boss-Strecke**. Man wählt pro Etage einen verbundenen Knoten (≈ 7 Stationen pro Akt, ≈ 21 pro Run, ≈ 25–35 min).

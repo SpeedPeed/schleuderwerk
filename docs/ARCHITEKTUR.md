@@ -43,6 +43,9 @@
 
 ## 2. Ordnerstruktur (`www/src/`)
 
+Plan für alle Phasen; Dateien, die es noch nicht gibt, kommen mit ihrer Phase. **Ist-Stand nach Phase 2** (zusätzlich bzw. abweichend vom Plan):
+`data/worlds.js` (Welten bis Phase 3, dann `biomes.js`), `platform/input.js` (Touch/Tastatur), `ui/garage.js`, `ui/results.js`, `ui/menus.js` (Pause/Einstellungen), `ui/popups.js`, `ui/statLabels.js` (Stat-/Tag-Anzeige), `ui/hud.js`, `ui/devMenu.js`, `ui/dom.js` statt `ui/screens/*.js`; `items/events.js`, `items/eventQueue.js`, `items/modState.js` (Vorstufen der Trigger-Engine); noch nicht vorhanden: `core/bus.js`, `data/tags.js`/`items.js`/`biomes.js`/…, `run/`, `map/`, `shops/`, `garage/research.js`, `items/triggerEngine.js`/`inventory.js`/`conditions.js`, `tools/sim/` (Bot-Simulation bisher nur in `tests/balance.test.mjs`).
+
 ```
 main.js                 Start, Bildschirm-Zustandsmaschine, Hauptschleife
 core/
@@ -108,7 +111,7 @@ save/save.js            Schema v3, Migrationen, Export/Import
 platform/platform.js
 ```
 
-Tests: `tests/*.test.mjs` (`node --test tests/`), Balance-Simulator: `tools/sim/`.
+Tests: `tests/*.test.mjs` (`node --test tests/` lädt `tests/index.js`), Lade-Hooks für three.js-Tests in `tests/support/`, Balance-Simulator: `tools/sim/` (geplant).
 
 ## 3. Koordinaten & Einheiten
 Meter, Sekunden, Radiant. `x` = Strecke (vorwärts +), `y` = Höhe (oben +), `angle` 0 = Nase nach +x, **positiv = gegen den Uhrzeigersinn = Nase hoch**. Kamera schaut von +z. Render-Positionen: `x - origin.x` (Floating Origin, siehe §9).
@@ -249,8 +252,8 @@ eng.statMods();                                // aktuelle zeitweise Modifikator
 - Fester Schritt `PHYSICS.dt = 1/120`; **adaptive Substeps**: `n = ceil(|v|·dt / PHYSICS.maxStepDist)` (max. `PHYSICS.maxSubsteps`).
 - Luft: Schwerkraft, quadratischer Luftwiderstand (Wind-relativ), Auftrieb, Thermik, Boost-Schub mit **weicher Tempo-Grenze** (`thrustFactor = 1 / (1 + (v / speedSoftCap)^softCapPow)`), harte Grenze `PHYSICS.hardSpeedCap`.
 - Neigen: `input.tilt ∈ {-1,0,1}` → Winkelbeschleunigung `airControl × flipSpeed`, max. `maxSpin`, Dämpfung, ohne Eingabe schwaches Ausrichten.
-- Boden: Tangential-Tempo `s`, Hangabtrieb, Rollreibung (Oberfläche: normal/Schlamm/Sand), Antrieb (`driveAccel`, kostet Treibstoff + Hitze), Abheben über Kuppen.
-- Landung: Klassen `perfect/clean/bumpy/crash` wie bisher; **Aufprallschaden** aus Normalgeschwindigkeit über `impactThreshold`, reduziert durch `armor`.
+- Boden: Tangential-Tempo `s`, Hangabtrieb, Rollreibung (Oberfläche: normal/Schlamm/Sand; masseunabhängig), Antrieb (`driveAccel / mass^PHYSICS.driveMassExp`, kostet Treibstoff + Hitze), Abheben über Kuppen. Die Darstellung legt das Modell am Boden auf die Bodenhöhen unter beiden Achsen (`main.js → groundPose`), die Physik rechnet mit einem Punkt.
+- Landung: Klassen `perfect/clean/bumpy/crash` wie bisher; **Aufprallschaden** aus Normalgeschwindigkeit über `impactThreshold`, reduziert durch `armor`. Schilde (`shield`) fangen erst Schaden ab `RESOURCES.shieldMinDamage` ab.
 - Hitze/Treibstoff/Haltbarkeit im Fahrzeugzustand; Ereignisse werden in ein Array geschrieben (keine Callbacks im Physikschritt).
 - Schlucht: unter `track.gapFloorY` → Ereignis `fall` → Etappe endet.
 - Looping: geskriptetes Kreis-Segment (bei genug Tempo durchfahren, sonst zurückrollen).
@@ -271,7 +274,7 @@ Aktionen geben neue Teilzustände zurück bzw. mutieren kontrolliert; UI ruft nu
 - `render/origin.js`: Render-Ursprung springt in `ORIGIN.shiftEvery`-Schritten mit; alle Meshes werden relativ positioniert, Gelände-Chunks haben lokale Koordinaten.
 
 ## 10. Speichern (`save/save.js`)
-Schema **v3** (`SAVE_VERSION = 3`): `{ version, meta: {scrap, blueprints, cores, totalPlaytime, milestones:{id: Spielzeit s}}, garage: {chassis, ownedChassis:[…], parts:{slot:partId}, ownedParts:[…], partLevels:{partId: level}, abilities:[ids]}, research: {done:[…]}, ascension: {unlocked, best}, codex: {items:{…}, sets:{…}}, cosmetics: {owned, paint}, settings, stats, worlds: {current, unlocked, records} (Übergang bis Phase 3), run: <laufender Run oder null>, tutorial }`. Migration v2 → v3: altes Geld → Startschrott (`money/40`, max. 400), Einstellungen, Rekorde und freigeschaltete Welten bleiben, Rest neu. Export `SW3:` + Base64; ältere `SW2:`-Texte laufen beim Import durch die Migration. Nach jeder Migration prüft `garage/garage.js → sanitizeGarage` die IDs gegen die aktuellen Inhaltsdaten.
+Schema **v3** (`SAVE_VERSION = 3`). `migrate()` ersetzt fehlende **und falsch typisierte** Felder durch Standardwerte; ein nicht ladbarer Stand wird als Rohtext unter `schleuderwerk.save.bak` gesichert, bei einem Stand aus einer neueren Version wird nicht gespeichert, bis die Person „Neu anfangen“ bestätigt. Schema: `{ version, meta: {scrap, blueprints, cores, totalPlaytime, milestones:{id: Spielzeit s}}, garage: {chassis, ownedChassis:[…], parts:{slot:partId}, ownedParts:[…], partLevels:{partId: level}, abilities:[ids]}, research: {done:[…]}, ascension: {unlocked, best}, codex: {items:{…}, sets:{…}}, cosmetics: {owned, paint}, settings, stats, worlds: {current, unlocked, records} (Übergang bis Phase 3), run: <laufender Run oder null>, tutorial }`. Migration v2 → v3: altes Geld → Startschrott (`money/40`, max. 400), Einstellungen, Rekorde und freigeschaltete Welten bleiben, Rest neu. Export `SW3:` + Base64; ältere `SW2:`-Texte laufen beim Import durch die Migration. Nach jeder Migration prüft `garage/garage.js → sanitizeGarage` die IDs gegen die aktuellen Inhaltsdaten.
 
 ## 11. Tests & Qualitätssicherung
 - `node --test tests/` – Physik (kein Durchtunneln bei 150 m/s, Soft-Cap), Trigger-Engine (Kettentiefe, Limits), Karte (Erreichbarkeit, Regeln), Shops, Speichern/Migration.
@@ -287,8 +290,8 @@ Jede Regel wird an **genau einer** Stelle ausgewertet. Parameter stehen in `bala
 | `heatIsResource` | Chassis Waschmaschine | `physics/vehicle.js → checkOverheat()` (Deckel, overheat ohne Stillstand/Schaden) + `updateResources()` (wieder scharf unter `RESOURCES.heatResourceRearm` × heatMax) | Phase 2 ✔ |
 | `lowGrip` | Chassis Raketenschlitten | `physics/vehicle.js → stepGround()`: Antrieb × `RULES.lowGrip.driveMul`, Rollreibung × `frictionMul`, Abheben ab takeoffMinSpeed × `takeoffMul`; Notbremse dauert `RULES.hardStop.lowGripTime` (`startBrake()`) | Phase 2 ✔ (Faktoren 0,5 laut Auftrag; ruleSpec nennt 0,4/0,6 und halbe Oberflächen-Faktoren → bei Bedarf nur `RULES.lowGrip` anpassen; Oberflächen kommen mit Phase 3) |
 | `collectScrapMass` | Chassis Mülltonne | `stage/stage.js → onHit()` (Schrottberg: Schaden × ⅓, Resttempo halb zwischen hitSpeedKeep und 1, danach pickup {kind:'scrap'}) und Konstruktor (Schrott-Pickups über `physics/objects.js`, Option `scrapPickups`); Anzeige der Ladung in `render/vehicleModel.js → setScrap()` | Phase 2 ✔ |
-| `boostHold` | Fähigkeit Boost | `physics/vehicle.js → updateResources()` (Schub, boostFuel/boostHeat/boostSelfDamage pro s, Ereignisse boost/boostSecond); Eingabe in `stage/abilities.js` | Phase 2 ✔ |
-| `parachute` | Fähigkeit Fallschirm | `physics/vehicle.js → stepAir()` (Sinktempo-Führung, Luftwiderstand × `RULES.parachute.dragMul`), `toggleParachute()` (nur in der Luft, erneut tippen = kappen) | Phase 2 ✔ |
+| `boostHold` | Fähigkeit Boost | `physics/vehicle.js → updateResources()` (Schub, boostFuel/boostHeat/boostSelfDamage pro s, Ereignisse boost/boostSecond – auch beim Wechsel Gratis ↔ bezahlt); Eingabe in `stage/abilities.js`, abilityUse {boost} beim echten Start (`stage/stage.js` beim Ereignis boost {free:false}) | Phase 2 ✔ |
+| `parachute` | Fähigkeit Fallschirm | `physics/vehicle.js → stepAir()` (Sinktempo-Führung, Luftwiderstand × `RULES.parachute.dragMul`), `toggleParachute()` (nur in der Luft, erneut tippen = kappen); Buffs der Fähigkeit enden mit dem Schirm (`stage/abilities.js → parachuteClosed()`) | Phase 2 ✔ |
 | `hardStop` | Fähigkeit Notbremse | `physics/vehicle.js → stepGround()` / `hardStop()` (Bremsung, Antriebspause, in der Luft „scharf“ bis zur Landung) | Phase 2 ✔ |
 | `heatToThrust` | Fähigkeit Schleudergang | `stage/stage.js → heatToThrust()` (Hitze × Faktor als Sofort-Schub, Hitze 0, ab `RULES.heatToThrust.explodeAt` explosion-Ereignis) | Phase 2 ✔ |
 | `healOnCleanLanding` | Chassis Sofa | `items/triggerEngine.js` (landing-Ereignis der Chassis-Quelle) | offen – Phase 4 |

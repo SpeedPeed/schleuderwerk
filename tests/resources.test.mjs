@@ -32,7 +32,8 @@ test('Antrieb schiebt am Boden automatisch und verbraucht Treibstoff (und Hitze)
   assert.ok(v.driving, 'Antrieb läuft');
   near(v.fuel, BASE_STATS.fuelMax - BASE_STATS.driveFuel * 2, 0.05, 'Treibstoff');
   assert.ok(v.s > 1, `fährt los (${v.s.toFixed(2)} m/s)`);
-  assert.equal(v.heat, 0, 'Kühlung (15/s) schafft die Antriebshitze (5/s)');
+  assert.ok(BASE_STATS.coolRate > BASE_STATS.driveHeat);
+  assert.equal(v.heat, 0, 'Kühlung schafft die Antriebshitze');
   assert.ok(!ev.some((e) => e.type === 'fuelEmpty'));
   // Hitze steigt, wenn die Kühlung nicht reicht
   const hot = vehicle({ coolRate: 0 });
@@ -298,4 +299,125 @@ test('Fallschirm begrenzt das Sinktempo, Notbremse stoppt am Boden', () => {
   run(g.stage, input, RULES.hardStop.time + 0.05);
   assert.ok(Math.abs(w.s) < 0.5, `gebremst auf ${w.s}`);
   assert.ok(!w.driving, 'Antrieb pausiert');
+});
+
+test('Schild fängt erst Schaden ab RESOURCES.shieldMinDamage ab – Kleinstschaden geht durch, Schild bleibt', () => {
+  const v = vehicle({ armor: 0 });
+  v.reset(0, 10, 0);
+  v.shields = 1;
+  const ev = [];
+  v.damage(R.shieldMinDamage * 0.5, 'landing', ev);
+  assert.equal(v.shields, 1);
+  near(v.durability, BASE_STATS.durabilityMax - R.shieldMinDamage * 0.5, 1e-9);
+  v.damage(R.shieldMinDamage * 3, 'obstacle', ev);
+  assert.equal(v.shields, 0);
+  assert.ok(ev.some((e) => e.type === 'bounce'));
+});
+
+test('Gratis-Boost → bezahlter Boost (Knopf gehalten): boostFree wechselt, boost {free:false} und abilityUse', () => {
+  const t = makeStage({ abilities: ['boost', 'sprung'] });
+  const input = mockInput();
+  airborne(t.stage);
+  const v = t.stage.vehicle;
+  v.startFreeBoost(0.3, 'test');
+  input.st.held[0] = true;
+  run(t.stage, input, 0.2);
+  assert.equal(v.boosting, true);
+  assert.equal(v.boostFree, true);
+  assert.equal(t.events.filter((e) => e.name === 'abilityUse').length, 0, 'Gratis-Boost ist kein Einsatz');
+  run(t.stage, input, 0.3);
+  assert.equal(v.boosting, true);
+  assert.equal(v.boostFree, false, 'jetzt bezahlt');
+  const b = t.events.filter((e) => e.name === 'boost');
+  assert.deepEqual(b.map((e) => e.data.free), [true, false]);
+  assert.equal(t.events.filter((e) => e.name === 'abilityUse' && e.data.ability === 'boost').length, 1);
+  assert.equal(t.stage.abilities.view(0, v).active, true, 'HUD zeigt den Knopf aktiv');
+});
+
+test('abilityUse {boost} erst beim echten Start (Knopf bei leerem Tank gedrückt, später nachgetankt)', () => {
+  const t = makeStage({ abilities: ['boost', 'sprung'] });
+  const input = mockInput();
+  airborne(t.stage);
+  const v = t.stage.vehicle;
+  v.fuel = 0;
+  input.st.held[0] = true;
+  run(t.stage, input, 0.2);
+  assert.equal(t.events.filter((e) => e.name === 'abilityUse').length, 0);
+  v.addFuel(25);
+  run(t.stage, input, 0.2);
+  assert.equal(v.boosting, true);
+  assert.equal(t.events.filter((e) => e.name === 'boost').length, 1);
+  assert.equal(t.events.filter((e) => e.name === 'abilityUse' && e.data.ability === 'boost').length, 1);
+});
+
+test('Zündturbo (nachbrenner): gesperrt, wenn seine Hitzekosten überhitzen würden; Gratis-Boost meldet die Fähigkeit als Quelle', () => {
+  const t = makeStage({ abilities: ['nachbrenner', 'boost'] });
+  const input = mockInput();
+  airborne(t.stage);
+  const v = t.stage.vehicle;
+  const bar = t.stage.abilities;
+  const def = bar.slots[0].def;
+  v.heat = v.stats.heatMax - def.heat * v.stats.heatGain + 1;
+  assert.equal(bar.view(0, v).off, true, 'Knopf grau');
+  input.press(0);
+  run(t.stage, input, 1 / 60);
+  assert.equal(bar.slots[0].uses, 0, 'kein Einsatz');
+  assert.ok(!t.events.some((e) => e.name === 'overheat'));
+  v.heat = 0;
+  input.press(0);
+  run(t.stage, input, 0.1);
+  assert.equal(bar.slots[0].uses, 1);
+  const b = t.events.find((e) => e.name === 'boost');
+  assert.equal(b.data.free, true);
+  assert.equal(b.data.source, 'nachbrenner');
+});
+
+test('Gratis-Boost läuft im Überhitzungs-Stillstand nicht ab', () => {
+  const v = vehicle();
+  v.reset(0, 1e4, 0);
+  v.launch(20, 0);
+  v.startFreeBoost(1, 'test');
+  v.stall = 0.5;
+  steps(v, 0.4);
+  near(v.freeBoost, 1, 1e-9);
+  assert.equal(v.boosting, false);
+  steps(v, 0.2);
+  assert.equal(v.boosting, true);
+});
+
+test('Gyro-Kick (nur Drall) am Boden: nicht nutzbar, keine Kosten, keine Abklingzeit', () => {
+  const t = makeStage({ abilities: ['gyrokick', 'boost'] });
+  const input = mockInput();
+  t.stage.launchNow(0.5, 30);
+  const v = t.stage.vehicle;
+  v.onGround = true; v.y = t.stage.track.heightAt(v.x) + P.rideHeight; v.s = 5;
+  const heat0 = v.heat;
+  input.press(0);
+  run(t.stage, input, 1 / 60);
+  const s = t.stage.abilities.slots[0];
+  assert.equal(s.uses, 0);
+  assert.equal(s.cd, 0);
+  assert.ok(v.heat <= heat0 + 1e-9);
+  // in der Luft wirkt er
+  airborne(t.stage);
+  v.onGround = false;
+  v.w = 0;
+  input.press(0);
+  run(t.stage, input, 1 / 60);
+  assert.equal(s.uses, 1);
+  assert.ok(v.w > 3, 'Drall');
+});
+
+test('Fallschirm gekappt → sein Auftriebs-Buff endet sofort', () => {
+  const t = makeStage({ abilities: ['fallschirm', 'boost'] });
+  const input = mockInput();
+  airborne(t.stage, 600, 5, -10);
+  const lift0 = t.stage.stats.lift;
+  input.press(0);
+  run(t.stage, input, 0.3);
+  assert.ok(t.stage.stats.lift > lift0, 'Buff aktiv');
+  input.press(0);   // kappen
+  run(t.stage, input, 1 / 30);
+  assert.equal(t.stage.vehicle.parachute, 0);
+  near(t.stage.stats.lift, lift0, 1e-12, 'Buff entfernt');
 });

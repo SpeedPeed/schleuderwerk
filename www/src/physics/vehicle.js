@@ -64,7 +64,7 @@ export class Vehicle {
       // Fähigkeiten & Effekte
       shields: 0,
       parachute: 0,          // Restdauer des Fallschirms (s)
-      parachuteSink: 4,
+      parachuteSink: 0,      // wird beim Öffnen aus der Fähigkeit gesetzt
       brake: 0,              // laufende Notbremsung (s)
       brakeRate: 0,
       brakeArmed: 0,         // Notbremse in der Luft getippt: greift bei Bodenkontakt innerhalb dieser Zeit
@@ -138,7 +138,8 @@ export class Vehicle {
     const st = this.stats;
     const rules = this.rules;
     if (this.stall > 0) this.stall = Math.max(0, this.stall - dt);
-    if (this.freeBoost > 0) this.freeBoost = Math.max(0, this.freeBoost - dt);
+    // Gratis-Boost läuft im Überhitzungs-Stillstand nicht ab (sonst verpufft er ungenutzt)
+    else if (this.freeBoost > 0) this.freeBoost = Math.max(0, this.freeBoost - dt);
     if (this.magnetFx > 0) this.magnetFx = Math.max(0, this.magnetFx - dt);
     if (this.drivePause > 0) this.drivePause = Math.max(0, this.drivePause - dt);
     if (this.brakeArmed > 0) this.brakeArmed = Math.max(0, this.brakeArmed - dt);
@@ -149,10 +150,10 @@ export class Vehicle {
     const free = this.freeBoost > 0 && this.stall <= 0;
     const paid = !free && !!ctl.boost && this.canBoost;
     this.boosting = free || paid;
-    if (this.boosting && !wasBoosting) {
+    if (this.boosting && (!wasBoosting || this.boostFree !== free)) {
+      // Start eines Boosts – auch der nahtlose Wechsel Gratis ↔ bezahlt zählt als neuer Boost
+      if (!wasBoosting) { this.boostTime = 0; this.boostSeconds = 0; }
       this.boostFree = free;
-      this.boostTime = 0;
-      this.boostSeconds = 0;
       ev.push({ type: 'boost', free, source: free ? this.freeBoostSource || 'fx' : 'boost' });
     }
     let fuelUse = 0;
@@ -361,7 +362,7 @@ export class Vehicle {
     const g0 = Math.atan(track.slopeAt(this.x));
     let s = this.s;
     if (this.boosting) s += (st.boostThrust / m) * thrustFactor(Math.max(0, s), this.softCap) * dt;
-    if (this.driving) s += (st.driveAccel * (lowGrip ? LG.driveMul : 1) / m) * thrustFactor(Math.max(0, s), this.softCap) * dt;
+    if (this.driving) s += this.driveAccelNet(lowGrip) * thrustFactor(Math.max(0, s), this.softCap) * dt;
     s -= this.g * Math.sin(g0) * dt;
     const f = st.rollFriction * (lowGrip ? LG.frictionMul : 1) * Math.cos(g0) * dt;
     s = Math.abs(s) <= f ? 0 : s - Math.sign(s) * f;
@@ -401,6 +402,13 @@ export class Vehicle {
     this.angle = Math.atan(track.slopeAt(nx));
   }
 
+  // Beschleunigung des Antriebs am Boden (m/s², vor der weichen Tempo-Grenze): driveAccel / mass^driveMassExp.
+  // Die Rollreibung bremst unabhängig von der Masse – mit driveMassExp < 1 kommen auch schwere Kisten in Fahrt.
+  driveAccelNet(lowGrip = !!this.rules.lowGrip) {
+    const st = this.stats;
+    return (st.driveAccel * (lowGrip ? RULES.lowGrip.driveMul : 1)) / Math.pow(st.mass, P.driveMassExp);
+  }
+
   // Harte Tempo-Grenze: Betrag klemmen, Richtung bleibt
   limitSpeed() {
     const cap = P.hardSpeedCap;
@@ -419,16 +427,17 @@ export class Vehicle {
 
   // ---------- Schaden & Heilung ----------
 
-  // Schaden nehmen. Schilde machen daraus einen Abprall (bounce), Panzerung (armor) mindert ihn.
+  // Schaden nehmen. Panzerung (armor) mindert ihn; ein Schild macht aus Schaden ab RESOURCES.shieldMinDamage
+  // (nach Panzerung) einen Abprall (bounce) – Kleinstschaden geht normal durch und verbraucht keinen Schild.
   // opts.pierce: ignoriert Schild und Panzerung (Überhitzung, Flüche). Ergebnis: tatsächlicher Schaden.
   damage(amount, source, ev = this.ev, opts = {}) {
     if (!(amount > 0)) return 0;
-    if (!opts.pierce && this.shields > 0) {
+    const a = amount * (opts.pierce ? 1 : 1 - this.stats.armor);
+    if (!opts.pierce && this.shields > 0 && a >= R.shieldMinDamage) {
       this.shields--;
       ev.push({ type: 'bounce', source });
       return 0;
     }
-    const a = amount * (opts.pierce ? 1 : 1 - this.stats.armor);
     const before = this.durability;
     this.durability = Math.max(0, this.durability - a);
     const real = before - this.durability;
@@ -474,12 +483,12 @@ export class Vehicle {
     if (this.fuel > 0) this.fuelWasEmpty = false;
   }
 
-  // Gratis-Boost (ohne Treibstoff, mit Hitze); das boost-Ereignis folgt im nächsten Physik-Schritt
+  // Gratis-Boost (ohne Treibstoff, mit Hitze); das boost-Ereignis {free:true} folgt im nächsten Physik-Schritt
+  // (auch wenn gerade ein bezahlter Boost läuft – updateResources() meldet den Wechsel).
   startFreeBoost(dur, source = 'fx') {
     if (!(dur > 0)) return;
     if (this.freeBoost <= 0) this.freeBoostSource = source;
     this.freeBoost = Math.max(this.freeBoost, dur);
-    if (this.boosting && !this.boostFree) this.boosting = false; // neu starten → boost {free:true}
   }
 
   // Sofort-Schub in Blickrichtung (unterliegt der weichen Tempo-Grenze)

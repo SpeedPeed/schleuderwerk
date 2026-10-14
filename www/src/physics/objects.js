@@ -99,7 +99,7 @@ export class Objects {
     while (this.scrapLeft > 0 && this.scrapX < xMax) {
       const x = this.scrapX;
       const sr = this.scrapRng;
-      this.scraps.push({ x, y: this.ground(x) + 0.6 + sr.next() * (C.maxAlt - 0.6), alive: true, attract: false });
+      this.scraps.push({ x, y: this.ground(x) + C.minAlt + sr.next() * (C.maxAlt - C.minAlt), alive: true, attract: false });
       this.scrapLeft--;
       this.scrapX += sr.range(C.pickupEvery[0], C.pickupEvery[1]);
     }

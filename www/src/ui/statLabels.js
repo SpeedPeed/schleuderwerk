@@ -63,3 +63,10 @@ export function statTrend(stat, from, to) {
   const d = (STAT_LABELS[stat] ? STAT_LABELS[stat].dir : 1) * Math.sign(to - from);
   return d;
 }
+
+// Anzeige-Namen der Tags (bis data/tags.js mit Set-Boni in Phase 4 kommt; Namen/Symbole wie in den Inhaltsdaten)
+export const TAG_LABELS = {
+  feuer: '🔥 Feuer', elektro: '⚡ Elektro', magnet: '🧲 Magnet', hydraulik: '💧 Hydraulik', rakete: '🚀 Rakete',
+  gummi: '🟣 Gummi', eis: '❄️ Eis', gyro: '🌀 Gyro', schrott: '🗑️ Schrott', gluck: '🍀 Glück',
+};
+export const tagLabel = (id) => TAG_LABELS[id] || id;

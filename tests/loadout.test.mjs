@@ -11,7 +11,7 @@ import { STATS } from '../www/src/items/statMods.js';
 // Plausible Grenzen je Stat (großzügig; prüft, dass keine Kombination aus dem Ruder läuft)
 const BOUNDS = {
   launchSpeed: [5, 60], mass: [0.3, 5], drag: [0.0003, 0.02], lift: [0, 0.012], airControl: [3, 60], maxSpin: [2, 20],
-  boostThrust: [0, 60], boostFuel: [0, 60], boostHeat: [-60, 120], driveAccel: [0, 15], driveFuel: [0, 10], driveHeat: [0, 30],
+  boostThrust: [0, 60], boostFuel: [0, 60], boostHeat: [-60, 120], driveAccel: [0, 15], driveFuel: [0, 30], driveHeat: [0, 30],
   rollFriction: [0.05, 10], fuelMax: [10, 400], heatMax: [20, 300], heatGain: [0.2, 3], coolRate: [0, 100],
   durabilityMax: [10, 400], armor: [0, 0.6], impactThreshold: [2, 30], landTolDeg: [5, 69], perfectLandDeg: [1, 20],
   magnet: [0, 20], speedSoftCap: [20, 90], itemSlots: [1, 10], abilitySlots: [1, 3], abilityCooldown: [0.35, 3], bounce: [0, 0.6],
@@ -116,7 +116,7 @@ test('Garage-Aktionen: kaufen, ausrüsten, verbessern (Preis × 1,15 je Stufe)',
   assert.equal(up.ok, true);
   assert.equal(s.meta.scrap, 1000 - GARAGE.starterUpgradeBase);
   assert.equal(G.partLevel(s, 'tank_kanister'), 1);
-  assert.equal(buildLoadout(s).stats.fuelMax > 100, true);
+  assert.equal(buildLoadout(s).stats.fuelMax > BASE_STATS.fuelMax, true);
 
   assert.equal(G.equipPart(s, 'tank_gurkenfass').ok, false, 'nicht gekauft');
   const b = G.buyPart(s, 'tank_gurkenfass');
@@ -125,7 +125,7 @@ test('Garage-Aktionen: kaufen, ausrüsten, verbessern (Preis × 1,15 je Stufe)',
   assert.equal(G.buyPart(s, 'tank_gurkenfass').reason, 'owned');
   assert.equal(G.equipPart(s, 'tank_gurkenfass').ok, true);
   assert.equal(s.garage.parts.tank, 'tank_gurkenfass');
-  assert.equal(buildLoadout(s).stats.fuelMax, 140);
+  assert.equal(buildLoadout(s).stats.fuelMax, BASE_STATS.fuelMax + 40);
 
   // Forschung fehlt
   assert.equal(G.buyPart(s, 'drive_elektromotor').reason, 'research');
@@ -177,4 +177,22 @@ test('sanitizeGarage repariert unbekannte IDs', () => {
   assert.equal(s.garage.parts.tank, GARAGE.starterParts.tank);
   assert.deepEqual(s.garage.partLevels, { tank_kanister: GARAGE.maxPartLevel });
   assert.deepEqual(s.garage.abilities, [null, 'sprung', null]);
+});
+
+test('Fähigkeiten: volle Slots (Soft-Cap) + Spezialfähigkeit haben alle einen HUD-Knopf und eine Taste', async () => {
+  const { SOFTCAPS, CONTROLS } = await import('../www/src/data/balance.js');
+  const { MAX_ABILITY_BUTTONS } = await import('../www/src/ui/hud.js');
+  const s = defaultSave();
+  G.unlockAll(s);
+  s.garage.chassis = 'waschmaschine';
+  const keep = BASE_STATS.abilitySlots;
+  BASE_STATS.abilitySlots = SOFTCAPS.abilitySlots.max;
+  try {
+    const slots = buildLoadout(s).slots.abilities;
+    for (let i = 0; i < slots; i++) G.setAbility(s, i, ['boost', 'sprung', 'gyrokick'][i], slots);
+    const lo = buildLoadout(s);
+    assert.equal(lo.abilities.length, SOFTCAPS.abilitySlots.max + 1, 'Slots + Schleudergang');
+    assert.ok(MAX_ABILITY_BUTTONS >= lo.abilities.length, 'HUD-Knöpfe');
+    assert.ok(CONTROLS.abilityKeys.length >= lo.abilities.length, 'Tasten');
+  } finally { BASE_STATS.abilitySlots = keep; }
 });

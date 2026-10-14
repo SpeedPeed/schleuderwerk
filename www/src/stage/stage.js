@@ -1,4 +1,4 @@
-import { PHYSICS as P, LAUNCH, KOMBO, FX, STAGE, CONTROLS, SPAWN, RESOURCES as R, RULES } from '../data/balance.js';
+import { PHYSICS as P, LAUNCH, KOMBO, FX, STAGE, CONTROLS, SPAWN, RESOURCES as R, RULES, ITEMS } from '../data/balance.js';
 import { Vehicle } from '../physics/vehicle.js';
 import { Objects } from '../physics/objects.js';
 import { PLATEAU_H } from '../physics/track.js';
@@ -16,6 +16,12 @@ import { computeStats, baseStats } from '../items/statMods.js';
 export const REST = { x: LAUNCH.restX, y: PLATEAU_H + LAUNCH.restHeight, angle: LAUNCH.restAngleDeg * DEG };
 
 const NOOP = () => {};
+const warnedEvents = new Set();
+function warnEvent(name) {
+  if (warnedEvents.has(name)) return;
+  warnedEvents.add(name);
+  console.warn(`Unbekanntes Ereignis „${name}“ (Effekt emit) – verworfen`);
+}
 const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, end: NOOP, event: NOOP };
 
 // Eine Etappe: Abschuss → Flug/Fahrt → Ende. Reine Logik ohne DOM und three.js.
@@ -99,6 +105,7 @@ export class Stage {
     this.wreckTimer = -1;
     this.perfectLaunch = false;
     this.inThermal = false;
+    this.chuteOpen = false;
     this.stunts = { flips: 0, perfectLandings: 0, cleanLandings: 0, crashes: 0, nearMisses: 0, maxAirTime: 0, rings: 0 };
     this.emit('stageStart', {});
   }
@@ -115,12 +122,23 @@ export class Stage {
     if (this.vehicle) this.vehicle.stats = this.stats;
   }
 
-  // dauerhafte Änderung bis Etappenende (Effekte maxHp/maxFuel)
+  // dauerhafte Änderung bis Etappenende (Effekte maxHp/maxFuel). Der aktuelle Wert steigt um genau so viel
+  // wie das (fertig berechnete) Maximum und bleibt immer ≤ Maximum.
   addRunMod(stat, n) {
+    if (!n) return;
+    const before = this.stats[stat];
     this.runMods.stats[stat].add += n;
     this.recomputeStats();
-    if (stat === 'durabilityMax' && n > 0) this.vehicle.durability += n;
-    if (stat === 'fuelMax' && n > 0) this.vehicle.addFuel(n);
+    const gain = this.stats[stat] - before;
+    const v = this.vehicle;
+    if (stat === 'durabilityMax') {
+      if (gain > 0) v.durability += gain;
+      v.durability = Math.min(v.durability, this.stats.durabilityMax);
+    } else if (stat === 'fuelMax') {
+      const over = v.fuel > before + 1e-9;   // schon über dem Maximum betankt (fuel {over:true})
+      if (gain > 0) v.addFuel(gain, over);
+      v.fuel = Math.min(v.fuel, this.stats.fuelMax * (over ? ITEMS.overFuelMax : 1));
+    }
   }
 
   // ---------- Ereignisse ----------
@@ -152,7 +170,11 @@ export class Stage {
       popup: (t, k) => st.hooks.popup(t, k),
       fx: (name, data) => st.hooks.fx(name, st.vehicle.x, st.vehicle.y, data),
       luck: () => st.stats.luck,
-      emit: (name, data) => st.emit(name, data, (ctx.depth || 0) + 1),
+      emit: (name, data) => {
+        // Tippfehler in Inhaltsdaten sollen kein totes Ereignis erzeugen: unbekannte Namen einmal melden, verwerfen
+        if (!isEvent(name)) { warnEvent(name); return; }
+        st.emit(name, data, (ctx.depth || 0) + 1);
+      },
       freeBoost: (dur, source) => st.vehicle.startFreeBoost(dur, source),
       addBuff: (stat, mod, dur) => st.mods.addBuff(stat, mod, dur, ctx.source),
       addStack: (key, stat, mod, max) => st.mods.addStack(key, stat, mod, max),
@@ -370,6 +392,10 @@ export class Stage {
     const alt = this.altitude;
     if (alt > this.maxAlt) this.maxAlt = alt;
     if (!v.onGround && v.airTime > this.stunts.maxAirTime) this.stunts.maxAirTime = v.airTime;
+    // Fallschirm zu (gekappt, gelandet, abgelaufen) → sein Auftriebs-Buff endet mit ihm
+    const chute = v.parachute > 0;
+    if (this.chuteOpen && !chute) this.abilities.parachuteClosed(this);
+    this.chuteOpen = chute;
     const inThermal = !v.onGround && this.objects.thermalAt(v.x, alt) > 0;
     if (inThermal && !this.inThermal) { this.hooks.popup('AUFWIND ↑', 'info'); this.hooks.sfx('whoosh'); }
     this.inThermal = inThermal;
@@ -480,7 +506,9 @@ export class Stage {
         break;
       case 'boost':
         if (e.free) h.popup('GRATIS-BOOST!', 'good');
-        break;
+        this.emit('boost', e);
+        if (!e.free) this.abilities.boostStarted(this);   // abilityUse {boost} erst beim echten Start
+        return;
     }
     if (isEvent(e.type)) this.emit(e.type, e);
   }

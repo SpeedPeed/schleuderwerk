@@ -50,8 +50,8 @@ export const CHASSIS = [
     id: 'sofa',
     name: 'Sperrmüll-Sofa',
     icon: '🛋️',
-    desc: 'Jede saubere oder perfekte Landung heilt 3. Weich gepolstert (Aufpralltoleranz +2), aber träge in der Luft.',
-    flavor: 'Vom Sperrmüll gerettet. Riecht nach Opas Pfeife.',
+    desc: 'Saubere/perfekte Landung heilt 3 Haltbarkeit (max. 15 je Etappe). Aufprallschwelle +2 m/s, aber träge in der Luft.',
+    flavor: 'Drei Umzüge überlebt. Riecht nach Opas Pfeife.',
     model: 'sofa',
     unlock: { research: 'r_chassis_sofa', cores: 3 },
     stats: {
@@ -66,7 +66,7 @@ export const CHASSIS = [
     rules: { healOnCleanLanding: 3 },
     ruleSpec: {
       healOnCleanLanding:
-        'Nach jeder Landung mit quality "clean" oder "perfect" heilt die Engine rules.healOnCleanLanding (3) Haltbarkeit über ctx.heal – unskaliert, nur bis durabilityMax, höchstens 1× pro 0,5 s. Die Heilung löst wie jede Heilung heal {amount} aus (Ketten möglich) und läuft vor den Item-Triggern des landing-Ereignisses. Bumpy und crash heilen nicht. Auswertung: items/triggerEngine.js beim landing-Ereignis der Chassis-Quelle.',
+        'Nach jeder Landung mit quality "clean" oder "perfect" heilt die Engine rules.healOnCleanLanding (3) Haltbarkeit über ctx.heal – unskaliert, nur bis durabilityMax, höchstens 1× pro 0,5 s und höchstens 15 Haltbarkeit je Etappe (danach heilen Landungen nicht mehr, der Zähler startet bei stageStart neu). Die Heilung löst wie jede Heilung heal {amount} aus (Ketten möglich) und läuft vor den Item-Triggern des landing-Ereignisses. Bumpy und crash heilen nicht. Auswertung: items/triggerEngine.js beim landing-Ereignis der Chassis-Quelle.',
     },
     triggers: [],
     starterTag: 'gyro',
@@ -77,7 +77,7 @@ export const CHASSIS = [
     id: 'badewanne',
     name: 'Badewanne',
     icon: '🛁',
-    desc: 'Ein Item-Platz weniger, dafür wirken alle Set-Boni doppelt. Schwer, aber standfest bei der Landung.',
+    desc: 'Ein Item-Slot weniger, dafür wirken alle Set-Boni doppelt. Schwer, aber standfest bei der Landung.',
     flavor: 'Der Stöpsel hängt noch an der Kette. Sicher ist sicher.',
     model: 'badewanne',
     unlock: { research: 'r_chassis_badewanne', cores: 3 },
@@ -103,7 +103,7 @@ export const CHASSIS = [
     name: 'Aufsitz-Rasenmäher',
     icon: '🌿',
     desc: 'Startet träge (Antrieb −25 %), aber jede Bodenberührung bringt +3 % Antrieb – bis +60 % je Etappe.',
-    flavor: 'Springt beim dritten Ziehen an. Meistens.',
+    flavor: 'Springt beim dritten Schlüsseldreh an. Meistens.',
     model: 'rasenmaeher',
     unlock: { research: 'r_chassis_rasenmaeher', cores: 3 },
     stats: {
@@ -133,7 +133,7 @@ export const CHASSIS = [
     id: 'muelltonne',
     name: 'Mülltonne',
     icon: '🗑️',
-    desc: 'Sammelt Schrott beim Fahren: Jedes Stück gibt Masse und Boost-Schub, alle 3 Stück heilt sie 3. Rammt gern.',
+    desc: 'Sammelt Schrott beim Fahren: Jedes Stück gibt Masse und Boost-Schub, je 3 Stück heilen 3 Haltbarkeit. Rammt gern.',
     flavor: 'Dienstags wird sie abgeholt. Heute nicht.',
     model: 'muelltonne',
     unlock: { research: 'r_chassis_muelltonne', cores: 4 },

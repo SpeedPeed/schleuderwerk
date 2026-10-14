@@ -6,6 +6,11 @@
 export const SAVE_VERSION = 3;
 export const GAME_VERSION = '0.4.0';
 
+// ---------- Speichern ----------
+export const SAVE = {
+  autosaveEvery: 15,       // Sekunden Spielzeit zwischen zwei automatischen Speicherungen
+};
+
 // ---------- Physik ----------
 // Fahrzeugwerte, die Chassis/Teile/Items verändern können, stehen als Grundwerte in BASE_STATS (unten).
 export const PHYSICS = {
@@ -40,6 +45,8 @@ export const PHYSICS = {
   // Boden
   takeoffClearance: 0.03,  // so weit muss das Auto über dem Boden sein, um abzuheben (pro 1/120 s)
   takeoffMinSpeed: 4,
+  driveMassExp: 0.5,       // Antrieb am Boden = driveAccel / mass^driveMassExp (Rollreibung ist masseunabhängig) →
+                           // schwere Kisten fahren langsamer an, bleiben aber nicht stehen
   takeoffRampCheck: 4,     // Abheben zählt als Rampensprung, wenn die letzten 4 m Rampe waren
   jumpLift: 0.05,          // Sprung vom Boden: so weit wird die Kiste sofort angehoben (m)
   wheelRadius: 0.5,        // für die Raddrehung
@@ -64,22 +71,22 @@ export const BASE_STATS = {
   autoLevel: 4.5,          // ohne Eingabe: schwaches Ausrichten in Flugrichtung (rad/s² bei 90° Abweichung)
   // Boost (Fähigkeit „boost“)
   boostThrust: 13,         // Schub (m/s² bei Masse 1)
-  boostFuel: 20,           // Treibstoff pro Sekunde
+  boostFuel: 16,           // Treibstoff pro Sekunde (Δv je Liter besser als der Bodenantrieb)
   boostHeat: 30,           // Hitze pro Sekunde (darf durch mul negativ werden = Boost kühlt)
   boostSelfDamage: 0,      // Haltbarkeit pro Boost-Sekunde (Flüche)
   // Antrieb & Boden
-  driveAccel: 3.5,         // Antrieb am Boden (m/s² bei Masse 1)
-  driveFuel: 3,            // Treibstoff pro Sekunde Antrieb
+  driveAccel: 6,           // Antrieb am Boden (m/s² bei Masse 1, siehe PHYSICS.driveMassExp)
+  driveFuel: 12,           // Treibstoff pro Sekunde Antrieb (voller Tank ≈ 10 s Bodenfahrt)
   driveHeat: 5,            // Hitze pro Sekunde Antrieb
   rollFriction: 2.5,       // Bremswirkung am Boden m/s²
   // Ressourcen
-  fuelMax: 100,
+  fuelMax: 120,
   heatMax: 100,
   heatGain: 1,             // Faktor auf alle Hitzezunahmen
-  coolRate: 15,            // Abkühlung pro Sekunde
+  coolRate: 10,            // Abkühlung pro Sekunde (Dauer-Boost: +30 − 10 = +20/s → Überhitzung nach 5 s)
   durabilityMax: 100,
   armor: 0,                // Schadensreduktion 0 … 0,6
-  impactThreshold: 9,      // Aufprall-Normaltempo (m/s), ab dem eine Landung Schaden macht
+  impactThreshold: 14,     // Aufprall-Normaltempo (m/s), ab dem eine Landung Schaden macht
   // Landung
   landTolDeg: 25,          // saubere Landung bis zu diesem Winkel
   perfectLandDeg: 8,
@@ -170,17 +177,20 @@ export const GARAGE = {
 // ---------- Ressourcen: Treibstoff, Hitze, Haltbarkeit ----------
 export const RESOURCES = {
   overheatStall: 2.0,      // Sekunden ohne Boost/Antrieb nach Überhitzung
-  overheatDamage: 5,       // Schaden durch Überhitzung (ignoriert Panzerung)
+  overheatDamage: 3,       // Schaden durch Überhitzung (ignoriert Panzerung)
   overheatResetHeat: 50,   // Hitze nach der Überhitzung
   heatResourceRearm: 0.8,  // heatIsResource: overheat-Ereignis erst wieder, wenn die Hitze unter 80 % fiel
   heatWarn: 0.8,           // HUD: Hitze-Leiste blinkt ab 80 %
-  dmgPerMps: 2.5,          // Aufprallschaden je m/s Normaltempo über impactThreshold
-  crashLandingDamage: 15,  // Zusatzschaden bei Bruchlandung
-  bumpyLandingDamage: 4,   // Zusatzschaden bei holpriger Landung
-  obstacleDamage: 12,      // Hindernis gerammt
+  dmgPerMps: 1,            // Aufprallschaden je m/s Normaltempo über impactThreshold
+  crashLandingDamage: 10,  // Zusatzschaden bei Bruchlandung
+  bumpyLandingDamage: 2,   // Zusatzschaden bei holpriger Landung
+  obstacleDamage: 5,       // Hindernis gerammt
   minLandingAir: 0.15,     // Landung zählt (landing-Ereignis) erst nach so viel Flugzeit; sonst nur groundTouch
   selfDamageStep: 1,       // Dauer-Schaden (boostSelfDamage) wird in Schritten von 1 abgebucht
   damagePopupMin: 3,       // Schadens-Einblendung erst ab so viel Schaden
+  shieldMinDamage: 2,      // Schilde (shield) fangen erst Schaden ab so viel ab (nach Panzerung); kleinerer geht normal durch
+  durWarn: 0.5,            // HUD: Haltbarkeits-Leiste gelb unter 50 % …
+  durCrit: 0.25,           // … und rot unter 25 %
 };
 
 // ---------- Testfahrt (Phase 2: eine Etappe aus der Garage) ----------
@@ -210,7 +220,7 @@ export const RULES = {
   parachute: { approach: 25, dragMul: 3 },                           // Fallschirm: Sinktempo-Führung m/s², Luftwiderstand ×3
   hardStop: { time: 0.25, lowGripTime: 0.5, drivePause: 0.5, armTime: 3 }, // Notbremse
   heatToThrust: { min: 1, explodeAt: 70 },                           // Schleudergang
-  collectScrapMass: { damageMul: 1 / 3, pickups: 6, maxAlt: 1.5, pickupEvery: [40, 90], maxPieces: 12 }, // Mülltonne
+  collectScrapMass: { damageMul: 1 / 3, pickups: 6, minAlt: 0.6, maxAlt: 1.5, pickupEvery: [40, 90], maxPieces: 12 }, // Mülltonne
 };
 
 // ---------- Abschuss (Halten / Loslassen) ----------
@@ -261,9 +271,14 @@ export const CAMERA = {
   frameIterations: 4,      // Nachkorrekturen der harten Klemmung
   recenterNdc: 1.5,        // liegt das Auto weiter draußen (z. B. nach einem Sprung), wird direkt auf es zentriert
   shake: { max: 1.2, amp: 0.6, decay: 7, lookMul: 0.5, min: 0.001 },
-  // Garage: große 3D-Vorschau oben; das Fahrzeug sitzt bei (carNdcX, carNdcY) (NDC, +1 = oberer/rechter Rand)
-  // und dreht sich langsam (spin rad/s). Im Querformat steht die Garage-Liste rechts, das Fahrzeug links.
-  garage: { widthPortrait: 10, widthLandscape: 17, carNdcY: 0.55, carNdcYLandscape: 0.05, carNdcXLandscape: -0.42, k: 3, spin: 0.45, startAngle: -0.5 },
+  // Garage: große 3D-Vorschau oben; das Fahrzeug dreht sich langsam (spin rad/s). Hochformat: Radunterkante
+  // fitPad (NDC) über der Unterkante der Vorschau-Fläche (.g-preview), hohe Modelle werden kleiner gezeigt, damit
+  // die Oberkante fitPad unter deren Oberkante bleibt (Breite mind. widthPortrait). Ohne Vorschau-Fläche gilt carNdcY.
+  // Querformat: Garage-Liste rechts, Fahrzeug links bei (carNdcXLandscape, carNdcYLandscape), Oberkante ≤ topNdcLandscape.
+  garage: {
+    widthPortrait: 10, widthLandscape: 17, carNdcY: 0.55, carNdcYLandscape: 0.05, carNdcXLandscape: -0.42, k: 3, spin: 0.45, startAngle: -0.5,
+    fitPad: 0.04, fitMinSpan: 0.2, topNdcLandscape: 0.85,
+  },
   aim: { offsetX: 8, offsetY: 10, width: 30, k: 3 },
 };
 
@@ -325,7 +340,7 @@ export const SPAWN = {
 export const STAGE = {
   maxFrameDt: 0.05,        // längere Bildpausen werden gekürzt
   maxTime: 240,
-  stopSpeed: 0.8,          // darunter gilt das Auto als gestoppt …
+  stopSpeed: 2,            // darunter gilt das Auto als gestoppt …
   stopTime: 0.6,           // … nach so vielen Sekunden
   wreckDelay: 0.8,
   boltStreakTime: 1,
@@ -340,7 +355,7 @@ export const STAGE = {
 export const CONTROLS = {
   splitX: 0.5,             // Grenze linke/rechte Bildschirmhälfte
   keyAngleRate: 45,        // Grad/s mit Pfeil hoch/runter beim Zielen
-  abilityKeys: ['Digit1', 'Digit2', 'Digit3'], // Tastatur: Fähigkeit 1–3 (Leertaste = Boost)
+  abilityKeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4'], // Tastatur: Fähigkeit 1–4 (Leertaste = Boost)
   devTaps: 7,              // so oft schnell hintereinander auf die Versionsnummer tippen → Dev-Menü …
   devTapGap: 1.0,          // … mit höchstens so vielen Sekunden zwischen zwei Taps
   tutorialRuns: 3,         // so viele Runs lang werden Hinweise gezeigt
@@ -392,6 +407,8 @@ export const KOMBO = {
 // ---------- Effekte (Zeitlupe, Wackeln, Partikel) ----------
 export const FX = {
   maxParticles: 320,
+  // Standardwerte eines Partikel-Ausstoßes (render/particles.js), wenn die Vorlage nichts angibt
+  particleDefaults: { n: 8, dir: 1.5708, spread: 6.2832, speed: 6, life: 0.8, jitter: 0.4, zSpread: 1.5, zSpeed: 2, size: 0.4, z: 0, gravity: 0 },
   slowmoScale: 0.3,
   slowmoRecover: 4,        // so schnell läuft die Zeitlupe aus (1/s)
   slowmo: { perfectLaunch: 0.35, multiFlip: 0.4, perfectLanding: 0.25 },
@@ -400,6 +417,9 @@ export const FX = {
   landSoundDiv: 25,
   landHapticImpact: 8,
   resultDelay: 0.7,        // Sekunden bis zur Auswertung
+  resultCount: { base: 500, perScrap: 4, max: 1400 }, // Hochzählen der Belohnung: Dauer in ms
+  garageWheelSpin: 2,      // Raddrehung in der Garage (rad/s)
+  idleSpinnerMul: 0.3,     // Propeller/Turbinen drehen ohne Antrieb mit diesem Anteil weiter (Garage, Zeitlupe)
   idleBob: { amp: 0.05, freq: 2 },
   flag: { minDist: 20, z: -2.4 },
   trajectory: { max: 24, size: 0.22, opacity: 0.85, shrinkPad: 4 },
@@ -407,8 +427,11 @@ export const FX = {
     bolt: { n: 6, colors: ['#d7dde3', '#ffffff', '#9aa4ae'], speed: 5, life: 0.4, size: 0.35 },
     scrap: { n: 10, colors: ['#9a4a2e', '#5b6e7a', '#a36a2c'], speed: 6, life: 0.6, gravity: 9, size: 0.4 },
     explosion: { n: 30, colors: ['#fff17a', '#ffa22e', '#ff5a1f', '#5a4a40'], speed: 12, life: 0.7, gravity: 4, size: 0.6, jitter: 1 },
-    steam: { n: 1, colors: ['#ffffff', '#e6eef5', '#cfd8e0'], dir: 1.5708, spread: 0.8, speed: 3, life: 0.9, gravity: -2, size: 0.45, zSpread: 1, chance: 0.5 },
-    driveSmoke: { n: 1, colors: ['#8a8f96', '#a7acb2', '#6e737a'], spread: 0.6, speed: 1.5, life: 0.5, gravity: -1.5, size: 0.28, zSpread: 0.4, chance: 0.18 },
+    // Dampf bei Hitze ab heatFrac (oder im Stillstand), dy m über der Fahrzeugmitte
+    steam: { n: 1, colors: ['#ffffff', '#e6eef5', '#cfd8e0'], dir: 1.5708, spread: 0.8, speed: 3, life: 0.9, gravity: -2, size: 0.45, zSpread: 1, chance: 0.5, heatFrac: 0.9, dy: 0.8 },
+    steamBurst: { n: 14, colors: ['#ffffff', '#e6eef5', '#cfd8e0'], dir: 1.5708, spread: 6.2832, speed: 6, life: 0.9, gravity: -2, size: 0.45, zSpread: 1 }, // Schleudergang
+    // Antriebs-Rauch: Richtung = Fahrzeugwinkel + dirOffset × π, erbt inherit × Fahrzeugtempo
+    driveSmoke: { n: 1, colors: ['#8a8f96', '#a7acb2', '#6e737a'], spread: 0.6, speed: 1.5, life: 0.5, gravity: -1.5, size: 0.28, zSpread: 0.4, chance: 0.18, dirOffset: 0.85, inherit: 0.5 },
     ring: { n: 18, colors: ['#33e6ff', '#ffffff', '#9ff4ff'], speed: 9, life: 0.6, size: 0.4, jitter: 3 },
     dust: { amount: 0.4, nBase: 8, nPerAmount: 16, spread: 2.6, speedBase: 3, speedPerAmount: 7, life: 0.8, gravity: 7, size: 0.5, zSpread: 3 },
     smash: {

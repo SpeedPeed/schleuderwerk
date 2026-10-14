@@ -18,7 +18,7 @@ test('STATS enthält das ganze Vokabular und BASE_STATS hat für jeden Stat eine
   const b = baseStats();
   for (const k of STATS) assert.ok(isFinite(b[k]), k);
   assert.equal(b.launchSpeed, BASE_STATS.launchSpeed);
-  assert.equal(b.fuelMax, 100);
+  assert.equal(b.fuelMax, BASE_STATS.fuelMax);
   assert.equal(b.heatMax, 100);
   assert.equal(b.durabilityMax, 100);
 });
@@ -31,7 +31,7 @@ test('Endwert = (Basis + Σadd) × (1 + Σmul) × Π xmul', () => {
     mods({ fuelMax: { xmul: 1.5 } }),
     mods({ fuelMax: { xmul: 1.2 } }),
   ] });
-  near(s.fuelMax, (100 + 25) * (1 + 0.25) * 1.5 * 1.2);
+  near(s.fuelMax, (BASE_STATS.fuelMax + 25) * (1 + 0.25) * 1.5 * 1.2);
   // mul addiert sich: 2 × +50 % = ×2 (nicht ×2,25)
   const m = computeStats({ extra: [mods({ coolRate: { mul: 0.5 } }), mods({ coolRate: { mul: 0.5 } })] });
   near(m.coolRate, BASE_STATS.coolRate * 2);

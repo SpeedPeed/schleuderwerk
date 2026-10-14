@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SAVE_VERSION, GARAGE } from '../www/src/data/balance.js';
-import { defaultSave, migrate, exportSave, importSave } from '../www/src/save/save.js';
+import { defaultSave, migrate, exportSave, importSave, SaveError } from '../www/src/save/save.js';
 import { markMilestone, addPlaytime } from '../www/src/garage/progression.js';
 
 const b64 = (obj) => btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
@@ -117,4 +117,51 @@ test('Spielzeit und Meilensteine (Zeitstempel beim ersten Erreichen)', () => {
   const m = migrate(JSON.parse(JSON.stringify(s)));
   assert.equal(m.meta.milestones.firstTestDrive, 61.3);
   assert.equal(m.meta.totalPlaytime, 161.25);
+});
+
+test('Migration repariert falsch typisierte Felder statt abzustürzen (beschädigte/fremde Stände)', () => {
+  const broken = [
+    { version: 3, meta: 'x' },
+    { version: 3, garage: 'x', research: 'x', worlds: 'x' },
+    { version: 3, garage: { ownedChassis: 'seifenkiste', ownedParts: 'x', parts: 5, partLevels: [3], abilities: 'boost' } },
+    { version: 3, worlds: { records: { steppe: {}, desert: 'x' }, unlocked: [null, 5, {}, 'desert', 'mond'], current: 7 } },
+    { version: 3, stats: { bestDist: 'abc', testDrives: -3 }, settings: 'x', tutorial: 'x', meta: { milestones: { a: 'x', b: 12 } } },
+    { version: 2, worlds: { desert: 'x' }, unlocked: [null, 5, {}], money: 4000, stats: 'x', settings: [1] },
+    { version: 3, run: 'x', cosmetics: { owned: 'x', paint: 5 }, codex: [], ascension: { unlocked: 'x' } },
+  ];
+  for (const b of broken) {
+    let s;
+    assert.doesNotThrow(() => { s = migrate(JSON.parse(JSON.stringify(b))); }, JSON.stringify(b));
+    assert.equal(s.version, 3);
+    assert.equal(typeof s.meta.scrap, 'number');
+    assert.ok(Array.isArray(s.garage.ownedChassis) && s.garage.ownedChassis.includes(GARAGE.starterChassis));
+    assert.ok(Array.isArray(s.garage.ownedParts));
+    for (const r of Object.values(s.worlds.records)) for (const k of ['bestDist', 'bestHeight', 'runs']) assert.ok(Number.isFinite(r[k]), k);
+    assert.ok(s.worlds.unlocked.every((id) => typeof id === 'string'));
+    assert.ok(s.worlds.unlocked.includes(s.worlds.current));
+    for (const k of Object.keys(s.stats)) assert.ok(Number.isFinite(s.stats[k]), `stats.${k}`);
+    assert.equal(typeof s.settings.sound, 'boolean');
+    assert.equal(typeof s.tutorial.runs, 'number');
+    assert.ok(s.run === null || typeof s.run === 'object');
+    // danach spielbar: Rekorde lassen sich hochzählen
+    for (const r of Object.values(s.worlds.records)) { r.runs++; assert.ok(Number.isFinite(r.runs)); }
+  }
+  const w = migrate({ version: 3, worlds: { records: { steppe: {}, desert: 'x' }, unlocked: ['steppe', 'desert', 'mond'] } });
+  assert.deepEqual(w.worlds.unlocked, ['steppe', 'desert']);
+  assert.deepEqual(w.worlds.records.desert, { bestDist: 0, bestHeight: 0, runs: 0 });
+  assert.equal(migrate({ version: 3, meta: { milestones: { a: 'x', b: 12 } } }).meta.milestones.b, 12);
+  assert.ok(!('a' in migrate({ version: 3, meta: { milestones: { a: 'x' } } }).meta.milestones));
+});
+
+test('Migration: unlesbare Versionsnummer gilt als alter Stand (Geld wird zu Schrott); neuere Version → SaveError', () => {
+  assert.equal(migrate({ version: 'abc', money: 4000 }).meta.scrap, 100);
+  try {
+    migrate({ version: 4, meta: { scrap: 5000 } });
+    assert.fail('kein Fehler');
+  } catch (e) {
+    assert.ok(e instanceof SaveError);
+    assert.equal(e.code, 'newer');
+  }
+  // Import: technische Fehler erscheinen nie roh
+  assert.throws(() => importSave(`SW3:${b64({ version: 4 })}`), /neueren/);
 });

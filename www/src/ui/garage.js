@@ -3,8 +3,9 @@ import { GARAGE } from '../data/balance.js';
 import { CHASSIS, ABILITIES, SLOTS, SLOT_INFO, partsForSlot, partById, abilityById, isSlotAbility, researchLabel } from '../data/index.js';
 import { chassisState, partState, abilityState } from '../garage/garage.js';
 import { buildLoadout } from '../garage/loadout.js';
+import { isBoostAbility } from '../stage/abilities.js';
 import { statDiff } from '../items/statMods.js';
-import { fmtStat, statName, statTrend } from './statLabels.js';
+import { fmtStat, statName, statTrend, tagLabel } from './statLabels.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -36,13 +37,14 @@ export class GarageScreen {
         </div>
         <button class="icon-btn" data-id="settings" aria-label="Einstellungen">⚙</button>
       </div>
-      <div class="g-preview" data-id="preview"><div class="g-title">GARAGE</div></div>
+      <div class="g-preview" data-id="preview"><div class="g-title">GARAGE</div>
+        <div class="g-clock hidden" data-id="clock"></div>
+      </div>
       <div class="g-chassis">
         <button class="icon-btn g-arrow" data-id="cprev" aria-label="Vorheriges Chassis">◀</button>
-        <div class="g-cinfo">
+        <div class="g-cinfo" data-id="cinfo">
           <div class="g-cname" data-id="cname"></div>
           <div class="g-cdesc" data-id="cdesc"></div>
-          <div class="g-clock hidden" data-id="clock"></div>
         </div>
         <button class="icon-btn g-arrow" data-id="cnext" aria-label="Nächstes Chassis">▶</button>
       </div>
@@ -64,6 +66,7 @@ export class GarageScreen {
       <div class="g-pick hidden" data-id="pick">
         <div class="g-pick-sheet">
           <div class="g-pick-head"><h3 data-id="picktitle"></h3><button class="icon-btn small" data-id="pickclose" aria-label="Schließen">✕</button></div>
+          <div class="g-pick-stats hidden" data-id="pickstats"></div>
           <div class="g-pick-list" data-id="picklist"></div>
         </div>
       </div>
@@ -87,7 +90,7 @@ export class GarageScreen {
       const r = el(`<div class="slot-row" data-slot="${slot}">
         <div class="sr-icon">${SLOT_INFO[slot].icon}</div>
         <div class="sr-info">
-          <div class="sr-slot">${SLOT_INFO[slot].name}</div>
+          <div class="sr-slot">${SLOT_INFO[slot].name} <span class="sr-lvl"></span></div>
           <div class="sr-part"></div>
           <div class="sr-bar"><div></div></div>
         </div>
@@ -106,6 +109,30 @@ export class GarageScreen {
     this.save = null;
     this.viewId = null;       // gerade angesehenes Chassis (kann gesperrt sein)
     this.picker = null;       // { kind: 'parts'|'abilities', slot|index, sel }
+    this.pv = null;           // zwischengespeicherte Lage der Vorschau-Fläche (NDC), siehe previewNdc()
+    this.pvAt = 0;
+    window.addEventListener('resize', () => { this.pv = null; });
+  }
+
+  // Lage der 3D-Vorschau-Fläche in NDC { top, bottom } (für die Garagen-Kamera in main.js); null, wenn unsichtbar.
+  // Ein sichtbarer Sperr-Hinweis unten in der Vorschau wird ausgespart.
+  previewNdc() {
+    const now = performance.now();
+    if (this.pv !== null && now - this.pvAt < 500) return this.pv || null;
+    this.pvAt = now;
+    const H = window.innerHeight || 1;
+    const r = this.q.preview.getBoundingClientRect();
+    let bottom = r.bottom;
+    if (!this.q.clock.classList.contains('hidden')) bottom = Math.min(bottom, this.q.clock.getBoundingClientRect().top);
+    this.pv = this.open && r.height > 0 && bottom > r.top ? { top: 1 - (2 * r.top) / H, bottom: 1 - (2 * bottom) / H } : false;
+    return this.pv || null;
+  }
+
+  // Vorschau-Überschreibung für das 3D-Modell: im Teile-Unterblatt das angetippte Teil, sonst null
+  previewOverride() {
+    const pk = this.picker;
+    if (!pk || pk.kind !== 'parts' || !pk.sel) return null;
+    return { parts: { [pk.slot]: pk.sel } };
   }
 
   show(on) {
@@ -132,6 +159,7 @@ export class GarageScreen {
   render(save = this.save, info = this.info) {
     this.save = save;
     this.info = info || this.info || {};
+    this.pv = null;
     const q = this.q;
     const g = save.garage;
     if (!this.viewId || (!this.viewingLocked && this.viewId !== g.chassis)) this.viewId = g.chassis;
@@ -151,7 +179,7 @@ export class GarageScreen {
       if (cs.cores > 0) need.push(`💠 ${cs.cores}`);
       if (cs.research) need.push(`${cs.researchOk ? '✔' : '🔒'} ${esc(researchLabel(cs.research))}${cs.researchOk ? '' : ' (Forschung im Labor)'}`);
       q.clock.innerHTML = `<span>Gesperrt: ${need.join(' · ')}</span>`
-        + `<button class="btn btn-buy small-btn g-cbuy" ${cs.canBuy ? '' : 'disabled'}>${cs.researchOk ? `Kaufen 💠 ${cs.cores}` : '🔒 Forschung fehlt'}</button>`;
+        + `<button class="btn btn-buy small-btn g-cbuy ${cs.canBuy ? '' : 'cant'}">${cs.researchOk ? `Kaufen 💠 ${cs.cores}` : '🔒 Forschung fehlt'}</button>`;
       q.clock.querySelector('.g-cbuy').onclick = () => this.h.onAction('buyChassis', c.id);
     }
     q.start.disabled = !cs.owned;
@@ -160,7 +188,7 @@ export class GarageScreen {
     // Strecke (Welten bis Phase 3)
     const w = this.info;
     q.wname.innerHTML = `🗺️ Strecke: <b>${esc(w.worldName || '')}</b>${w.factor > 1 ? ` · ⚙×${String(w.factor).replace('.', ',')}` : ''}`
-      + (w.nextLocked && w.nextText ? `<small>🔒 Nächste: ${esc(w.nextText)}</small>` : '');
+      + (w.nextLocked && w.nextText ? `<small>🔒 ${esc(w.nextName || 'Nächste')}: ${esc(w.nextText)}</small>` : '');
     q.wprev.disabled = !w.prevOk;
     q.wnext.disabled = !w.nextOk;
     q.wnext.textContent = w.nextLocked ? '🔒' : '▶';
@@ -177,11 +205,13 @@ export class GarageScreen {
       const r = this.slotRows[slot];
       const p = partById(g.parts[slot]);
       const st = partState(save, p);
-      r.querySelector('.sr-part').innerHTML = `${p.icon} ${esc(p.name)} <small>St. ${st.level}/${GARAGE.maxPartLevel}</small>`;
+      r.querySelector('.sr-part').textContent = `${p.icon} ${p.name}`;   // nur der Name wird bei Platzmangel gekürzt
+      r.querySelector('.sr-lvl').textContent = `· St. ${st.level}/${GARAGE.maxPartLevel}`;
       r.querySelector('.sr-bar div').style.width = `${(st.level / GARAGE.maxPartLevel) * 100}%`;
       const b = r.querySelector('.sr-up');
       b.textContent = st.maxed ? 'MAX' : `▲ ⚙ ${short(st.upgradeCost)}`;
       b.disabled = st.maxed;
+      b.classList.toggle('max', st.maxed);
       b.classList.toggle('cant', !st.maxed && !st.canUpgrade);
       r.classList.toggle('affordable', st.canUpgrade);
       const n = partsForSlot(slot).filter((x) => partState(save, x).canBuy).length;
@@ -206,9 +236,9 @@ export class GarageScreen {
     if (this.picker) this.renderPicker();
   }
 
-  // Werte-Balken (GARAGE.statBars); preview = Vergleichswerte (Geister-Balken)
-  renderStats(stats, preview) {
-    this.q.stats.innerHTML = GARAGE.statBars.map((b) => {
+  // Werte-Balken (GARAGE.statBars); preview = Vergleichswerte (Geister-Balken). target: Container (Standard: Liste)
+  renderStats(stats, preview, target = this.q.stats) {
+    target.innerHTML = GARAGE.statBars.map((b) => {
       const v = stats[b.stat];
       const p = preview ? preview[b.stat] : v;
       const f = Math.min(1, v / b.max), pf = Math.min(1, p / b.max);
@@ -243,6 +273,7 @@ export class GarageScreen {
     this.picker = null;
     this.previewStats = null;
     show(this.q.pick, false);
+    show(this.q.pickstats, false);
     if (!silent) { this.h.onPreview(null); this.render(); }
   }
 
@@ -261,6 +292,14 @@ export class GarageScreen {
     this.renderPicker();
   }
 
+  // Mini-Werte-Balken im Unterblatt (die große Übersicht liegt im Hochformat hinter dem Blatt)
+  renderPickStats() {
+    const pk = this.picker;
+    const on = !!pk && pk.kind === 'parts' && !!pk.sel && pk.sel !== this.save.garage.parts[pk.slot];
+    show(this.q.pickstats, on);
+    if (on) this.renderStats(this.loadout.stats, buildLoadout(this.save, { parts: { [pk.slot]: pk.sel } }).stats, this.q.pickstats);
+  }
+
   renderPicker() {
     const pk = this.picker;
     const q = this.q;
@@ -274,7 +313,7 @@ export class GarageScreen {
         let btns = '';
         if (!st.owned) {
           btns = st.researchOk
-            ? `<button class="btn btn-buy" data-act="buy" ${st.canBuy ? '' : 'disabled'}>Kaufen ⚙ ${short(st.price)}</button>`
+            ? `<button class="btn btn-buy ${st.canBuy ? '' : 'cant'}" data-act="buy">Kaufen ⚙ ${short(st.price)}</button>`
             : `<span class="pc-lock">🔒 ${esc(researchLabel(st.research))} (Forschung)</span>`;
         } else {
           btns = st.equipped ? '<span class="pc-tag">✓ Ausgerüstet</span>' : '<button class="btn btn-primary small-btn" data-act="equip">Ausrüsten</button>';
@@ -282,14 +321,21 @@ export class GarageScreen {
             : `<button class="btn btn-buy small-btn ${st.canUpgrade ? '' : 'cant'}" data-act="upgrade">▲ Stufe ${st.level + 1} · ⚙ ${short(st.upgradeCost)}</button>`;
         }
         const cls = ['pcard', st.equipped ? 'equipped' : '', !st.owned && !st.researchOk ? 'locked' : '', pk.sel === p.id ? 'sel' : ''].join(' ');
+        // Ausgerüstet: Wirkung der nächsten Stufe zeigen (sonst Vergleich mit dem ausgerüsteten Teil)
+        let diff;
+        if (st.equipped) {
+          diff = st.maxed ? '<div class="dr same">aktuell ausgerüstet · höchste Stufe</div>'
+            : `<div class="dr same">Nächste Stufe (${st.level + 1}):</div>${diffRows(base, buildLoadout(this.save, { parts: { [slot]: { id: p.id, level: st.level + 1 } } }).stats)}`;
+        } else diff = diffRows(base, lo.stats);
         return `<div class="${cls}" data-id="${p.id}">
           <div class="pc-top"><span class="pc-icon">${p.icon}</span>
-            <div class="pc-name">${esc(p.name)}${st.owned ? ` <small>St. ${st.level}/${GARAGE.maxPartLevel}</small>` : ''}${p.tag ? ` <small class="pc-tagname">#${esc(p.tag)}</small>` : ''}</div></div>
+            <div class="pc-name">${esc(p.name)}${st.owned ? ` <small>St. ${st.level}/${GARAGE.maxPartLevel}</small>` : ''}${p.tag ? ` <small class="pc-tagname">${esc(tagLabel(p.tag))}</small>` : ''}</div></div>
           <div class="pc-desc">${esc(p.desc)}</div>
-          <div class="pc-diff">${st.equipped ? '<div class="dr same">aktuell ausgerüstet</div>' : diffRows(base, lo.stats)}</div>
+          <div class="pc-diff">${diff}</div>
           <div class="pc-btns">${btns}</div>
         </div>`;
       }).join('');
+      this.renderPickStats();
       q.picklist.querySelectorAll('.pcard').forEach((card) => {
         const id = card.dataset.id;
         card.onclick = (e) => {
@@ -312,9 +358,14 @@ export class GarageScreen {
         const st = abilityState(this.save, a);
         const here = this.save.garage.abilities[idx] === a.id;
         const costs = [a.mode === 'hold' ? 'halten' : 'tippen'];
-        if (a.cooldown) costs.push(`⏱ ${String(a.cooldown).replace('.', ',')} s`);
-        if (a.fuel) costs.push(`⛽ ${a.fuel}${a.mode === 'hold' ? '/s' : ''}`);
-        if (a.heat) costs.push(`🌡 ${a.heat}${a.mode === 'hold' ? '/s' : ''}`);
+        // Der Boost kostet laut Fahrzeugwerten (boostFuel/boostHeat), alle anderen laut Fähigkeit
+        const boost = isBoostAbility(a);
+        const fuel = boost ? this.loadout.stats.boostFuel : a.fuel;
+        const heat = boost ? this.loadout.stats.boostHeat : a.heat;
+        const n1 = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
+        if (a.cooldown) costs.push(`⏱ ${n1(a.cooldown)} s`);
+        if (fuel) costs.push(`⛽ ${n1(fuel)}${a.mode === 'hold' ? '/s' : ''}`);
+        if (heat) costs.push(`🌡 ${n1(heat)}${a.mode === 'hold' ? '/s' : ''}`);
         let btn;
         if (!st.unlocked) btn = `<span class="pc-lock">🔒 ${esc(researchLabel(st.research))} (Forschung)</span>`;
         else if (here) btn = '<span class="pc-tag">✓ In diesem Slot</span>';
@@ -330,6 +381,11 @@ export class GarageScreen {
         if (b) b.onclick = (e) => { e.stopPropagation(); this.h.onAction('setAbility', idx, card.dataset.id); };
       });
     }
+  }
+
+  // Rückmeldung am Chassis-Sperrhinweis bzw. an der Chassis-Info
+  flashChassis(kind = 'flash') {
+    this.flash(this.q.clock.classList.contains('hidden') ? this.q.cinfo : this.q.clock, kind);
   }
 
   // Rückmeldung nach einer Aktion: Teile-Karte (im Unterblatt) bzw. Slot-Zeile kurz aufleuchten/wackeln lassen

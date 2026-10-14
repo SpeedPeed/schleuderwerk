@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { part, merge, flatMat } from './models.js';
+import { part, merge, flatMatInstanced } from './models.js';
 import { OBJ } from '../physics/objects.js';
 import { RENDER } from '../data/balance.js';
 
@@ -44,7 +44,7 @@ export class ObjectsView {
       tireParts.push(part('cyl10', i % 2 ? '#2f2f35' : '#26262b', { y: 0.35 + i * 0.7, sx: t.w / 2, sz: t.w / 2, sy: 0.66, ry: i * 0.3 }, 0.1));
       tireParts.push(part('cyl10', '#e8b830', { y: 0.35 + i * 0.7, sx: t.w / 2 + 0.02, sz: t.w / 2 + 0.02, sy: 0.12, ry: i * 0.3 }));
     }
-    this.tires = instanced(merge(tireParts), flatMat, 30);
+    this.tires = instanced(merge(tireParts), flatMatInstanced, 30);
 
     const s = OBJ.scrap;
     this.scrap = instanced(merge([
@@ -52,7 +52,7 @@ export class ObjectsView {
       part('box', '#5b6e7a', { y: 2.3, sx: s.w * 0.9, sy: 1.4, sz: 2.0, ry: -0.15, rz: 0.05 }, 0.2),
       part('box', '#7d7f3a', { y: 3.7, sx: s.w * 0.8, sy: 1.3, sz: 1.8, ry: 0.2, rz: -0.06 }, 0.2),
       part('box', '#c03a2a', { y: 4.5, sx: 0.6, sy: 0.25, sz: 0.6 }),
-    ]), flatMat, 30);
+    ]), flatMatInstanced, 30);
 
     const c = OBJ.cactus;
     this.cactus = instanced(merge([
@@ -62,14 +62,14 @@ export class ObjectsView {
       part('cyl6', '#467d42', { x: -0.7, y: c.h * 0.72, sx: 0.28, sz: 0.28, sy: 1.1 }, 0.12),
       part('cyl6', '#467d42', { x: -0.42, y: c.h * 0.58, sx: 0.26, sz: 0.26, sy: 0.6, rz: Math.PI / 2 }, 0.12),
       part('cone5', '#ff6b8a', { y: c.h + 0.15, s: 0.3, sy: 0.3 }),
-    ]), flatMat, 30);
+    ]), flatMatInstanced, 30);
 
     const pl = OBJ.pillar;
     this.pillar = instanced(merge([
       part(new THREE.CylinderGeometry(0.75, 1, 1, 6).toNonIndexed(), '#c2703f', { y: pl.h * 0.3, sx: pl.w / 2, sz: pl.w / 2.4, sy: pl.h * 0.6 }, 0.15),
       part(new THREE.CylinderGeometry(0.9, 0.75, 1, 6).toNonIndexed(), '#d08050', { y: pl.h * 0.8, sx: pl.w / 2, sz: pl.w / 2.4, sy: pl.h * 0.4, ry: 0.4 }, 0.15),
       part('box', '#e9a466', { y: pl.h * 0.6, sx: pl.w * 0.95, sy: 0.25, sz: pl.w * 0.8 }),
-    ]), flatMat, 30);
+    ]), flatMatInstanced, 30);
 
     this.obstacleMeshes = { tires: this.tires, scrap: this.scrap, cactus: this.cactus, pillar: this.pillar };
 

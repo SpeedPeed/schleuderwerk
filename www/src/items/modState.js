@@ -56,6 +56,17 @@ export class ModState {
     return false;
   }
 
+  // Alle Buffs einer Quelle (id oder { id }) entfernen, z. B. wenn der Fallschirm vorzeitig endet
+  removeSource(id) {
+    let removed = false;
+    for (let i = this.buffs.length - 1; i >= 0; i--) {
+      const src = this.buffs[i].source;
+      if (src === id || (src && src.id === id)) { this.buffs.splice(i, 1); removed = true; }
+    }
+    if (removed) this.dirty = true;
+    return removed;
+  }
+
   // Buffs altern lassen
   update(dt) {
     let removed = false;

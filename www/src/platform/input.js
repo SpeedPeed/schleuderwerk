@@ -7,9 +7,9 @@ import { CONTROLS } from '../data/balance.js';
 //      tilt  = linke Hälfte gehalten → +1 (Nase hoch), rechte Hälfte → -1 (Nase runter), beide → 0
 //      takeAimDrag() = senkrechtes Ziehen des ersten Fingers seit dem letzten Abruf,
 //                      in Bildschirmhöhen (hoch = positiv → steiler)
-//  - Fähigkeits-Knöpfe heißen 'ab0', 'ab1', 'ab2' (Reihenfolge der Fähigkeiten): abilityHeld(i) = gehalten,
+//  - Fähigkeits-Knöpfe heißen 'ab0', 'ab1', … (Reihenfolge der Fähigkeiten): abilityHeld(i) = gehalten,
 //    takeAbilityPress(i) = Anzahl neuer Drücke seit dem letzten Abruf (für Tipp-Fähigkeiten).
-//  - Tastatur: Leertaste = halten (Abschuss) bzw. Boost (Fähigkeit boostSlot), 1/2/3 = Fähigkeit 1–3,
+//  - Tastatur: Leertaste = halten (Abschuss) bzw. Boost (Fähigkeit boostSlot), 1–4 = Fähigkeit 1–4 (CONTROLS.abilityKeys),
 //    ← / → = neigen, ↑ / ↓ = Winkel beim Zielen.
 const KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ...CONTROLS.abilityKeys]);
 

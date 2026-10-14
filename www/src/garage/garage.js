@@ -7,6 +7,8 @@ import {
   isStarterPart, starterPartFor, isSlotAbility, referencedResearch,
 } from '../data/index.js';
 
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
 // ---------- Abfragen ----------
 
 export const researchDone = (save, id) => !id || (save.research && save.research.done.includes(id));
@@ -140,13 +142,17 @@ export function setAbility(save, index, id, maxSlots = GARAGE.starterAbilities.l
 
 // Spielstand-Garage gegen die aktuellen Inhaltsdaten prüfen (Inhalte können sich ändern, IDs bleiben)
 export function sanitizeGarage(save) {
+  if (!isObj(save.garage)) save.garage = {};
+  if (!isObj(save.research) || !Array.isArray(save.research.done)) save.research = { done: [] };
   const g = save.garage;
-  g.ownedChassis = [...new Set((g.ownedChassis || []).filter((id) => chassisById(id)))];
+  for (const k of ['ownedChassis', 'ownedParts', 'abilities']) if (!Array.isArray(g[k])) g[k] = [];
+  if (!isObj(g.parts)) g.parts = {};
+  if (!isObj(g.partLevels)) g.partLevels = {};
+  g.ownedChassis = [...new Set(g.ownedChassis.filter((id) => chassisById(id)))];
   if (!g.ownedChassis.includes(GARAGE.starterChassis) && chassisById(GARAGE.starterChassis)) g.ownedChassis.unshift(GARAGE.starterChassis);
   if (!chassisById(g.chassis) || !g.ownedChassis.includes(g.chassis)) g.chassis = g.ownedChassis[0] || CHASSIS[0].id;
-  const owned = new Set((g.ownedParts || []).filter((id) => partById(id)));
+  const owned = new Set(g.ownedParts.filter((id) => partById(id)));
   for (const p of PARTS) if (isStarterPart(p)) owned.add(p.id);
-  g.parts = g.parts && typeof g.parts === 'object' ? g.parts : {};
   for (const slot of SLOTS) {
     const p = partById(g.parts[slot]);
     if (!p || p.slot !== slot || !owned.has(p.id)) {
@@ -157,11 +163,11 @@ export function sanitizeGarage(save) {
   }
   g.ownedParts = [...owned];
   const levels = {};
-  for (const [id, l] of Object.entries(g.partLevels || {})) {
-    if (partById(id) && isFinite(l)) levels[id] = Math.max(0, Math.min(GARAGE.maxPartLevel, Math.floor(l)));
+  for (const [id, l] of Object.entries(g.partLevels)) {
+    if (partById(id) && typeof l === 'number' && isFinite(l)) levels[id] = Math.max(0, Math.min(GARAGE.maxPartLevel, Math.floor(l)));
   }
   g.partLevels = levels;
-  const ab = (Array.isArray(g.abilities) ? g.abilities : []).map((id) => {
+  const ab = g.abilities.map((id) => {
     const a = abilityById(id);
     return a && isSlotAbility(a) && researchDone(save, abilityUnlock(a).research) ? id : null;
   });
@@ -172,12 +178,19 @@ export function sanitizeGarage(save) {
   return save;
 }
 
-// Dev-Menü: alle Forschungs-Bedingungen erfüllen (→ alle Fähigkeiten verfügbar, alle Teile kaufbar)
-// und alle Chassis besitzen. Teile bleiben zu kaufen (Schrott gibt es im Dev-Menü).
-export function unlockAll(save) {
+// Dev-Menü: alle Forschungs-Bedingungen erfüllen (→ alle Fähigkeiten verfügbar, Teile kaufbar, Chassis mit
+// Kernen kaufbar). Bis zum Erfinder-Labor (Phase 5) der einzige Weg, den Kauf mit 💠 auszuprobieren.
+export function completeResearch(save) {
   const done = new Set(save.research.done);
   for (const id of referencedResearch()) done.add(id);
   save.research.done = [...done];
+  return save;
+}
+
+// Dev-Menü: alle Forschungs-Bedingungen erfüllen und alle Chassis besitzen.
+// Teile bleiben zu kaufen (Schrott gibt es im Dev-Menü).
+export function unlockAll(save) {
+  completeResearch(save);
   for (const c of CHASSIS) if (!save.garage.ownedChassis.includes(c.id)) save.garage.ownedChassis.push(c.id);
   return save;
 }

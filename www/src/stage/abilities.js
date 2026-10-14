@@ -2,14 +2,35 @@
 //   mode 'hold': solange gehalten aktiv. Der Boost (Regel boostHold) schiebt in physics/vehicle.js und kostet
 //                dort boostFuel/boostHeat pro Sekunde; andere Halte-Fähigkeiten kosten fuel/heat pro Sekunde.
 //   mode 'tap':  ein Einsatz je Tippen; Kosten je Einsatz, Abklingzeit = cooldown × Stat abilityCooldown.
-// Jeder Einsatz löst abilityUse {ability} aus. Effekte laufen über items/effects.js (ctx der Etappe).
+// Jeder Einsatz löst abilityUse {ability} aus – beim Boost erst, wenn der bezahlte Boost wirklich startet
+// (stage/stage.js beim Ereignis boost {free:false}). Effekte laufen über items/effects.js (ctx der Etappe,
+// ctx.source = { id: Fähigkeit, kind: 'ability' }).
 // Sonderregeln: parachute + hardStop (Auswertung physics/vehicle.js), heatToThrust (Auswertung stage/stage.js).
+// Nur in der Luft: Fallschirm, rules.airOnly und Fähigkeiten, deren Effekte nur Drall (spin) sind – am Boden
+// kosten sie nichts. Fähigkeiten mit Hitzekosten sind gesperrt, wenn diese Kosten selbst überhitzen würden.
 import { abilityById } from '../data/index.js';
 import { runAll } from '../items/effects.js';
 
 const num = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
 
 export const isBoostAbility = (def) => !!(def && def.rules && def.rules.boostHold);
+
+// Wirkt die Fähigkeit nur in der Luft? (am Boden: nicht nutzbar, keine Kosten, keine Abklingzeit)
+export function isAirOnly(def) {
+  if (!def) return false;
+  const r = def.rules || {};
+  if (r.airOnly || r.parachute) return true;
+  const fx = def.effects || [];
+  return fx.length > 0 && fx.every((e) => e && e.fx === 'spin');
+}
+
+// Effekte einer Fähigkeit mit ihr als Quelle ausführen (boost-Ereignis meldet dann die Fähigkeits-ID)
+function runAbilityEffects(def, stage) {
+  const ctx = stage.ctx;
+  const prev = ctx.source;
+  ctx.source = { id: def.id, kind: 'ability' };
+  try { runAll(def.effects, ctx, 1); } finally { ctx.source = prev; }
+}
 
 export class AbilityBar {
   // ids: Fähigkeits-IDs in Knopf-Reihenfolge (Spezialfähigkeit des Chassis zuletzt)
@@ -35,6 +56,16 @@ export class AbilityBar {
 
   cooldownOf(def, stats) { return num(def.cooldown) * (stats ? stats.abilityCooldown : 1); }
 
+  // Würden die Hitzekosten eines Einsatzes selbst die Überhitzung auslösen? (nicht bei noOverheat/heatIsResource)
+  wouldOverheat(def, vehicle) {
+    const h = num(def.heat);
+    if (h <= 0) return false;
+    const r = vehicle.rules || {};
+    if (r.noOverheat || r.heatIsResource) return false;
+    const st = vehicle.stats;
+    return vehicle.heat + h * (st.heatGain ?? 1) >= st.heatMax;
+  }
+
   // Darf die Fähigkeit gerade benutzt werden? (Ressourcen, Abklingzeit, Sonderregeln)
   usable(s, vehicle) {
     const d = s.def;
@@ -46,7 +77,8 @@ export class AbilityBar {
     const chute = d.rules && d.rules.parachute;
     if (chute && vehicle.parachute > 0) return true;                    // offenen Schirm kappen geht immer
     if (s.cd > 0) return false;
-    if (chute && vehicle.onGround) return false;                        // Fallschirm nur in der Luft
+    if (vehicle.onGround && isAirOnly(d)) return false;                 // Fallschirm, Drall … nur in der Luft
+    if (this.wouldOverheat(d, vehicle)) return false;
     return true;
   }
 
@@ -63,13 +95,22 @@ export class AbilityBar {
     }
   }
 
-  // Halte-Fähigkeit beginnt (steigende Flanke)
+  // Halte-Fähigkeit beginnt (steigende Flanke). Der Boost zählt erst, wenn er wirklich startet (boostStarted).
   startHold(s, stage) {
+    if (isBoostAbility(s.def)) return;
     const v = stage.vehicle;
     if (!this.usable(s, v)) return;
     s.uses++;
     stage.emit('abilityUse', { ability: s.def.id });
-    if (!isBoostAbility(s.def)) runAll(s.def.effects, stage.ctx, 1);
+    runAbilityEffects(s.def, stage);
+  }
+
+  // Ein bezahlter Boost hat begonnen (Ereignis boost {free:false}) → Einsatz der Boost-Fähigkeit zählen
+  boostStarted(stage) {
+    const s = this.slots[this.boostSlot];
+    if (!s) return;
+    s.uses++;
+    stage.emit('abilityUse', { ability: s.def.id });
   }
 
   // Tipp-Fähigkeit einsetzen. Ergebnis: true, wenn sie ausgelöst hat.
@@ -95,9 +136,14 @@ export class AbilityBar {
     if (rules.parachute) v.toggleParachute(rules.parachute.dur, rules.parachute.maxSink);
     if (rules.hardStop) v.hardStop();
     if (rules.heatToThrust) stage.heatToThrust(rules.heatToThrust);
-    runAll(d.effects, stage.ctx, 1);
+    runAbilityEffects(d, stage);
     stage.hooks.sfx('ability', d.id);
     return true;
+  }
+
+  // Fallschirm ist zu: zeitweise Boni der Fallschirm-Fähigkeit (z. B. Auftrieb) enden sofort
+  parachuteClosed(stage) {
+    for (const s of this.slots) if (s.def.rules && s.def.rules.parachute) stage.mods.removeSource(s.def.id);
   }
 
   // Abklingzeiten und Kosten der Halte-Fähigkeiten (1× pro Physik-Schritt)

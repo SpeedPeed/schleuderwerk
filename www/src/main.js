@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { WORLDS, worldById } from './data/worlds.js';
-import { FX, CAMERA, CONTROLS, STAGE, PHYSICS } from './data/balance.js';
+import { FX, CAMERA, CONTROLS, STAGE, PHYSICS, SAVE } from './data/balance.js';
 import { PARTS, abilityById, chassisById, chassisVisual } from './data/index.js';
-import { loadSave, writeSave, exportSave, importSave, clearSave, defaultSave } from './save/save.js';
+import { loadSave, writeSave, exportSave, importSave, clearSave, defaultSave, getLoadIssue, allowOverwrite, getBackup } from './save/save.js';
 import { buildLoadout, partIds } from './garage/loadout.js';
 import * as garageLogic from './garage/garage.js';
 import { addPlaytime, markMilestone } from './garage/progression.js';
@@ -26,7 +26,7 @@ import { Results } from './ui/results.js';
 import { Menus } from './ui/menus.js';
 import { Popups } from './ui/popups.js';
 import { DevMenu } from './ui/devMenu.js';
-import { confirmDialog } from './ui/dom.js';
+import { confirmDialog, infoDialog } from './ui/dom.js';
 
 // ---------- Grundaufbau ----------
 let save = loadSave();
@@ -135,6 +135,7 @@ const menus = new Menus(uiRoot, {
   onImport: (text) => {
     try {
       save = importSave(text);
+      allowOverwrite();
       writeSave(save);
       afterSaveChange();
       return null;
@@ -149,12 +150,14 @@ const menus = new Menus(uiRoot, {
     afterSaveChange();
   },
   onDevMenu: () => { sfx.perfect(); devMenu.open(); },
+  getBackup: () => getBackup(),
 });
 const devMenu = new DevMenu(uiRoot, {
   getSave: () => save,
   getStage: () => stage,
   onCurrency: (kind, n) => { save.meta[kind] += n; writeSave(save); refreshGarage(); },
   onUnlockAll: () => { garageLogic.unlockAll(save); writeSave(save); refreshGarage(); },
+  onResearch: () => { garageLogic.completeResearch(save); writeSave(save); refreshGarage(); },
   onGiftParts: () => { garageLogic.giftAllParts(save); writeSave(save); refreshGarage(); },
   onUnlockWorlds: () => {
     for (const w of WORLDS) if (!save.worlds.unlocked.includes(w.id)) save.worlds.unlocked.push(w.id);
@@ -200,6 +203,7 @@ function garageInfo() {
     prevOk: i > 0,
     nextOk: !!next,
     nextLocked,
+    nextName: next ? next.name : '',
     nextText: next ? unlockText(next) : '',
     factor: world.scrapFactor || 1,
   };
@@ -229,7 +233,7 @@ function unlockText(w) {
   if (!w.unlock) return '';
   const from = worldById(w.unlock.world);
   const have = (save.worlds.records[from.id] || {}).bestDist || 0;
-  return `${fmtN(w.unlock.dist)} m in „${from.name}“ (Rekord ${fmtN(have)} m)`;
+  return `${fmtN(w.unlock.dist)}\u00a0m in „${from.name}“ (Rekord ${fmtN(have)}\u00a0m)`;
 }
 const fmtN = (n) => Math.round(n).toLocaleString('de-DE');
 
@@ -258,6 +262,7 @@ function garageAction(name, ...args) {
     platform.haptic('light');
     if (DENIED[res.reason]) popups.show(DENIED[res.reason], 'info');
     if (partId) garage.flashPart(partId, 'nope');
+    if (name === 'buyChassis') garage.flashChassis('nope');
     return res;
   }
   if (name === 'upgradePart') markMilestone(save, 'firstPartUpgrade');
@@ -269,7 +274,7 @@ function garageAction(name, ...args) {
   else { sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1); }
   if (name === 'setAbility') garage.closePicker(true);
   if (name === 'buyChassis') garage.viewId = args[0];
-  vehicleFromSave();
+  vehicleFromSave(garage.previewOverride());   // im Teile-Unterblatt bleibt das angetippte Teil in der Vorschau
   garage.render(save, garageInfo());
   if (partId) garage.flashPart(partId);
   return res;
@@ -293,7 +298,7 @@ function emitFx(kind, x, y, o = {}) {
       if (save.settings.shake) camRig.shake(FX.shake.hit);
       break;
     case 'steamBurst':
-      particles.emit(x, y, { ...PFX.steam, n: 14, speed: 6, spread: Math.PI * 2 });
+      particles.emit(x, y, PFX.steamBurst);
       break;
     case 'dust': {
       const d = PFX.dust;
@@ -458,7 +463,7 @@ platform.onPauseResume(
 let exitAsked = false;
 platform.onBackButton(async () => {
   const modal = uiRoot.querySelector('.modal');
-  if (modal) { modal.querySelector('.btn-secondary')?.click(); return; }
+  if (modal) { (modal.querySelector('.btn-secondary') || modal.querySelector('.btn-primary'))?.click(); return; }
   if (devMenu.isOpen) { devMenu.close(); return; }
   if (menus.settingsOpen) { menus.closeSettings(); return; }
   if (state === 'garage' && garage.pickerOpen) { garage.closePicker(); return; }
@@ -475,6 +480,41 @@ platform.markNative();
 // Ton darf erst nach der ersten Berührung starten
 window.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
 window.addEventListener('keydown', () => sfx.unlock(), { capture: true });
+
+// ---------- Darstellungs-Helfer ----------
+// Bodenkontakt am Hang: Winkel aus den Bodenhöhen unter Vorder- und Hinterachse, Höhe = Sehne + rideHeight
+// senkrecht dazu (die Physik rechnet mit einem Punkt; ohne das sinken die Räder an Hängen und Knicken ein).
+function groundPose(x, out) {
+  const d = carModel.userData.axleHalf;
+  const hF = track.heightAt(x + d), hR = track.heightAt(x - d);
+  const ang = Math.atan2(hF - hR, 2 * d);
+  out.angle = ang;
+  out.y = (hF + hR) / 2 + PHYSICS.rideHeight / Math.cos(ang);
+}
+
+// Garagen-Kamera: Breite und Lage so, dass das ganze Modell (auch hohe Aufbauten) in der Vorschau-Fläche
+// sitzt – berechnet aus der tatsächlichen Lage von .g-preview (inkl. Statusleisten-Abstand der App).
+// Die Radunterkante bleibt an einer festen Stelle, nur zu hohe Modelle werden kleiner gezeigt.
+const fitOut = { w: 0, ndcY: 0 };
+function garageFit(aspect, portrait) {
+  const G = CAMERA.garage;
+  const top = carModel.userData.top, bot = PHYSICS.rideHeight;
+  if (portrait) {
+    const pv = garage.previewNdc();
+    let hh = G.widthPortrait / aspect / 2;
+    if (!pv) { fitOut.w = G.widthPortrait; fitOut.ndcY = G.carNdcY; return fitOut; }
+    const span = Math.max(G.fitMinSpan, pv.top - pv.bottom - 2 * G.fitPad);
+    hh = Math.max(hh, (top + bot) / span);
+    fitOut.w = hh * 2 * aspect;
+    fitOut.ndcY = pv.bottom + G.fitPad + bot / hh;
+    return fitOut;
+  }
+  let hh = G.widthLandscape / aspect / 2;
+  hh = Math.max(hh, top / Math.max(G.fitMinSpan, G.topNdcLandscape - G.carNdcYLandscape));
+  fitOut.w = hh * 2 * aspect;
+  fitOut.ndcY = G.carNdcYLandscape;
+  return fitOut;
+}
 
 // ---------- Hauptschleife ----------
 let last = performance.now();
@@ -494,31 +534,37 @@ function frame(now) {
   if (!document.hidden && !paused) {
     addPlaytime(save, dt);
     saveTimer += dt;
-    if (saveTimer > 15) { saveTimer = 0; writeSave(save); }
+    if (saveTimer > SAVE.autosaveEvery) { saveTimer = 0; writeSave(save); }
   }
 
   const playing = state === 'stage' && stage && !paused;
   if (playing) stage.update(dt, input);
   const vdt = paused ? 0 : dt * (stage && state === 'stage' ? stage.timeScale : 1);
 
-  // Fahrzeug-Position (absolute Koordinaten); in der Garage steht es auf dem Hügel und wippt leicht
+  // Fahrzeug-Position (absolute Koordinaten); in der Garage steht es auf dem Hügel und der Aufbau wippt leicht
   const v = stage ? stage.vehicle : null;
   carPos.x = REST.x;
-  carPos.y = track.heightAt(REST.x) + PHYSICS.rideHeight + (1 + Math.sin(t * FX.idleBob.freq)) * FX.idleBob.amp;
+  carPos.y = track.heightAt(REST.x) + PHYSICS.rideHeight;
   carPos.angle = 0;
   carPos.back = carModel.userData.rear;
-  if (v) { carPos.x = v.x; carPos.y = v.y; carPos.angle = v.angle; }
+  const bob = v ? 0 : (1 + Math.sin(t * FX.idleBob.freq)) * FX.idleBob.amp;
+  carModel.userData.upper.position.y = bob / carModel.scale.y;   // nur der Aufbau, die Räder bleiben am Boden
+  if (v) {
+    carPos.x = v.x; carPos.y = v.y; carPos.angle = v.angle;
+    if (v.onGround) groundPose(v.x, carPos);
+  }
 
   // Kamera-Logik (ohne three) → Floating Origin → THREE-Kamera
   const aspect = view.camera.aspect;
   if (!stage) {
-    // Garage: Fahrzeug groß im oberen Bildteil (Querformat: links), dreht sich langsam
+    // Garage: Fahrzeug groß in der Vorschau-Fläche (Querformat: links), dreht sich langsam
     const G = CAMERA.garage;
     const portrait = aspect < 1;
-    const w = portrait ? G.widthPortrait : G.widthLandscape;
+    const fit = garageFit(aspect, portrait);
+    const w = fit.w;
     const h = w / aspect;
     frameView.x = REST.x - (portrait ? 0 : G.carNdcXLandscape) * (w / 2);
-    frameView.y = carPos.y - (portrait ? G.carNdcY : G.carNdcYLandscape) * (h / 2);
+    frameView.y = carPos.y - fit.ndcY * (h / 2);
     frameView.width = w;
     frameView.k = G.k;
     frameView.aspect = aspect;
@@ -554,10 +600,10 @@ function frame(now) {
   carModel.position.set(carPos.x - ox, carPos.y, 0);
   carModel.rotation.z = carPos.angle;
   carModel.rotation.y = stage ? 0 : garageSpin;
-  const spin = v ? v.wheelSpin : t * 2;
+  const spin = v ? v.wheelSpin : t * FX.garageWheelSpin;
   for (const w of carModel.userData.wheels) w.rotation.z = -spin;
   const spinning = !v || v.boosting || v.driving;
-  for (const s of carModel.userData.spinners) if (spinning) s.mesh.rotation.x += s.speed * Math.max(vdt, dt * 0.3);
+  for (const s of carModel.userData.spinners) if (spinning) s.mesh.rotation.x += s.speed * Math.max(vdt, dt * FX.idleSpinnerMul);
   if (stage && carModel.userData.setScrap) carModel.userData.setScrap(stage.scrapPickups);
   const attached = !!stage && stage.phase === 'aim';
   sling.root.visible = !!stage;   // in der Garage steht das Fahrzeug frei (Schleuder würde die Vorschau verdecken)
@@ -576,12 +622,12 @@ function frame(now) {
       flameOpts.vy = v.vy * BF.inherit;
       particles.emit(px, py, flameOpts);
     } else if (v.driving && Math.random() < DS.chance) {
-      smokeOpts.dir = ca + Math.PI * 0.85;
-      smokeOpts.vx = v.vx * 0.5;
-      smokeOpts.vy = v.vy * 0.5;
+      smokeOpts.dir = ca + Math.PI * DS.dirOffset;
+      smokeOpts.vx = v.vx * DS.inherit;
+      smokeOpts.vy = v.vy * DS.inherit;
       particles.emit(px, py, smokeOpts);
     }
-    if ((v.stall > 0 || v.heatFrac > 0.9) && Math.random() < ST.chance) particles.emit(v.x, v.y + 0.8, ST);
+    if ((v.stall > 0 || v.heatFrac > ST.heatFrac) && Math.random() < ST.chance) particles.emit(v.x, v.y + ST.dy, ST);
     if (v.onGround && Math.abs(v.s) > GD.minSpeed && Math.random() < GD.chance) {
       groundDustOpts.colors = pal.dirt;
       particles.emit(v.x + GD.dx, v.y + GD.dy, groundDustOpts);
@@ -641,6 +687,21 @@ function frame(now) {
 applySettings();
 openGarage();
 requestAnimationFrame(frame);
+reportLoadIssue();
+
+// Spielstand ließ sich nicht laden → Hinweis. Der Rohtext liegt im Backup (Einstellungen → „Backup anzeigen“).
+// Stammt er aus einer neueren Version, wird erst gespeichert, wenn die Person „Neu anfangen“ bestätigt.
+async function reportLoadIssue() {
+  const issue = getLoadIssue();
+  if (!issue) return;
+  if (issue.kind === 'newer') {
+    const yes = await confirmDialog(uiRoot, 'Dein Spielstand stammt aus einer neueren Spielversion und kann hier nicht geladen werden. Er bleibt unverändert gespeichert. Hier neu anfangen? (Der alte Stand liegt dann im Backup.)', 'Neu anfangen');
+    if (yes) { allowOverwrite(); writeSave(save); popups.show('Neuer Spielstand – der alte liegt im Backup', 'info'); }
+    else popups.show('Es wird nichts gespeichert, bis du neu anfängst', 'info');
+  } else {
+    await infoDialog(uiRoot, 'Dein Spielstand war beschädigt und konnte nicht geladen werden. Der Rohtext ist gesichert (Einstellungen → „Backup anzeigen“). Es geht mit einem neuen Spielstand weiter.');
+  }
+}
 
 // Für Tests (Playwright-Rauchtest) und die Browser-Konsole
 window.__game = {

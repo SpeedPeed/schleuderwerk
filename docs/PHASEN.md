@@ -54,7 +54,7 @@ Das Spiel bleibt wie bisher spielbar (Werkstatt mit den 8 Upgrades, 2 Welten, Ru
 3. Leertaste **loslassen**, während die Kraft im **grünen Bereich** steht → „PERFEKTER ABSCHUSS!“ und kurze Zeitlupe.
 4. Im Flug **←** halten → das Auto dreht die Nase hoch; ca. 1 Sekunde halten = ein Salto. **→** dreht andersherum. Loslassen → die Drehung läuft aus.
 5. **Leertaste** im Flug = Boost (Flamme hinter dem Auto, Boost-Leiste sinkt).
-6. Nach dem Stillstand erscheint die Auswertung → **Werkstatt** → ein Upgrade kaufen (Preis und Wirkung ändern sich mit jeder Stufe weniger stark).
+6. Nach dem Stillstand erscheint die Auswertung → **Werkstatt** → ein Upgrade kaufen (Preis und Wirkung ändern sich mit jeder Stufe weniger stark). *(Stand Phase 1 – seit Phase 2 ersetzt die Garage die Werkstatt, siehe unten.)*
 
 **Am Handy**
 1. PC und Handy im selben WLAN, am PC `python tools/serve.py`, am Handy die angezeigte Handy-Adresse öffnen (siehe README).
@@ -63,7 +63,7 @@ Das Spiel bleibt wie bisher spielbar (Werkstatt mit den 8 Upgrades, 2 Welten, Ru
 4. Im Flug: **linke Hälfte halten** = Nase hoch (die Hälfte leuchtet leicht auf), **rechte Hälfte halten** = Nase runter. Beide Hälften gleichzeitig = keine Drehung.
 5. **🔥-Knopf unten rechts halten** = Boost. Gleichzeitig mit dem anderen Daumen neigen geht auch (Multi-Touch).
 6. Achte darauf: Das Auto verschwindet nie aus dem Bild – auch nicht bei hohem Tempo oder sehr hohen Sprüngen. Ist der Boden zu weit weg, zeigt unten ein Pfeil die Höhe an („Boden ↓ … m“).
-7. Für einen Test großer Strecken (Floating Origin) einige Upgrades kaufen (Katapult, Motor, Tank) und weit fliegen: Auch nach mehreren Kilometern bleiben Landschaft und Auto ruhig, ohne Zittern.
+7. Für einen Test großer Strecken (Floating Origin) einige Upgrades kaufen (Katapult, Motor, Tank) und weit fliegen: Auch nach mehreren Kilometern bleiben Landschaft und Auto ruhig, ohne Zittern. *(Seit Phase 2: Teile in der Garage verbessern bzw. im Dev-Menü weit springen.)*
 
 ### Bekannte Grenzen (kommen in späteren Phasen)
 - Upgrades sind noch die alten 8 Prozent-Upgrades (Garage mit Chassis und Teilen folgt in Phase 2).
@@ -91,8 +91,8 @@ Das alte Upgrade-System (8 lineare Upgrades, Werkstatt, Geld) ist weg. Spielbar 
 
 **Ressourcen in der Etappe** (`physics/vehicle.js`)
 - ⛽ **Treibstoff** (fuelMax, pro Testfahrt voll): Der **Antrieb schiebt am Boden automatisch** (driveAccel, kostet driveFuel/s und driveHeat/s). Tank leer → „Tank leer – rollt aus …“.
-- 🌡 **Hitze** (0 … heatMax, Kühlung coolRate/s, heatGain verstärkt jede Zunahme): Boost +30/s, Antrieb +5/s, Glutwüste +4/s. Bei Maximum **Überhitzung**: 2 s kein Boost/Antrieb, 5 Schaden, Hitze fällt auf 50. Kühlschrank (noOverheat) kann nicht überhitzen, die Waschmaschine (heatIsResource) bleibt ohne Stillstand am Maximum und wandelt die Hitze per Schleudergang in Schub.
-- 🔧 **Haltbarkeit** (durabilityMax, in Phase 2 pro Testfahrt): Aufprall über 9 m/s Normaltempo kostet 2,5 je m/s, Bruchlandung +15, holprig +4, Hindernis 12 – alles × (1 − Panzerung). Bei 0: „TOTALSCHADEN!“, die Testfahrt endet. Die alten Herzen entfallen.
+- 🌡 **Hitze** (0 … heatMax, Kühlung coolRate/s, heatGain verstärkt jede Zunahme): Boost +30/s, Antrieb +5/s, Glutwüste +4/s, Kühlung 10/s. Bei Maximum **Überhitzung**: 2 s kein Boost/Antrieb, 3 Schaden, Hitze fällt auf 50. Kühlschrank (noOverheat) kann nicht überhitzen, die Waschmaschine (heatIsResource) bleibt ohne Stillstand am Maximum und wandelt die Hitze per Schleudergang in Schub.
+- 🔧 **Haltbarkeit** (durabilityMax, in Phase 2 pro Testfahrt): Aufprall über 14 m/s Normaltempo kostet 1 je m/s, Bruchlandung +10, holprig +2, Hindernis 5 – alles × (1 − Panzerung). Bei 0: „TOTALSCHADEN!“, die Testfahrt endet. Die alten Herzen entfallen. (Werte nach dem Nachjustieren, siehe unten.)
 - Raketenschlitten (lowGrip): Antrieb und Rollreibung am Boden halbiert.
 - Alle Ereignisse heißen wie in ARCHITEKTUR 4.2 (launch, perfectLaunch, landing, perfectLanding, groundTouch, flip, airSecond, boost, boostSecond, overheat, collision, bounce, pickup, fuelEmpty, abilityUse, milestone, explosion, damage, heal, stageStart, stageEnd) und landen in der Ereignis-Warteschlange der Etappe (`stage.queue`, abgearbeitet nach jedem Physik-Schritt → `hooks.event` und `stage.onEvent` für die Trigger-Engine in Phase 4).
 
@@ -108,11 +108,48 @@ Das alte Upgrade-System (8 lineare Upgrades, Werkstatt, Geld) ist weg. Spielbar 
 
 **Spielstand v3** (`save/save.js`): Schema nach ARCHITEKTUR §10 (meta, garage, research, ascension, codex, cosmetics, settings, stats, run, tutorial; Welten als Übergang bis Phase 3). Alte Spielstände werden automatisch übernommen: **Geld / 40 → Startschrott (höchstens 400)**, Einstellungen, Rekorde und freigeschaltete Welten bleiben. Export als `SW3:…`, alte `SW2:…`-Texte lassen sich weiter importieren. Die Spielzeit wird mitgezählt; Meilensteine (erste Testfahrt, erstes gekauftes/verbessertes Teil, erstes neues Chassis) bekommen beim ersten Erreichen einen Zeitstempel.
 
-**Dev-Menü** (`ui/devMenu.js`): In den Einstellungen **7× schnell auf die Versionsnummer** tippen. +1.000/+10.000 ⚙, +10 📘, +3 💠, alles freischalten (Chassis, Fähigkeiten, Forschungs-Bedingungen – Teile werden dadurch kaufbar), alle Teile schenken, alle Strecken, Testfahrt sofort beenden, 18 Werte live ändern (z. B. `BASE_STATS.launchSpeed`, `PHYSICS.hardSpeedCap`, `CAMERA.maxWidth`, `RESOURCES.dmgPerMps`, `GARAGE.costGrowth`), Meilenstein-Zeiten und die Ereignis-Zähler der letzten Etappe.
+**Dev-Menü** (`ui/devMenu.js`): In den Einstellungen **7× schnell auf die Versionsnummer** tippen. +1.000/+10.000 ⚙, +10 📘, +3 💠, **📘 Forschung erfüllen** (nur die Bedingungen – Chassis dann mit 💠 kaufbar), alles freischalten (Chassis, Fähigkeiten, Forschungs-Bedingungen – Teile werden dadurch kaufbar), alle Teile schenken, alle Strecken, Testfahrt sofort beenden, 18 Werte live ändern (z. B. `BASE_STATS.launchSpeed`, `PHYSICS.hardSpeedCap`, `CAMERA.maxWidth`, `RESOURCES.dmgPerMps`, `GARAGE.costGrowth`), Meilenstein-Zeiten und die Ereignis-Zähler der letzten Etappe.
 
 **Aufgeräumt**: `data/upgrades.js`, `garage/stats.js`, `ui/workshop.js` und das Geld sind entfernt.
 
 **Tests**: `npm test` – zusätzlich zu Phase 1: `statMods` (add/mul/xmul, Soft-Caps, negative Boost-Hitze, Panzerung ≤ 0,6), `loadout` (jedes Chassis × jedes Teil auf Stufe 0 und 20: alle Werte endlich und plausibel; Badewanne 5 Item-Plätze; Garage-Aktionen), `save` (Migration v2 → v3, Export/Import-Rundlauf, alter SW2-Text), `resources` (Antrieb & Treibstoff, Überhitzung, noOverheat, heatIsResource, lowGrip, Aufprallschaden mit Panzerung, Abklingzeit & Kosten, Boost nur mit Treibstoff, Schleudergang, Fallschirm, Notbremse), `effects` (jeder Effekt einmal, Warteschlange, Buffs). `npm run smoke` spielt den ganzen Ablauf im Browser (siehe unten).
+
+### Nachjustiert (nach der Prüfung von Phase 2)
+
+Unabhängige Prüfer haben Phase 2 auf Optik, Garage-Bedienung, Ressourcen-Balance und Code-Konventionen geprüft. Ergebnis der Überarbeitung:
+
+**Balance** – Ziel: Flug + Landung sind das Spiel, eine Testfahrt dauert ca. 20–30 s, Boost ist je Liter nicht schlechter als der Bodenantrieb, schwere Chassis fahren trotzdem, Dauer-Boost überhitzt wirklich, ein sauberer Abschuss mit Landung kostet höchstens ~3–5 % Haltbarkeit (ab Phase 3 gilt sie für ~20 Etappen), eine harte Bruchlandung 10–20 %. Alle Zahlen stehen in `data/balance.js`; geprüft mit einem Bot (echte Etappe, 9 Chassis × 3 Seeds × 2 Welten, mit/ohne Neigen und Boost) und `tests/balance.test.mjs`.
+
+| Wert | alt | neu | Begründung |
+|---|---|---|---|
+| `BASE_STATS.driveFuel` | 3/s | 12/s | voller Tank ≈ 10 s Bodenfahrt statt 33 s – die Fahrt am Boden ist Überbrückung, nicht Hauptteil |
+| `BASE_STATS.driveAccel` | 3,5 | 6 | Antrieb deutlich über der Rollreibung (2,5 m/s²) – auch für schwere Kisten und in der Wüste |
+| `PHYSICS.driveMassExp` | (1) | 0,5 | neu: Antrieb = driveAccel / mass^0,5. Die Rollreibung bremst masseunabhängig, deshalb blieben schwere Chassis (Kühlschrank, Rasenmäher, Sofa) am ersten Hang stehen; jetzt schafft jedes Chassis mit Startteilen > 3° (Wüste: Rasenmäher ≈ 8°) |
+| `BASE_STATS.boostFuel` | 20/s | 16/s | Boost-Δv je Liter (13/16 ≈ 0,8 m/s) liegt jetzt über dem Antrieb (6/12 = 0,5 m/s); Boosten in der Luft bringt im Bot-Test +20–60 % Strecke (vorher in der Steppe −10 %) |
+| `BASE_STATS.fuelMax` | 100 | 120 | 7,5 s Boost bzw. 10 s Antrieb je Tank → Testfahrten ≈ 17–26 s (vorher 34–56 s) |
+| `BASE_STATS.coolRate` | 15/s | 10/s | Dauer-Boost +30 − 10 = +20/s → Überhitzung nach 5 s, also vor leerem Tank (vorher in 92 % der Kombis nie). Kühlteile zögern sie spürbar hinaus; der Antrieb (+5/s) heizt nur mit Turbine/Wüste |
+| `RESOURCES.overheatDamage` | 5 | 3 | Überhitzen ist jetzt häufig – die Strafe ist v. a. der 2-s-Stillstand |
+| `BASE_STATS.impactThreshold` | 9 m/s | 14 m/s | ein voller Abschuss landet mit 13–17 m/s Normaltempo: sauber ≤ 3 % statt 12 % |
+| `RESOURCES.dmgPerMps` | 2,5 | 1 | Sturz aus großer Höhe (25 m/s) kostet 11 statt 40 |
+| `RESOURCES.crashLandingDamage` | 15 | 10 | Bruchlandung = 10 % + Aufprall → 10–20 % |
+| `RESOURCES.bumpyLandingDamage` | 4 | 2 | holprig nach steilem Abschuss ≈ 4–6 % |
+| `RESOURCES.obstacleDamage` | 12 | 5 | Hindernisse treffen im Bot-Test 1–2× je Etappe (der Hüpfer überspringt nur Reifenstapel) – bei ~20 Etappen sonst nicht überlebbar |
+| `RESOURCES.shieldMinDamage` | – | 2 | neu: Schilde verbrauchen sich erst ab 2 Schaden (Kleinstschaden geht durch) |
+| `STAGE.stopSpeed` | 0,8 m/s | 2 m/s | kürzeres Ausrollen am Ende |
+
+Bot-Ergebnis (Mittel über alle Chassis): ohne Boost ≈ 20 s, davon ≈ 27 % in der Luft, ≈ 9–10 % Schaden (fast nur Hindernisse); mit Boost in der Luft ≈ 16–21 s, 40–52 % in der Luft. Erste Landung nach normalem Abschuss mit Ausrichten: 0–3 %. Mehr Flug-Anteil ohne Boost bringen erst die Streckenbausteine (Rampen, Schluchten) der Run-Etappen in Phase 3.
+
+**Behoben (Auswahl)**
+- *Modelle*: Bügelbrett steht mit den Beinen auf dem Aufbau (neuer Anker `deck`); Kühlschrank-Panzerung auf der Tür (Topfdeckel jetzt zwei große Deckel); Tank/Spoiler/Kühlung/Schaufel überlappen nicht mehr (Sofa- und Badewannen-Tank nach vorn, Kühlschrank-Kühlung über dem Tank, Schaufel vor der Trockeneis-Kiste); Raketenschlitten mit Bug-Latte und Bugschild; Mülltonnen-Schrott hinter dem Fahrer; Einkaufswagen-Gadgets auf dem Querholm, Tank auf einer Ablage oberhalb der Panzerung; Lüftungsschlitze auch seitlich (Anker `vent`); Lenkrad der Seifenkiste in Reichweite; Antriebe, Spoiler, Gasflasche, Glücksbringer ohne Spalt. `tests/vehicleModel.test.mjs` prüft jedes Chassis × Rad × Teil: nichts schwebt, nichts steckt im Boden, Teile verschiedener Slots durchdringen sich kaum.
+- *Bodenkontakt*: Darstellung am Boden nach den Bodenhöhen unter beiden Achsen (keine eingesunkenen Räder am Hang), Traktor-Stollen innerhalb des Radius, Gummibälle als feinerer Polyeder; in der Garage wippt nur der Aufbau.
+- *Garage*: Kamera passt sich der Modellhöhe und der echten Lage der Vorschau an (auch mit App-Statusleiste); Sperr-Hinweis eines Chassis liegt über der Vorschau – Pfeile und Liste springen nicht mehr; nicht leistbare Käufe sind grau, bleiben antippbar und melden „Nicht genug …“ (Grün nur für MAX); Stufe steht in der Slot-Zeile; deckendes Unterblatt mit Mini-Werte-Balken; nach dem Kauf bleibt das angetippte Teil in der Vorschau; Tag-Namen statt IDs; ausgerüstete Teile zeigen die Wirkung der nächsten Stufe; Strecken-Hinweis mit Namen und Zeilenumbruch; Touch-Ziele ≥ 44 px; `.btn:disabled` sichtbar.
+- *Fähigkeiten/Ereignisse*: abilityUse {boost} erst beim echten Start; Wechsel Gratis ↔ bezahlter Boost meldet boost {free} neu; Gratis-Boosts aus Fähigkeiten melden deren ID; Gratis-Boost läuft im Stillstand nicht ab; Fähigkeiten, deren Hitzekosten selbst überhitzen würden, sind gesperrt (Zündturbo, ID `nachbrenner`); Drall-Fähigkeiten (Gyro-Kick) nur in der Luft; Fallschirm-Auftrieb endet mit dem Schirm; maxHp/maxFuel halten den Wert ≤ Maximum; emit mit unbekanntem Ereignis wird verworfen.
+- *Spielstand*: falsch typisierte Felder werden repariert statt abzustürzen; nicht ladbare Stände landen als Rohtext im Backup (`schleuderwerk.save.bak`, Einstellungen → „Backup anzeigen“); bei einem Stand aus einer neueren Version wird nicht gespeichert, bis man „Neu anfangen“ bestätigt.
+- *Technik*: Partikel-Farben werden nicht mehr pro Bild geparst, instanzierte Hindernisse haben ein eigenes Material, restliche Zahlen aus `main.js`/HUD/Auswertung/Objekten nach `balance.js`, 4. Fähigkeits-Knopf + Taste 4 (3 Slots + Spezialfähigkeit), tote Exporte entfernt.
+
+**Inhaltsdaten übernommen** (korrigierte `chassis.js`, `parts.js`, `abilities.js`): gleiche IDs, Texte überarbeitet; neues Kühlteil *Heizlüfter* (`cooling_heizluefter`, Feuer-Tag, eigenes Modell vorn an der Kiste); Elektromotor, Matratze, Gasflasche zählen jetzt als Elektro-/Hydraulik-/Raketen-Teil; Trockeneis kühlt bei der Landung statt beim Boost; Glückswurf gibt immer 0,8 s Gratis-Boost (Abklingzeit 12 s); Nachbrenner heißt *Zündturbo* und heizt nur noch um 10.
+
+**Bewusst offen**: Kostenkurve der Teile-Stufen (Stufe 20 ≈ 102 × Basispreis) wird erst gegen die Run-Ökonomie in Phase 5/6 kalibriert; die Startkraft ändert noch kein Teil, den Boost-Schub bisher nur der Heizlüfter (Inhaltsdaten); kleine Gadgets bleiben im Flug nur wenige Pixel groß (Kamera-Design).
 
 ### So testest du Phase 2
 
@@ -125,8 +162,8 @@ Das alte Upgrade-System (8 lineare Upgrades, Werkstatt, Geld) ist weg. Spielbar 
 2. In der Garage ◀ ▶ antippen: gesperrte Chassis zeigen ihre Bedingungen. Eine Slot-Zeile antippen → Teile-Auswahl; ein Teil antippen → Vorschau im 3D-Modell und in den Werte-Balken.
 3. **⚙ → 7× auf „Schleuderwerk v0.4.0“** tippen → Dev-Menü. „+10.000 ⚙“ und „🔓 Alles freischalten“, dann schließen. Jetzt kannst du jedes Chassis anwählen und Teile kaufen/ausrüsten/verbessern.
 4. Fähigkeiten-Chip „Slot 2“ antippen → z. B. „Gyro-Kick“ ausrüsten. **TESTFAHRT ▶**.
-5. Abschuss wie bisher (Leertaste halten/loslassen, ↑/↓ = Winkel). Im Flug: **Leertaste** = Boost, **1/2/3** = Fähigkeit 1–3, **←/→** = neigen.
-6. Beobachte die Leisten links unten: Treibstoff sinkt beim Boost (und am Boden durch den Antrieb), die Hitze steigt beim Boost und blinkt ab 80 %; bei 100 % „ÜBERHITZT!“ (2 s kein Boost). Harte Landungen kosten Haltbarkeit („−12 🔧“).
+5. Abschuss wie bisher (Leertaste halten/loslassen, ↑/↓ = Winkel). Im Flug: **Leertaste** = Boost, **1–4** = Fähigkeit 1–4, **←/→** = neigen.
+6. Beobachte die Leisten links unten: Treibstoff sinkt beim Boost (und am Boden durch den Antrieb), die Hitze steigt beim Boost und blinkt ab 80 %; bei 100 % „ÜBERHITZT!“ (2 s kein Boost) – Dauer-Boost überhitzt nach etwa 5 s. Harte Landungen kosten Haltbarkeit („−6 🔧“), die Leiste wird unter 50 % gelb, unter 25 % rot.
 7. Auswertung: ⚙ Schrott-Belohnung → „🔧 Garage“.
 8. Ausprobieren: Kühlschrank (überhitzt nie), Waschmaschine (Schleudergang-Knopf 🌀 wandelt Hitze in Schub), Raketenschlitten (rutscht am Boden), Mülltonne (sammelt Schrott-Häufchen ein, die sich auf ihrem Deckel stapeln).
 

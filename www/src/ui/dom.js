@@ -30,3 +30,13 @@ export function confirmDialog(root, text, yes = 'Ja', no = 'Abbrechen') {
     root.appendChild(d);
   });
 }
+
+// Einfacher Hinweis mit nur einem Knopf
+export function infoDialog(root, text, ok = 'OK') {
+  return new Promise((resolve) => {
+    const d = el(`<div class="overlay modal"><div class="card"><p>${text}</p>
+      <div class="btn-row"><button class="btn btn-primary">${ok}</button></div></div></div>`);
+    d.querySelector('button').onclick = () => { d.remove(); resolve(true); };
+    root.appendChild(d);
+  });
+}

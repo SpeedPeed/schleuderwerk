@@ -43,7 +43,7 @@ Der Spielstand liegt im Browser des Handys. In der App (kommt im nächsten Schri
 
 Mehrere Finger gleichzeitig sind erlaubt (z. B. links halten **und** Boost). Unten links: ⛽ Treibstoff, 🌡 Hitze (blinkt ab 80 %, bei 100 % „ÜBERHITZT“ = 2 s kein Boost/Antrieb), 🔧 Haltbarkeit (bei 0 Totalschaden). Ist der Boden nicht mehr im Bild, zeigt ein Pfeil unten die Höhe an („Boden ↓ 340 m“).
 
-**Am PC (Test):** Leertaste halten/loslassen = Abschuss · Pfeil ↑/↓ beim Zielen = Winkel · Leertaste im Flug = Boost · **1/2/3** = Fähigkeit 1–3 · Pfeil ←/→ = Nase hoch/runter.
+**Am PC (Test):** Leertaste halten/loslassen = Abschuss · Pfeil ↑/↓ beim Zielen = Winkel · Leertaste im Flug = Boost · **1–4** = Fähigkeit 1–4 · Pfeil ←/→ = Nase hoch/runter.
 
 ## Projektstruktur
 
