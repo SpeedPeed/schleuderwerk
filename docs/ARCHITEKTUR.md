@@ -53,6 +53,7 @@ data/
   balance.js            ALLE globalen Zahlen (Physik, Kamera, Abschuss, Ökonomie, Karte, Preise …)
   tags.js               10 Tags + Set-Boni (2/4/6)
   items.js              80+ Run-Items
+  index.js              Zugriff (chassisById, partById, partsForSlot, abilityById) + Format-Adapter der Inhaltsdaten
   chassis.js            Chassis-Klassen
   parts.js              Garage-Teile je Slot
   abilities.js          aktive Fähigkeiten
@@ -73,9 +74,13 @@ items/
   triggerEngine.js      Ereignis-Warteschlange, Kettentiefe, Limits, Zähler, Buffs
   inventory.js          Slots, Stufen (★), Fusion, Hybride, Tag-Zählung, Set-Boni
   statMods.js           Stat-Pipeline: Basis → Chassis → Teile → Forschung → Items/Sets → Buffs → Soft-Caps
+  events.js             Ereignis-Namen (4.2 / 4.11)
+  eventQueue.js         Ereignis-Warteschlange (FIFO, Kettentiefe, Limit je Abarbeitung) – Grundlage der Trigger-Engine
+  modState.js           zeitweise Modifikatoren einer Etappe: Buffs, Stapel (stack), Zähler (charge)
 stage/
   stage.js              Eine Etappe: Abschuss → Flug/Fahrt → Ende; verbindet Physik + Trigger-Engine
   launch.js             Abschuss-Minispiel (Halten/Loslassen, Sweet Spot, Winkel)
+  abilities.js          Fähigkeits-Slots (halten/tippen, Kosten, Abklingzeit, Sonderregeln)
   scoring.js            Medaillen, Stunt-Belohnungen, Etappen-Ergebnis
 run/
   runState.js           Roguelite-Run (Akt, Karte, Inventar, Währungen, Haltbarkeit) – reiner Zustand + Aktionen
@@ -85,7 +90,8 @@ map/
 shops/
   scrapDealer.js  workbench.js  blackMarket.js  gasStation.js  textEvent.js  treasure.js
 garage/
-  loadout.js            Garage-Auswahl → Fahrzeug-Grundwerte
+  loadout.js            Garage-Auswahl → Fahrzeug-Grundwerte (buildLoadout)
+  garage.js             Garage-Aktionen: Chassis/Teile kaufen, ausrüsten, verbessern, Fähigkeiten wählen
   research.js           Forschung kaufen, Freischaltungen auflösen
   progression.js        Meta-Fortschritt, Schrottstufen, Meilenstein-Zeitmessung
 camera/
@@ -211,7 +217,8 @@ Hybrid-Items zählen für beide Tags. Chassis-Regel `setBonusDouble` verdoppelt 
 // ability
 { id, name, icon, desc, mode: 'hold'|'tap', cooldown, fuel (pro s bei hold, sonst je Einsatz), heat, effects: [fx…], unlock }
 ```
-Teile-Stufen: Wirkung `dimReturn(level, perLevel, balance.GARAGE.halfLevel)`, Kosten `base × balance.GARAGE.costGrowth^level`.
+Teile-Stufen (0 … `GARAGE.maxPartLevel` = 20): Wirkung `perLevel × L / (1 + L / balance.GARAGE.dimDivisor)` (Stufe 20 ≈ 12 effektive Stufen; `items/statMods.js → partDimLevels`), Kosten der nächsten Stufe `Basis × balance.GARAGE.costGrowth^L` mit Basis = `unlock.scrap` bzw. `GARAGE.starterUpgradeBase` bei Startteilen (`garage/garage.js → upgradeCost`).
+Format-Anpassungen an den Inhaltsdaten (fehlende Felder, Startteile, Forschungs-Namen) passieren nur in `data/index.js` (Adapter), nie in den Inhaltsdateien.
 
 ### 4.9 Biome (`data/biomes.js`)
 ```js
@@ -264,7 +271,7 @@ Aktionen geben neue Teilzustände zurück bzw. mutieren kontrolliert; UI ruft nu
 - `render/origin.js`: Render-Ursprung springt in `ORIGIN.shiftEvery`-Schritten mit; alle Meshes werden relativ positioniert, Gelände-Chunks haben lokale Koordinaten.
 
 ## 10. Speichern (`save/save.js`)
-Schema **v3** (`SAVE_VERSION = 3`): `{ version, meta: {scrap, blueprints, cores, totalPlaytime, milestones:{…}}, garage: {chassis, owned, parts:{slot:id}, partLevels, abilities}, research: {done:[…]}, ascension: {unlocked, best}, codex: {items:{…}}, cosmetics, settings, stats, run: <laufender Run oder null>, tutorial }`. Migration v2 → v3: altes Geld → Startschrott (`money/40`, max. 400), Einstellungen bleiben, Rest neu.
+Schema **v3** (`SAVE_VERSION = 3`): `{ version, meta: {scrap, blueprints, cores, totalPlaytime, milestones:{id: Spielzeit s}}, garage: {chassis, ownedChassis:[…], parts:{slot:partId}, ownedParts:[…], partLevels:{partId: level}, abilities:[ids]}, research: {done:[…]}, ascension: {unlocked, best}, codex: {items:{…}, sets:{…}}, cosmetics: {owned, paint}, settings, stats, worlds: {current, unlocked, records} (Übergang bis Phase 3), run: <laufender Run oder null>, tutorial }`. Migration v2 → v3: altes Geld → Startschrott (`money/40`, max. 400), Einstellungen, Rekorde und freigeschaltete Welten bleiben, Rest neu. Export `SW3:` + Base64; ältere `SW2:`-Texte laufen beim Import durch die Migration. Nach jeder Migration prüft `garage/garage.js → sanitizeGarage` die IDs gegen die aktuellen Inhaltsdaten.
 
 ## 11. Tests & Qualitätssicherung
 - `node --test tests/` – Physik (kein Durchtunneln bei 150 m/s, Soft-Cap), Trigger-Engine (Kettentiefe, Limits), Karte (Erreichbarkeit, Regeln), Shops, Speichern/Migration.
@@ -272,7 +279,25 @@ Schema **v3** (`SAVE_VERSION = 3`): `{ version, meta: {scrap, blueprints, cores,
 - `tools/sim/` – Balance-Simulator (Bot spielt Etappen mit echter Physik; Ökonomie-Hochrechnung der Spielzeit-Meilensteine).
 
 ## Anhang A – Regel-Schalter und ihre Auswertungsstelle
-(wird in Phase 4–6 gefüllt)
+Jede Regel wird an **genau einer** Stelle ausgewertet. Parameter stehen in `balance.RULES`, die Regeln selbst sammelt `items/statMods.js → collectRules` (Chassis, Teile; ab Phase 4 Items und Sets) und `garage/loadout.js` gibt sie an die Etappe (`stage.rules`, `vehicle.rules`).
+
+| Regel | Quelle | Auswertung | Stand |
+|---|---|---|---|
+| `noOverheat` | Chassis Kühlschrank | `physics/vehicle.js → checkOverheat()`: Hitze bei heatMax gedeckelt, kein overheat-Ereignis, kein Stillstand, kein Schaden | Phase 2 ✔ |
+| `heatIsResource` | Chassis Waschmaschine | `physics/vehicle.js → checkOverheat()` (Deckel, overheat ohne Stillstand/Schaden) + `updateResources()` (wieder scharf unter `RESOURCES.heatResourceRearm` × heatMax) | Phase 2 ✔ |
+| `lowGrip` | Chassis Raketenschlitten | `physics/vehicle.js → stepGround()`: Antrieb × `RULES.lowGrip.driveMul`, Rollreibung × `frictionMul`, Abheben ab takeoffMinSpeed × `takeoffMul`; Notbremse dauert `RULES.hardStop.lowGripTime` (`startBrake()`) | Phase 2 ✔ (Faktoren 0,5 laut Auftrag; ruleSpec nennt 0,4/0,6 und halbe Oberflächen-Faktoren → bei Bedarf nur `RULES.lowGrip` anpassen; Oberflächen kommen mit Phase 3) |
+| `collectScrapMass` | Chassis Mülltonne | `stage/stage.js → onHit()` (Schrottberg: Schaden × ⅓, Resttempo halb zwischen hitSpeedKeep und 1, danach pickup {kind:'scrap'}) und Konstruktor (Schrott-Pickups über `physics/objects.js`, Option `scrapPickups`); Anzeige der Ladung in `render/vehicleModel.js → setScrap()` | Phase 2 ✔ |
+| `boostHold` | Fähigkeit Boost | `physics/vehicle.js → updateResources()` (Schub, boostFuel/boostHeat/boostSelfDamage pro s, Ereignisse boost/boostSecond); Eingabe in `stage/abilities.js` | Phase 2 ✔ |
+| `parachute` | Fähigkeit Fallschirm | `physics/vehicle.js → stepAir()` (Sinktempo-Führung, Luftwiderstand × `RULES.parachute.dragMul`), `toggleParachute()` (nur in der Luft, erneut tippen = kappen) | Phase 2 ✔ |
+| `hardStop` | Fähigkeit Notbremse | `physics/vehicle.js → stepGround()` / `hardStop()` (Bremsung, Antriebspause, in der Luft „scharf“ bis zur Landung) | Phase 2 ✔ |
+| `heatToThrust` | Fähigkeit Schleudergang | `stage/stage.js → heatToThrust()` (Hitze × Faktor als Sofort-Schub, Hitze 0, ab `RULES.heatToThrust.explodeAt` explosion-Ereignis) | Phase 2 ✔ |
+| `healOnCleanLanding` | Chassis Sofa | `items/triggerEngine.js` (landing-Ereignis der Chassis-Quelle) | offen – Phase 4 |
+| `groundSpeedStacks` | Chassis Rasenmäher | `items/triggerEngine.js` (Stapel der Chassis-Quelle) | offen – Phase 4 |
+| `setBonusDouble` | Chassis Badewanne | `items/inventory.js` (Aufbau der Set-Quellen) | offen – Phase 4 |
+| `tagBoost` | Chassis Kühlschrank | `items/inventory.js` (Aufbau der Item-Quellen) | offen – Phase 4 |
+| `firstHitBounces`, `heatIsFuel`, `fuelRegenOnFlip`, `overheatAfterburner` … | Items/Sets | laut ihrer `ruleSpec` | offen – Phase 4–6 |
+
+Schnittstellen für Phase 4: `stage.queue` (Ereignis-Warteschlange mit Kettentiefe, `items/eventQueue.js`), `stage.onEvent(name, data, depth)` (wird nach jedem Physik-Schritt für jedes Ereignis aufgerufen), `stage.ctx` (Effekt-Kontext nach §5, inkl. `ctx.depth`/`ctx.source`), `stage.mods` (`items/modState.js`: Buffs, Stapel, Zähler – die Etappe rechnet die Werte bei Änderung neu), `loadout.sources` (Auslöser von Chassis und Teilen).
 
 ## 4.11 Vollständiges Vokabular (verbindlich für alle Inhalte)
 

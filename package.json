@@ -1,9 +1,9 @@
 {
   "name": "schleuderwerk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "Schleuderwerk – Launch-&-Upgrade-Spiel",
+  "description": "Schleuderwerk – Launch-&-Bastel-Spiel",
   "scripts": {
     "test": "node --test tests/",
     "smoke": "node tools/smoke.mjs",

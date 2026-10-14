@@ -123,12 +123,19 @@ export class Sfx {
   }
 
   // ---- einzelne Effekte ----
-  coin(streak = 1) {
+  // Schraube eingesammelt (Tonhöhe steigt mit der Serie)
+  bolt(streak = 1) {
     const semi = PENTA[Math.min(PENTA.length - 1, streak - 1)];
     const f = 880 * Math.pow(2, semi / 12);
-    this.tone(f, 0.09, { type: 'square', vol: 0.06 });
-    this.tone(f * 1.5, 0.14, { type: 'sine', vol: 0.12, delay: 0.04 });
+    this.tone(f, 0.07, { type: 'square', vol: 0.05 });
+    this.tone(f * 2, 0.1, { type: 'triangle', vol: 0.1, delay: 0.03 });
   }
+  jump() { this.tone(220, 0.18, { type: 'triangle', vol: 0.18, slide: 2.2 }); this.burst(0.12, 900, { vol: 0.12, type: 'bandpass' }); }
+  ability() { this.tone(660, 0.08, { type: 'triangle', vol: 0.1 }); this.tone(990, 0.1, { type: 'sine', vol: 0.08, delay: 0.05 }); }
+  overheat() { this.burst(0.8, 3500, { vol: 0.3, type: 'highpass', slide: 0.6 }); this.tone(330, 0.4, { type: 'sawtooth', vol: 0.08, slide: 0.5 }); }
+  empty() { [0, 1, 2].forEach((i) => this.tone(120 - i * 15, 0.1, { type: 'square', vol: 0.08, delay: i * 0.14 })); }
+  bounce() { this.tone(300, 0.2, { type: 'sine', vol: 0.25, slide: 1.8 }); this.tone(1200, 0.06, { type: 'square', vol: 0.05 }); }
+  explosion() { this.burst(0.7, 900, { vol: 0.6, slide: 0.3 }); this.tone(55, 0.5, { type: 'sine', vol: 0.5, slide: 0.5 }); }
   stretch(p) { this.tone(110 + p * 260, 0.05, { type: 'triangle', vol: 0.08 }); }
   launch(p) {
     this.burst(0.5, 2500, { vol: 0.35 + p * 0.3, type: 'bandpass', slide: 0.15 });

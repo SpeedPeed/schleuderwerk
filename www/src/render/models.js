@@ -20,9 +20,9 @@ export const SHAPES = {
   cyl6: new THREE.CylinderGeometry(1, 1, 1, 6).toNonIndexed(),
   cone5: new THREE.ConeGeometry(1, 1, 5).toNonIndexed(),
   cone7: new THREE.ConeGeometry(1, 1, 7).toNonIndexed(),
-  ico: new THREE.IcosahedronGeometry(1, 0).toNonIndexed(),
-  dodeca: new THREE.DodecahedronGeometry(1, 0).toNonIndexed(),
-  tetra: new THREE.TetrahedronGeometry(1, 0).toNonIndexed(),
+  ico: new THREE.IcosahedronGeometry(1, 0),       // Polyeder sind schon ohne Index
+  dodeca: new THREE.DodecahedronGeometry(1, 0),
+  tetra: new THREE.TetrahedronGeometry(1, 0),
 };
 
 // Ein Teil: Form + Farbe + Lage. jitter variiert die Helligkeit je Dreieck leicht.
@@ -66,47 +66,6 @@ export function merge(parts) {
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.computeVertexNormals();
   return g;
-}
-
-// ---------- Auto ----------
-export function buildCar(c) {
-  const group = new THREE.Group();
-  const body = merge([
-    part('box', c.body, { y: 0.05, sx: 4.2, sy: 0.8, sz: 1.9 }),
-    part('box', c.body, { x: 1.3, y: 0.5, sx: 1.4, sy: 0.3, sz: 1.8, rz: -0.12 }),
-    part('box', c.stripe, { x: 1.3, y: 0.66, sx: 1.3, sy: 0.04, sz: 0.5, rz: -0.12 }),
-    part('box', c.body, { x: -0.4, y: 0.85, sx: 2.0, sy: 0.8, sz: 1.7 }),
-    part('box', c.glass, { x: -0.4, y: 0.92, sx: 2.06, sy: 0.48, sz: 1.76 }),
-    part('box', c.stripe, { x: -0.4, y: 1.26, sx: 1.6, sy: 0.04, sz: 0.5 }),
-    part('box', c.trim, { x: 2.12, y: -0.12, sx: 0.25, sy: 0.6, sz: 1.96 }),
-    part('box', c.trim, { x: -2.12, y: -0.12, sx: 0.25, sy: 0.6, sz: 1.96 }),
-    part('box', '#fff4b0', { x: 2.2, y: 0.22, z: 0.62, sx: 0.12, sy: 0.22, sz: 0.42 }),
-    part('box', '#fff4b0', { x: 2.2, y: 0.22, z: -0.62, sx: 0.12, sy: 0.22, sz: 0.42 }),
-    part('box', '#ff3a2a', { x: -2.2, y: 0.22, z: 0.62, sx: 0.12, sy: 0.2, sz: 0.42 }),
-    part('box', '#ff3a2a', { x: -2.2, y: 0.22, z: -0.62, sx: 0.12, sy: 0.2, sz: 0.42 }),
-    part('box', c.trim, { x: -1.95, y: 1.0, sx: 0.55, sy: 0.1, sz: 1.95 }),
-    part('box', c.trim, { x: -1.85, y: 0.7, z: 0.6, sx: 0.12, sy: 0.5, sz: 0.12 }),
-    part('box', c.trim, { x: -1.85, y: 0.7, z: -0.6, sx: 0.12, sy: 0.5, sz: 0.12 }),
-    part('box', '#3a3a40', { x: -2.0, y: -0.35, z: 0.5, sx: 0.5, sy: 0.14, sz: 0.14 }),
-  ]);
-  const bodyMesh = new THREE.Mesh(body, flatMat);
-  bodyMesh.castShadow = true;
-  group.add(bodyMesh);
-
-  const wheelGeo = merge([
-    part('cyl10', '#26262b', { rx: Math.PI / 2, sx: 0.52, sz: 0.52, sy: 0.42 }),
-    part('cyl6', '#c9c9c9', { rx: Math.PI / 2, sx: 0.26, sz: 0.26, sy: 0.44 }),
-  ]);
-  const wheels = [];
-  for (const [wx, wz] of [[1.35, 0.86], [1.35, -0.86], [-1.35, 0.86], [-1.35, -0.86]]) {
-    const w = new THREE.Mesh(wheelGeo, flatMat);
-    w.position.set(wx, -0.38, wz);
-    w.castShadow = true;
-    group.add(w);
-    wheels.push(w);
-  }
-  group.userData.wheels = wheels;
-  return group;
 }
 
 // ---------- Schleuder ----------
@@ -158,10 +117,12 @@ export class Slingshot {
 
   setOrigin(originX) { this.root.position.x = -originX; }
 
-  // attached: Band hängt am Auto; sonst schwingt es zurück in die Ruhelage (car in absoluten Koordinaten)
+  // attached: Band hängt am Auto; sonst schwingt es zurück in die Ruhelage (car in absoluten Koordinaten,
+  // car.back = Abstand Fahrzeugmitte → Heck, dort sitzt die Schlaufe)
   update(dt, car, attached) {
     if (attached) {
-      this.end.set(car.x - Math.cos(car.angle) * 2.3, car.y - Math.sin(car.angle) * 2.3, 0);
+      const back = car.back || 2.3;
+      this.end.set(car.x - Math.cos(car.angle) * back, car.y - Math.sin(car.angle) * back, 0);
       this.vel.set(0, 0, 0);
     } else {
       const k = 160, d = 9;

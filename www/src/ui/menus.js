@@ -1,5 +1,5 @@
 import { el, show, confirmDialog } from './dom.js';
-import { GAME_VERSION } from '../data/balance.js';
+import { GAME_VERSION, CONTROLS } from '../data/balance.js';
 
 // Pause-Menü und Einstellungen (inkl. Spielstand exportieren/importieren).
 export class Menus {
@@ -11,7 +11,7 @@ export class Menus {
       <div class="btn-col">
         <button class="btn btn-primary" data-a="resume">▶ Weiter</button>
         <button class="btn btn-secondary" data-a="settings">⚙ Einstellungen</button>
-        <button class="btn btn-danger" data-a="quit">⏹ Run beenden</button>
+        <button class="btn btn-danger" data-a="quit">⏹ Testfahrt beenden</button>
       </div></div></div>`);
     this.pause.querySelector('[data-a=resume]').onclick = h.onResume;
     this.pause.querySelector('[data-a=settings]').onclick = () => this.openSettings();
@@ -38,7 +38,7 @@ export class Menus {
         <button class="btn btn-danger small-btn" data-a="reset">🗑 Spielstand löschen</button>
         <button class="btn btn-primary" data-a="close">Fertig</button>
       </div>
-      <div class="version">Schleuderwerk v${GAME_VERSION}</div>
+      <div class="version" data-id="version">Schleuderwerk v${GAME_VERSION}</div>
     </div></div>`);
     root.appendChild(this.settings);
     const s = this.settings;
@@ -48,6 +48,18 @@ export class Menus {
       i.onchange = () => h.onSetting(i.dataset.k, i.checked);
     });
     s.querySelector('[data-a=close]').onclick = () => this.closeSettings();
+    // Verstecktes Dev-Menü: CONTROLS.devTaps× schnell hintereinander auf die Versionsnummer tippen
+    this.taps = 0;
+    this.lastTap = 0;
+    s.querySelector('[data-id=version]').addEventListener('click', () => {
+      const now = performance.now();
+      this.taps = now - this.lastTap <= CONTROLS.devTapGap * 1000 ? this.taps + 1 : 1;
+      this.lastTap = now;
+      if (this.taps >= CONTROLS.devTaps) {
+        this.taps = 0;
+        if (h.onDevMenu) h.onDevMenu();
+      }
+    });
     s.querySelector('[data-a=export]').onclick = async () => {
       this.text.value = h.onExport();
       this.text.select();

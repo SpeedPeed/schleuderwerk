@@ -1,5 +1,5 @@
 import { makeRng } from '../core/rng.js';
-import { PHYSICS, OBJECTS, SPAWN } from '../data/balance.js';
+import { PHYSICS, OBJECTS, SPAWN, RULES } from '../data/balance.js';
 
 // Hitbox-Größen (auch für die Darstellung)
 export const OBJ = OBJECTS;
@@ -40,13 +40,18 @@ export function segmentDist2(x0, y0, x1, y1, cx, cy) {
   return px * px + py * py;
 }
 
-// Münzen, Boost-Ringe, Hindernisse und Aufwind-Säulen einer Etappe (zufällig pro Etappe).
+// Schrauben (Run-Währung), Boost-Ringe, Hindernisse, Schrott-Pickups und Aufwind-Säulen einer Etappe
+// (zufällig pro Etappe). opts.scrapPickups: Schrott-Pickups in Bodennähe legen (Regel collectScrapMass, Mülltonne).
 export class Objects {
-  constructor(world, track, seed) {
+  constructor(world, track, seed, opts = {}) {
     this.world = world;
     this.track = track;
     this.rng = makeRng(seed);
-    this.coins = [];
+    this.bolts = [];
+    this.scraps = [];
+    this.scrapLeft = opts.scrapPickups || 0;
+    this.scrapRng = makeRng((seed ^ 0x5c4a9e1) >>> 0);
+    this.scrapX = SPAWN.startX + RULES.collectScrapMass.pickupEvery[0];
     this.rings = [];
     this.obstacles = [];
     this.thermals = [];
@@ -81,37 +86,46 @@ export class Objects {
     while (this.spawnX < xMax) {
       const x = this.spawnX;
       const pick = r.weighted(this.world.spawn.weights);
-      const maxAlt = Math.min(S.coinAlt.max, S.coinAlt.base + x * S.coinAlt.perM);
-      if (pick === 'coinArc') this.coinArc(x, r.range(S.coinAlt.min, maxAlt));
-      else if (pick === 'coinGround') this.coinGround(x);
+      const maxAlt = Math.min(S.boltAlt.max, S.boltAlt.base + x * S.boltAlt.perM);
+      if (pick === 'boltArc') this.boltArc(x, r.range(S.boltAlt.min, maxAlt));
+      else if (pick === 'boltGround') this.boltGround(x);
       else if (pick === 'ring') this.ring(x, r.range(S.ringAlt.min, Math.min(S.ringAlt.max, S.ringAlt.base + x * S.ringAlt.perM)));
       else if (pick === 'obstacle') this.obstacle(x);
-      else this.coin(x, this.ground(x) + r.range(S.bigCoinAlt.min, S.bigCoinAlt.base + x * S.bigCoinAlt.perM), S.bigCoinValue, true);
+      else this.bolt(x, this.ground(x) + r.range(S.bigBoltAlt.min, S.bigBoltAlt.base + x * S.bigBoltAlt.perM), S.bigBoltValue, true);
       this.spawnX += r.range(this.world.spawn.gap[0], this.world.spawn.gap[1]);
+    }
+    // Schrott-Pickups in Bodennähe (Regel collectScrapMass): eigener Zufall, damit die übrige Strecke gleich bleibt
+    const C = RULES.collectScrapMass;
+    while (this.scrapLeft > 0 && this.scrapX < xMax) {
+      const x = this.scrapX;
+      const sr = this.scrapRng;
+      this.scraps.push({ x, y: this.ground(x) + 0.6 + sr.next() * (C.maxAlt - 0.6), alive: true, attract: false });
+      this.scrapLeft--;
+      this.scrapX += sr.range(C.pickupEvery[0], C.pickupEvery[1]);
     }
   }
 
-  coin(x, y, v = 1, big = false) {
-    this.coins.push({ x, y, v, big, alive: true, attract: false });
+  bolt(x, y, v = 1, big = false) {
+    this.bolts.push({ x, y, v, big, alive: true, attract: false });
   }
 
-  coinArc(x, h) {
+  boltArc(x, h) {
     const a = SPAWN.arc;
     const n = a.nMin + Math.floor(this.rng.next() * a.nRand);
     const arc = this.rng.range(a.bumpMin, a.bumpMax);
     for (let i = 0; i < n; i++) {
       const cx = x + i * a.spacing;
       const t = i / (n - 1);
-      this.coin(cx, this.ground(cx) + h + Math.sin(t * Math.PI) * arc);
+      this.bolt(cx, this.ground(cx) + h + Math.sin(t * Math.PI) * arc);
     }
   }
 
-  coinGround(x) {
+  boltGround(x) {
     const g = SPAWN.groundRow;
     const n = g.nMin + Math.floor(this.rng.next() * g.nRand);
     for (let i = 0; i < n; i++) {
       const cx = x + i * g.spacing;
-      this.coin(cx, this.ground(cx) + g.height);
+      this.bolt(cx, this.ground(cx) + g.height);
     }
   }
 
@@ -120,15 +134,15 @@ export class Objects {
   }
 
   obstacle(x) {
-    if (this.track.rampBetween(x - SPAWN.rampClearBefore, x + SPAWN.rampClearAfter)) { this.coinArc(x, SPAWN.rampArcAlt); return; }
+    if (this.track.rampBetween(x - SPAWN.rampClearBefore, x + SPAWN.rampClearAfter)) { this.boltArc(x, SPAWN.rampArcAlt); return; }
     const type = this.rng.weighted(this.world.spawn.obstacles);
     const { w, h } = OBJ[type];
     const y0 = Math.min(this.ground(x - w / 2), this.ground(x), this.ground(x + w / 2));
     this.obstacles.push({ x, y0, w, h, type, alive: true, passed: false });
-    // Risiko-Münzen knapp über dem Hindernis
-    const rc = SPAWN.riskCoins;
+    // Risiko-Schrauben knapp über dem Hindernis
+    const rc = SPAWN.riskBolts;
     const half = (rc.count - 1) / 2;
-    for (let i = 0; i < rc.count; i++) this.coin(x + (i - half) * rc.spacing, y0 + h + rc.above, rc.value);
+    for (let i = 0; i < rc.count; i++) this.bolt(x + (i - half) * rc.spacing, y0 + h + rc.above, rc.value);
   }
 
   // Prüft die im letzten Teilschritt zurückgelegte Strecke (x0, y0) → (car.x, car.y) – „swept“,
@@ -136,27 +150,30 @@ export class Objects {
   collide(car, x0, y0, dt, ev) {
     const x1 = car.x, y1 = car.y;
     const cr = PHYSICS.carRadius;
-    const pr = OBJ.coinPickup;
-    const mr = car.stats.magnet;
+    const pr = OBJ.boltPickup;
+    const mr = car.magnetRadius ?? car.stats.magnet;
     const speed = car.speed;
 
-    for (const c of this.coins) {
+    for (const c of this.bolts) {
       if (!c.alive) continue;
-      const rr = c.big ? pr * OBJ.bigCoinPickupMul : pr;
+      const rr = c.big ? pr * OBJ.bigBoltPickupMul : pr;
       if (segmentDist2(x0, y0, x1, y1, c.x, c.y) < rr * rr) {
         c.alive = false;
-        ev.push({ type: 'coin', v: c.v, x: c.x, y: c.y, big: c.big });
+        ev.push({ type: 'bolt', v: c.v, x: c.x, y: c.y, big: c.big });
         continue;
       }
-      const dx = x1 - c.x, dy = y1 - c.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < mr * mr) c.attract = true;
-      if (c.attract && d2 > 0) {
-        const d = Math.sqrt(d2);
-        const step = Math.min(d, (OBJ.magnetSpeed + speed) * dt);
-        c.x += (dx / d) * step;
-        c.y += (dy / d) * step;
+      this.attract(c, x1, y1, mr, speed, dt);
+    }
+
+    const sr = OBJ.scrapPickup;
+    for (const c of this.scraps) {
+      if (!c.alive) continue;
+      if (segmentDist2(x0, y0, x1, y1, c.x, c.y) < sr * sr) {
+        c.alive = false;
+        ev.push({ type: 'scrapPickup', x: c.x, y: c.y });
+        continue;
       }
+      this.attract(c, x1, y1, mr, speed, dt);
     }
 
     // Ringe: senkrechtes Fenster, um den Autoradius verbreitert
@@ -190,10 +207,24 @@ export class Objects {
     if (this.cleanupTimer > OBJ.cleanupEvery) {
       this.cleanupTimer = 0;
       const minX = x1 - OBJ.cleanupBehind;
-      this.coins = this.coins.filter((c) => c.alive && c.x > minX);
+      this.bolts = this.bolts.filter((c) => c.alive && c.x > minX);
+      this.scraps = this.scraps.filter((c) => c.alive && c.x > minX);
       this.rings = this.rings.filter((r) => r.x > minX);
       this.obstacles = this.obstacles.filter((o) => o.x > minX);
       this.thermals = this.thermals.filter((t) => t.x + t.w > minX);
+    }
+  }
+
+  // Einsammelbares im Magnetradius fliegt zum Auto
+  attract(c, x1, y1, mr, speed, dt) {
+    const dx = x1 - c.x, dy = y1 - c.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < mr * mr) c.attract = true;
+    if (c.attract && d2 > 0) {
+      const d = Math.sqrt(d2);
+      const step = Math.min(d, (OBJ.magnetSpeed + speed) * dt);
+      c.x += (dx / d) * step;
+      c.y += (dy / d) * step;
     }
   }
 }

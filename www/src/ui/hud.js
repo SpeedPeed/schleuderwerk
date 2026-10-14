@@ -1,31 +1,36 @@
 import { el, fmt, show } from './dom.js';
-import { LAUNCH, KOMBO } from '../data/balance.js';
+import { KOMBO, RESOURCES } from '../data/balance.js';
 import { DEG } from '../core/math.js';
 
-// Anzeige während der Etappe: Distanz, Höhe, Münzen, Boost-Knopf, Kombo, Boden-Pfeil und die Kraftleiste.
+const MAX_ABILITY_BUTTONS = 3;
+
+// Anzeige während der Etappe: Distanz, Höhe, Schrauben, Treibstoff/Hitze/Haltbarkeit, Fähigkeits-Knöpfe,
+// Kombo, Boden-Pfeil und die Kraftleiste beim Zielen.
 export class Hud {
   constructor(root, { onPause }) {
+    const abBtns = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) =>
+      `<button class="ability-btn ab-${i} hidden" data-id="ab${i}" aria-label="Fähigkeit ${i + 1}"><span data-id="abi${i}">🚀</span><i class="ab-key">${i + 1}</i></button>`).join('');
     this.el = el(`<div id="hud" class="hidden">
       <div class="tilt-zone tz-left hidden" data-id="tzl"><span>↺</span></div>
       <div class="tilt-zone tz-right hidden" data-id="tzr"><span>↻</span></div>
       <div class="hud-top">
         <button class="icon-btn" data-id="pause" aria-label="Pause">❚❚</button>
         <div class="hud-dist"><span data-id="dist">0</span><small> m</small></div>
-        <div class="hud-coins">💰 <span data-id="coins">0</span></div>
+        <div class="hud-bolts">🔩 <span data-id="bolts">0</span></div>
       </div>
       <div class="hud-sub">
         <span data-id="alt">↑ 0 m</span>
-        <span data-id="hp"></span>
         <span data-id="wind" class="hud-wind"></span>
         <span data-id="best">🏁 0 m</span>
       </div>
       <div class="combo hidden" data-id="combo"><div class="combo-mult" data-id="mult">×1,0</div><div class="combo-pts" data-id="pts">0</div></div>
       <div class="ground-ind hidden" data-id="ground">Boden ↓ 0 m</div>
-      <div class="hud-bottom" data-id="boostbox">
-        <div class="boost-label">BOOST</div>
-        <div class="boost-bar"><div class="boost-fill" data-id="boost"></div></div>
+      <div class="res-bars" data-id="bars">
+        <div class="rbar rb-fuel"><b>⛽</b><div class="rb-track"><div class="rb-fill" data-id="fuel"></div></div></div>
+        <div class="rbar rb-heat" data-id="heatrow"><b>🌡</b><div class="rb-track"><div class="rb-fill" data-id="heat"></div><em data-id="stall">ÜBERHITZT</em></div></div>
+        <div class="rbar rb-dur"><b>🔧</b><div class="rb-track"><div class="rb-fill" data-id="dur"></div><em class="rb-num" data-id="durnum">100</em></div></div>
       </div>
-      <button class="ability-btn hidden" data-id="boostbtn" aria-label="Boost (halten)"><span>🔥</span></button>
+      ${abBtns}
       <div class="aim hidden" data-id="aim">
         <div class="power-meter">
           <div class="pm-band" data-id="band"></div>
@@ -35,17 +40,18 @@ export class Hud {
         <div class="weather" data-id="weather"></div>
         <div class="aim-hint" data-id="aimhint"><b>Halten</b> = Kraft, <b>hoch/runter ziehen</b> = Winkel,<br><b>loslassen im grünen Bereich!</b></div>
       </div>
-      <div class="hint hidden" data-id="flyhint"><b>Links halten</b> = Nase hoch · <b>Rechts halten</b> = Nase runter · 🔥 = Boost</div>
+      <div class="hint hidden" data-id="flyhint"><b>Links halten</b> = Nase hoch · <b>Rechts halten</b> = Nase runter · Knöpfe unten = Fähigkeiten</div>
     </div>`);
     root.appendChild(this.el);
     this.q = {};
     this.el.querySelectorAll('[data-id]').forEach((e) => { this.q[e.dataset.id] = e; });
     this.q.pause.addEventListener('pointerdown', (e) => { e.stopPropagation(); onPause(); });
     this.last = {};
+    this.abilityCount = 0;
   }
 
-  // Der Boost-Knopf wird von platform/input.js als Fähigkeits-Knopf angemeldet
-  get boostButton() { return this.q.boostbtn; }
+  // Fähigkeits-Knöpfe (werden von platform/input.js als 'ab0' … angemeldet)
+  get abilityButtons() { return Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) => this.q[`ab${i}`]); }
 
   set(key, value, fn) {
     if (this.last[key] === value) return;
@@ -53,7 +59,8 @@ export class Hud {
     fn(value);
   }
 
-  show(on, { best = 0, tutorial = false, weather = null } = {}) {
+  // abilities: Fähigkeits-Definitionen in Knopf-Reihenfolge
+  show(on, { best = 0, tutorial = false, weather = null, abilities = [] } = {}) {
     show(this.el, on);
     this.last = {};
     this.q.best.textContent = `🏁 ${fmt(best)} m`;
@@ -66,6 +73,18 @@ export class Hud {
       const dir = weather.gust ? '↔' : b >= 0 ? '→' : '←';
       this.q.weather.innerHTML = `${weather.icon} <b>${weather.name}</b> ${dir} ${weather.gust ? `bis ${Math.round(weather.gust)}` : Math.abs(b)} m/s`
         + `<small>${weather.gust ? 'Wind wechselt ständig' : b >= 0 ? 'schiebt dich an – flach & weit fliegen!' : 'bremst – lieber hoch & mit Boost'}</small>`;
+    }
+    this.abilityCount = Math.min(MAX_ABILITY_BUTTONS, abilities.length);
+    for (let i = 0; i < MAX_ABILITY_BUTTONS; i++) {
+      const b = this.q[`ab${i}`];
+      const a = abilities[i];
+      b.classList.add('hidden');
+      b.classList.remove('active', 'off', 'held', 'special');
+      if (!a) continue;
+      this.q[`abi${i}`].textContent = a.icon;
+      b.setAttribute('aria-label', `${a.name} (${a.mode === 'hold' ? 'halten' : 'tippen'})`);
+      b.classList.toggle('special', !!a.chassis);
+      b.dataset.ability = a.id;
     }
     this.tutorial = tutorial;
     show(this.q.flyhint, false);
@@ -83,8 +102,8 @@ export class Hud {
     const aiming = stage.phase === 'aim';
     this.set('aiming', aiming, (v) => {
       show(q.aim, v);
-      show(q.boostbox, !v);
-      show(q.boostbtn, !v);
+      show(q.bars, !v);
+      for (let i = 0; i < MAX_ABILITY_BUTTONS; i++) show(q[`ab${i}`], !v && i < this.abilityCount);
       show(q.aimhint, v && this.tutorial);
     });
     if (aiming) {
@@ -92,7 +111,7 @@ export class Hud {
       q.fill.style.height = `${L.power * 100}%`;
       this.set('band', L.sweet, () => {
         q.band.style.bottom = `${L.sweetLo * 100}%`;
-        q.band.style.height = `${LAUNCH.sweetWidth * 100}%`;
+        q.band.style.height = `${L.width * 100}%`;
       });
       q.fill.classList.toggle('in-band', L.charging && L.inSweetSpot);
       this.set('angle', Math.round(L.angle / DEG), (v) => { q.angle.textContent = `${v}°`; });
@@ -107,20 +126,40 @@ export class Hud {
     if (groundOn) this.set('groundText', ind.text, (t) => { q.ground.textContent = t; });
 
     this.set('dist', Math.max(0, Math.round(v.x)), (d) => { q.dist.textContent = fmt(d); });
-    this.set('coins', stage.coins, (c) => { q.coins.textContent = fmt(c); q.coins.parentElement.classList.remove('bump'); void q.coins.offsetWidth; q.coins.parentElement.classList.add('bump'); });
+    this.set('bolts', Math.floor(stage.bolts), (c) => { q.bolts.textContent = fmt(c); q.bolts.parentElement.classList.remove('bump'); void q.bolts.offsetWidth; q.bolts.parentElement.classList.add('bump'); });
     this.set('alt', Math.max(0, Math.round(stage.altitude)), (a) => { q.alt.textContent = `↑ ${fmt(a)} m`; });
     if (this.weather) {
       const w = Math.round(stage.env.wind);
       this.set('wind', w, (x) => { q.wind.textContent = `${x > 0 ? '→' : x < 0 ? '←' : '·'} ${Math.abs(x)} m/s`; });
     }
-    this.set('hp', v.hp, (h) => { q.hp.textContent = '❤'.repeat(Math.max(0, h)) + '♡'.repeat(Math.max(0, stage.stats.hp - h)); });
-    const b = Math.round((v.boost / stage.stats.boostMax) * 100);
-    this.set('boost', b, (p) => {
-      q.boost.style.width = `${p}%`;
-      q.boostbtn.style.setProperty('--p', String(p / 100));
-      q.boostbtn.classList.toggle('empty', p <= 0);
+
+    // Ressourcen-Leisten
+    this.set('fuel', Math.round(v.fuelFrac * 200), (p) => {
+      q.fuel.style.width = `${p / 2}%`;
+      q.fuel.parentElement.parentElement.classList.toggle('empty', p <= 0);
     });
-    this.set('boosting', v.boosting, (on) => { q.boost.classList.toggle('active', on); q.boostbtn.classList.toggle('active', on); });
+    const hf = Math.max(0, Math.min(1, v.heatFrac));
+    this.set('heat', Math.round(hf * 200), (p) => { q.heat.style.width = `${p / 2}%`; });
+    this.set('heatWarn', hf >= RESOURCES.heatWarn, (on) => q.heatrow.classList.toggle('warn', on));
+    this.set('stall', v.stall > 0, (on) => { show(q.stall, on); q.heatrow.classList.toggle('stalled', on); });
+    const df = Math.max(0, Math.min(1, v.durabilityFrac));
+    this.set('dur', Math.round(df * 200), (p) => {
+      q.dur.style.width = `${p / 2}%`;
+      q.dur.style.background = p > 100 ? '' : p > 50 ? 'linear-gradient(90deg, #ffb23f, #ffd23f)' : 'linear-gradient(90deg, #ff3a3a, #ff7a3d)';
+    });
+    this.set('durnum', Math.ceil(v.durability), (d) => { q.durnum.textContent = fmt(d); });
+
+    // Fähigkeits-Knöpfe: Ring = Abklingzeit bzw. Treibstoff (Boost), grau = nicht nutzbar
+    const bar = stage.abilities;
+    for (let i = 0; i < this.abilityCount && i < bar.length; i++) {
+      const s = bar.view(i, v);
+      const b = q[`ab${i}`];
+      this.set(`abp${i}`, Math.round(s.frac * 100), (p) => b.style.setProperty('--p', String(p / 100)));
+      this.set(`abo${i}`, s.off, (on) => b.classList.toggle('off', on));
+      this.set(`aba${i}`, s.active, (on) => b.classList.toggle('active', on));
+      this.set(`abr${i}`, s.ready, (on) => b.classList.toggle('ready', on));
+    }
+
     const ch = stage.chain;
     this.set('comboOn', ch.pts > 0, (on) => show(q.combo, on));
     if (ch.pts > 0) {

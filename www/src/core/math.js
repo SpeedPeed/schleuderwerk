@@ -38,3 +38,9 @@ export function softcap(x, cap, pow) {
   if (x <= cap || cap <= 0) return x;
   return cap * Math.pow(x / cap, 1 / pow);
 }
+
+// Effektive Stufen mit abnehmendem Ertrag: L / (1 + L / divisor). Bei divisor 30 ist Stufe 20 ≈ 12 effektive Stufen.
+export function dimLevels(level, divisor) {
+  if (level <= 0) return 0;
+  return level / (1 + level / divisor);
+}

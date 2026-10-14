@@ -1,12 +1,12 @@
 // Physik-Tests: kein Durchtunneln, exakte Landung, weiche/harte Tempo-Grenze, Salto per Halten.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PHYSICS as P } from '../www/src/data/balance.js';
+import { PHYSICS as P, BASE_STATS as B } from '../www/src/data/balance.js';
 import { Vehicle, thrustFactor, substepsFor, countFlips } from '../www/src/physics/vehicle.js';
 import { Objects, segmentBox, segmentDist2 } from '../www/src/physics/objects.js';
 import { Track } from '../www/src/physics/track.js';
 import { WORLDS } from '../www/src/data/worlds.js';
-import { baseStats } from '../www/src/garage/stats.js';
+import { baseStats } from '../www/src/items/statMods.js';
 import { Stage } from '../www/src/stage/stage.js';
 import { TAU, DEG } from '../www/src/core/math.js';
 
@@ -95,11 +95,11 @@ test('(1) 150 m/s waagrecht: 2 m breites Hindernis wird getroffen (kein Durchtun
   assert.ok(ev.some((e) => e.type === 'hit'));
 });
 
-test('swept: Münzen und Ringe werden auch bei 150 m/s eingesammelt', () => {
+test('swept: Schrauben und Ringe werden auch bei 150 m/s eingesammelt', () => {
   withPhysics({ hardSpeedCap: 200 }, () => {
     const track = flat(0);
     const objs = emptyObjects(track);
-    for (let i = 0; i < 20; i++) objs.coin(30 + i * 2.2, 50);
+    for (let i = 0; i < 20; i++) objs.bolt(30 + i * 2.2, 50);
     objs.rings.push({ x: 90, y: 50, passed: false });
     const v = makeVehicle({ drag: 0, lift: 0, magnet: 0 });
     v.reset(0, 50, 0);
@@ -112,7 +112,7 @@ test('swept: Münzen und Ringe werden auch bei 150 m/s eingesammelt', () => {
       ev.length = 0;
       v.vy = 0; v.y = 50; // genau waagrecht halten
     }
-    assert.equal(got.filter((e) => e.type === 'coin').length, 20);
+    assert.equal(got.filter((e) => e.type === 'bolt').length, 20);
     assert.equal(got.filter((e) => e.type === 'ring').length, 1);
   });
 });
@@ -176,7 +176,8 @@ test('weiche Tempo-Grenze: Schubfaktor 1 → 0,5 bei speedSoftCap → klein', ()
 
 test('(3) 60 s Dauerboost: Tempo ≤ hardSpeedCap und nahe speedSoftCap', () => {
   const run = (over, airborne) => {
-    const v = makeVehicle({ boostMax: 1e9, ...over });
+    // unendlich Treibstoff, keine Überhitzung – hier geht es nur um die Tempo-Grenzen
+    const v = makeVehicle({ fuelMax: 1e9, heatMax: 1e9, ...over });
     const track = flat(airborne ? -1e7 : 0);
     if (airborne) { v.reset(0, 1e5, 0); v.launch(20, 0); } else { v.reset(0, P.rideHeight, 0); v.onGround = true; }
     const ev = [];
@@ -193,14 +194,14 @@ test('(3) 60 s Dauerboost: Tempo ≤ hardSpeedCap und nahe speedSoftCap', () => 
   const base = run({}, false);
   assert.ok(base.max <= P.hardSpeedCap);
   assert.ok(base.end > cap * 0.8 && base.end < cap * 1.3, `Boden, Grundwerte: ${base.end.toFixed(1)} m/s`);
-  // Motor voll ausgebaut (+100 %) und Aerodynamik voll (−45 %)
-  const tuned = run({ thrust: P.baseThrust * 2, drag: P.baseDrag * 0.55 }, false);
+  // Boost-Schub verdoppelt und Luftwiderstand −45 %
+  const tuned = run({ boostThrust: B.boostThrust * 2, drag: B.drag * 0.55 }, false);
   assert.ok(tuned.end > cap && tuned.end < cap * 1.45, `Boden, ausgebaut: ${tuned.end.toFixed(1)} m/s`);
   // absurd viel Schub: weiche Grenze bremst, harte Grenze hält
-  const crazy = run({ thrust: P.baseThrust * 20, drag: P.baseDrag * 0.2 }, false);
+  const crazy = run({ boostThrust: B.boostThrust * 20, drag: B.drag * 0.2 }, false);
   assert.ok(crazy.max <= P.hardSpeedCap + 1e-9, `hart begrenzt: ${crazy.max}`);
   // Sturzflug mit Boost in der Luft: harte Grenze
-  const dive = run({ thrust: P.baseThrust * 20, drag: P.baseDrag * 0.2 }, true);
+  const dive = run({ boostThrust: B.boostThrust * 20, drag: B.drag * 0.2 }, true);
   assert.ok(dive.max <= P.hardSpeedCap + 1e-9, `Luft, hart begrenzt: ${dive.max}`);
 });
 
@@ -218,14 +219,14 @@ test('(4) Neigen per Halten: ein Salto dauert 0,7–1,5 s', () => {
     }
     assert.ok(t >= 0.7 && t <= 1.5, `Salto (tilt ${tilt}) in ${t.toFixed(2)} s`);
     assert.equal(Math.sign(v.rotAccum), tilt, 'links halten = Nase hoch (gegen den Uhrzeigersinn)');
-    assert.ok(Math.abs(v.w) <= P.maxSpin + 1e-9);
+    assert.ok(Math.abs(v.w) <= B.maxSpin + 1e-9);
     assert.equal(countFlips(v.rotAccum), 1);
   }
   // ohne Eingabe läuft die Drehung aus
   const v = makeVehicle();
   v.reset(0, 1e4, 0);
   v.launch(25, 0);
-  v.w = P.maxSpin;
+  v.w = B.maxSpin;
   for (let i = 0; i < 2 / DT; i++) v.step(DT, { tilt: 0, boost: false }, flat(0), []);
   assert.ok(Math.abs(v.w) < P.autoLevelMaxSpin, `ausgelaufen: ${v.w}`);
 });
@@ -238,11 +239,13 @@ test('Landung wird klassifiziert (perfekt / sauber / Bruch)', () => {
     v.reset(0, 5, ang);
     v.vx = 10; v.vy = -5;
     const ev = [];
-    for (let i = 0; i < 300 && !ev.length; i++) {
+    let landing = null;
+    for (let i = 0; i < 300 && !landing; i++) {
       v.step(DT, { tilt: 0, boost: false }, track, ev);
       v.angle = ang; v.w = 0;
+      landing = ev.find((e) => e.type === 'landing');
     }
-    kinds.push(ev[0].kind);
+    kinds.push(landing.quality);
   }
   assert.deepEqual(kinds, ['perfect', 'clean', 'crash']);
 });

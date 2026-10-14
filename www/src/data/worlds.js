@@ -1,9 +1,12 @@
 // Welten: Farbpalette, Physik, Wetter und Streckengenerierung.
+// (Übergang bis Phase 3 – dann werden daraus die Biome in data/biomes.js.)
 //
 // unlock:   Bedingung zum Freischalten (Bestweite in einer anderen Welt)
-// physics:  Abweichungen von den Grundwerten (Faktoren)
+// scrapFactor: Faktor auf die Schrott-Belohnung der Testfahrt
+// physics:  Abweichungen von den Grundwerten (rollFriction = Faktor, ambientHeat = Umgebungshitze pro Sekunde)
 // weather:  mögliche Wetterlagen pro Run (weight = Häufigkeit, wind in m/s, + = Rückenwind)
-// spawn:    wie oft welche Objekte kommen; obstacles = Hindernis-Typen mit Anteil
+// spawn:    wie oft welche Objekte kommen (Schrauben-Bögen/-Reihen, Ringe, Hindernisse, Schraubendosen);
+//           obstacles = Hindernis-Typen mit Anteil
 // thermals: Aufwind-Säulen (null = keine)
 // decor:    Anteil der Deko-Objekte am Streckenrand
 
@@ -13,7 +16,7 @@ export const WORLDS = [
     name: 'Schrottplatz-Steppe',
     seed: 1337,              // feste Strecke, damit man sie mit der Zeit kennenlernt
     gravity: 9.81,
-    moneyFactor: 1,
+    scrapFactor: 1,
     unlock: null,
     physics: { rollFriction: 1 },
     weather: [
@@ -41,7 +44,6 @@ export const WORLDS = [
       mountainShape: 'cone',
       peak: '#f4efe6',
       cloud: '#fff8ee',
-      car: { body: '#e8553d', trim: '#2c2c34', glass: '#2b3a55', stripe: '#ffd23f' },
     },
     terrain: {
       hills: [[6, 170], [3, 55], [1.2, 17]],  // [Amplitude m, Wellenlänge-Faktor]
@@ -53,7 +55,7 @@ export const WORLDS = [
     },
     spawn: {
       gap: [16, 34],          // Abstand zwischen Objektgruppen
-      weights: { coinArc: 0.33, coinGround: 0.14, ring: 0.2, obstacle: 0.26, bigCoin: 0.07 },
+      weights: { boltArc: 0.33, boltGround: 0.14, ring: 0.2, obstacle: 0.26, bigBolt: 0.07 },
       obstacles: { tires: 0.65, scrap: 0.35 },
     },
     thermals: null,
@@ -64,9 +66,9 @@ export const WORLDS = [
     name: 'Glutwüste',
     seed: 4242,
     gravity: 9.81,
-    moneyFactor: 3,
+    scrapFactor: 1.5,
     unlock: { world: 'steppe', dist: 3500 },
-    physics: { rollFriction: 1.25 },        // Sand bremst stärker – Thermik und Rampen nutzen!
+    physics: { rollFriction: 1.25, ambientHeat: 4 }, // Sand bremst stärker, die Hitze steigt – Thermik und Rampen nutzen!
     weather: [
       { name: 'Windstill', icon: '☀️', weight: 0.3, wind: [0, 0] },
       { name: 'Rückenwind', icon: '🌬️', weight: 0.25, wind: [5, 9] },
@@ -95,7 +97,6 @@ export const WORLDS = [
       mountainShape: 'mesa',
       peak: '#e9a466',
       cloud: '#fff4e0',
-      car: { body: '#e8553d', trim: '#2c2c34', glass: '#2b3a55', stripe: '#ffd23f' },
     },
     terrain: {
       hills: [[9, 120], [4, 40], [1, 15]],  // Dünen
@@ -107,7 +108,7 @@ export const WORLDS = [
     },
     spawn: {
       gap: [16, 34],
-      weights: { coinArc: 0.33, coinGround: 0.12, ring: 0.2, obstacle: 0.28, bigCoin: 0.07 },
+      weights: { boltArc: 0.33, boltGround: 0.12, ring: 0.2, obstacle: 0.28, bigBolt: 0.07 },
       obstacles: { cactus: 0.6, pillar: 0.4 },
     },
     // Aufwind-Säulen: Abstand, Breite, Aufwärts-Beschleunigung (m/s²), Höhe bis zum Abklingen

@@ -1,15 +1,18 @@
 import * as THREE from 'three';
 import { WORLDS, worldById } from './data/worlds.js';
-import { FX, CAMERA, CONTROLS, STAGE } from './data/balance.js';
-import { UPGRADES } from './data/upgrades.js';
+import { FX, CAMERA, CONTROLS, STAGE, PHYSICS } from './data/balance.js';
+import { PARTS, abilityById, chassisById, chassisVisual } from './data/index.js';
 import { loadSave, writeSave, exportSave, importSave, clearSave, defaultSave } from './save/save.js';
-import { computeStats, upgradeCost } from './garage/stats.js';
+import { buildLoadout, partIds } from './garage/loadout.js';
+import * as garageLogic from './garage/garage.js';
+import { addPlaytime, markMilestone } from './garage/progression.js';
 import { Track } from './physics/track.js';
 import { Stage, REST } from './stage/stage.js';
 import { CameraRig } from './camera/cameraRig.js';
 import { Input } from './platform/input.js';
 import { createView } from './render/scene.js';
-import { buildCar, Slingshot, buildFlag } from './render/models.js';
+import { Slingshot, buildFlag } from './render/models.js';
+import { buildVehicle } from './render/vehicleModel.js';
 import { TrackView } from './render/trackView.js';
 import { Background } from './render/background.js';
 import { ObjectsView } from './render/objectsView.js';
@@ -18,10 +21,11 @@ import { Origin } from './render/origin.js';
 import { Sfx } from './audio/sfx.js';
 import { platform } from './platform/platform.js';
 import { Hud } from './ui/hud.js';
-import { Workshop } from './ui/workshop.js';
+import { GarageScreen } from './ui/garage.js';
 import { Results } from './ui/results.js';
 import { Menus } from './ui/menus.js';
 import { Popups } from './ui/popups.js';
+import { DevMenu } from './ui/devMenu.js';
 import { confirmDialog } from './ui/dom.js';
 
 // ---------- Grundaufbau ----------
@@ -31,14 +35,14 @@ const uiRoot = document.getElementById('ui');
 const view = createView(canvas);
 const origin = new Origin();
 
-// Aktuelle Welt (wird beim Weltwechsel komplett neu aufgebaut)
+// Aktuelle Strecke/Welt (wird beim Wechsel komplett neu aufgebaut; Welten gibt es bis Phase 3)
 let world, pal, track, trackView, background;
 function setWorld(id) {
-  if (!save.unlocked.includes(id)) id = 'steppe';
+  if (!save.worlds.unlocked.includes(id)) id = 'steppe';
   world = worldById(id);
   pal = world.palette;
-  save.world = world.id;
-  if (!save.worlds[world.id]) save.worlds[world.id] = { bestDist: 0, bestHeight: 0, runs: 0 };
+  save.worlds.current = world.id;
+  if (!save.worlds.records[world.id]) save.worlds.records[world.id] = { bestDist: 0, bestHeight: 0, runs: 0 };
   if (trackView) trackView.dispose();
   if (background) background.dispose();
   view.applyPalette(pal);
@@ -46,18 +50,40 @@ function setWorld(id) {
   trackView = new TrackView(view.scene, track, world);
   background = new Background(view.scene, pal);
 }
-const worldRec = () => save.worlds[world.id];
-setWorld(save.world);
+const worldRec = () => save.worlds.records[world.id];
+setWorld(save.worlds.current);
 
 const objectsView = new ObjectsView(view.scene);
 const particles = new Particles(view.scene, FX.maxParticles);
-const carModel = buildCar(pal.car);
-view.scene.add(carModel);
 const sling = new Slingshot(view.scene, track.heightAt(0), REST.y, pal);
 const flag = buildFlag();
 flag.visible = false;
 view.scene.add(flag);
 let flagX = 0, flagY = 0;
+
+// ---------- Fahrzeug-Modell (Chassis + sichtbare Teile) ----------
+let carModel = null;
+let carKey = '';
+let carVisual = chassisVisual(chassisById(save.garage.chassis));
+function setVehicle(chassisId, parts) {
+  const key = `${chassisId}|${Object.values(parts).join(',')}`;
+  if (key === carKey && carModel) return;
+  const rotY = carModel ? carModel.rotation.y : CAMERA.garage.startAngle;
+  if (carModel) {
+    view.scene.remove(carModel);
+    carModel.userData.dispose();
+  }
+  carModel = buildVehicle({ chassisId, parts });
+  carModel.rotation.y = rotY;
+  carVisual = chassisVisual(chassisById(chassisId));
+  view.scene.add(carModel);
+  carKey = key;
+}
+function vehicleFromSave(override = null) {
+  const lo = buildLoadout(save, override || {});
+  setVehicle(lo.chassis.id, partIds(lo));
+}
+vehicleFromSave();
 
 // Punkte der Flugkurven-Vorschau beim Zielen
 const TR = FX.trajectory;
@@ -76,25 +102,27 @@ const camRig = new CameraRig();
 const input = new Input(canvas);
 const sfx = new Sfx();
 
-let state = 'workshop'; // 'workshop' | 'stage' | 'results'
+let state = 'garage'; // 'garage' | 'stage' | 'results'
 let paused = false;
 let stage = null;
-let stats = computeStats(save);
 let flyHintTimer = 0;
 let cam = null;
+let garageSpin = CAMERA.garage.startAngle;
 
 // ---------- Oberfläche ----------
 const popups = new Popups(uiRoot);
 const hud = new Hud(uiRoot, { onPause: () => pauseGame() });
-input.bindButton(hud.boostButton, 'boost');
-const workshop = new Workshop(uiRoot, {
-  onWorld: (dir) => switchWorld(dir),
-  onBuy: (u, card) => buy(u, card),
-  onStart: () => { sfx.click(); startStage(); },
+hud.abilityButtons.forEach((b, i) => input.bindButton(b, `ab${i}`));
+const garage = new GarageScreen(uiRoot, {
+  onAction: (name, ...args) => garageAction(name, ...args),
+  onPreview: (ov) => vehicleFromSave(ov),
   onSettings: () => { sfx.click(); menus.openSettings(); },
+  onStart: () => { sfx.click(); startStage(); },
+  onWorld: (dir) => switchWorld(dir),
+  onDenied: (t) => { sfx.denied(); popups.show(t, 'info'); },
 });
 const results = new Results(uiRoot, {
-  onWorkshop: () => { sfx.click(); openWorkshop(); },
+  onGarage: () => { sfx.click(); openGarage(); },
   onAgain: () => { sfx.click(); startStage(); },
   onTick: () => sfx.money(),
 });
@@ -120,6 +148,31 @@ const menus = new Menus(uiRoot, {
     writeSave(save);
     afterSaveChange();
   },
+  onDevMenu: () => { sfx.perfect(); devMenu.open(); },
+});
+const devMenu = new DevMenu(uiRoot, {
+  getSave: () => save,
+  getStage: () => stage,
+  onCurrency: (kind, n) => { save.meta[kind] += n; writeSave(save); refreshGarage(); },
+  onUnlockAll: () => { garageLogic.unlockAll(save); writeSave(save); refreshGarage(); },
+  onGiftParts: () => { garageLogic.giftAllParts(save); writeSave(save); refreshGarage(); },
+  onUnlockWorlds: () => {
+    for (const w of WORLDS) if (!save.worlds.unlocked.includes(w.id)) save.worlds.unlocked.push(w.id);
+    writeSave(save);
+    refreshGarage();
+  },
+  onEndStage: () => {
+    menus.closeSettings();
+    if (paused) resumeGame();
+    if (stage && stage.phase !== 'over') {
+      if (stage.phase === 'aim') stage.launchNow(0.3);
+      stage.finish('stop');
+    }
+  },
+  onTweak: (group) => {
+    if (group === 'BASE_STATS' && stage) stage.recomputeStats();
+    refreshGarage();
+  },
 });
 
 function applySettings() {
@@ -130,18 +183,38 @@ function applySettings() {
 
 function afterSaveChange() {
   applySettings();
-  stats = computeStats(save);
-  setWorld(save.world);
-  if (state === 'workshop') openWorkshop();
-  else workshop.render(save, world, nextGoal());
+  setWorld(save.worlds.current);
+  vehicleFromSave();
+  if (state === 'garage') openGarage();
+  else refreshGarage();
 }
 
-// Weltauswahl in der Werkstatt (dir = -1 / +1)
+function garageInfo() {
+  const i = WORLDS.findIndex((w) => w.id === world.id);
+  const next = WORLDS[i + 1];
+  const nextLocked = !!next && !save.worlds.unlocked.includes(next.id);
+  return {
+    worldName: world.name,
+    worldIndex: i,
+    worldCount: save.worlds.unlocked.length > 1 || nextLocked ? WORLDS.length : 1,
+    prevOk: i > 0,
+    nextOk: !!next,
+    nextLocked,
+    nextText: next ? unlockText(next) : '',
+    factor: world.scrapFactor || 1,
+  };
+}
+
+function refreshGarage() {
+  if (state === 'garage') garage.render(save, garageInfo());
+}
+
+// Weltauswahl in der Garage (dir = -1 / +1)
 function switchWorld(dir) {
   const i = WORLDS.findIndex((w) => w.id === world.id);
   const next = WORLDS[i + dir];
   if (!next) return;
-  if (!save.unlocked.includes(next.id)) {
+  if (!save.worlds.unlocked.includes(next.id)) {
     sfx.denied();
     popups.show(`🔒 ${next.name}: ${unlockText(next)}`, 'info');
     return;
@@ -149,34 +222,78 @@ function switchWorld(dir) {
   sfx.click();
   setWorld(next.id);
   writeSave(save);
-  openWorkshop();
-}
-
-// Nächstes Freischalt-Ziel für die Anzeige in der Werkstatt
-function nextGoal() {
-  const w = WORLDS.find((x) => !save.unlocked.includes(x.id));
-  if (!w) return null;
-  const have = (save.worlds[w.unlock.world] || {}).bestDist || 0;
-  return { name: w.name, text: unlockText(w), progress: Math.min(1, have / w.unlock.dist) };
+  openGarage();
 }
 
 function unlockText(w) {
   if (!w.unlock) return '';
   const from = worldById(w.unlock.world);
-  const have = (save.worlds[from.id] || {}).bestDist || 0;
+  const have = (save.worlds.records[from.id] || {}).bestDist || 0;
   return `${fmtN(w.unlock.dist)} m in „${from.name}“ (Rekord ${fmtN(have)} m)`;
 }
 const fmtN = (n) => Math.round(n).toLocaleString('de-DE');
+
+// ---------- Garage-Aktionen ----------
+const DENIED = {
+  scrap: 'Nicht genug Schrott ⚙',
+  cores: 'Nicht genug Kerne 💠',
+  research: 'Erst im Labor erforschen (kommt bald)',
+  locked: 'Noch nicht freigeschaltet',
+  maxed: 'Höchste Stufe erreicht',
+};
+function garageAction(name, ...args) {
+  const fn = {
+    buyPart: garageLogic.buyPart,
+    upgradePart: garageLogic.upgradePart,
+    equipPart: garageLogic.equipPart,
+    buyChassis: garageLogic.buyChassis,
+    selectChassis: garageLogic.selectChassis,
+    setAbility: (s, i, id) => garageLogic.setAbility(s, i, id, buildLoadout(s).slots.abilities),
+  }[name];
+  if (!fn) return { ok: false };
+  const res = fn(save, args[0], args[1]);
+  const partId = name.endsWith('Part') ? args[0] : null;
+  if (!res.ok) {
+    sfx.denied();
+    platform.haptic('light');
+    if (DENIED[res.reason]) popups.show(DENIED[res.reason], 'info');
+    if (partId) garage.flashPart(partId, 'nope');
+    return res;
+  }
+  if (name === 'upgradePart') markMilestone(save, 'firstPartUpgrade');
+  if (name === 'buyPart') markMilestone(save, 'firstPartBought');
+  if (name === 'buyChassis') markMilestone(save, 'firstChassisUnlocked');
+  writeSave(save);
+  if (name === 'selectChassis') sfx.click();
+  else if (name === 'equipPart' || name === 'setAbility') { sfx.click(); platform.haptic('light'); }
+  else { sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1); }
+  if (name === 'setAbility') garage.closePicker(true);
+  if (name === 'buyChassis') garage.viewId = args[0];
+  vehicleFromSave();
+  garage.render(save, garageInfo());
+  if (partId) garage.flashPart(partId);
+  return res;
+}
 
 // ---------- Effekte (Partikel-Vorlagen aus FX.particles) ----------
 const PFX = FX.particles;
 function emitFx(kind, x, y, o = {}) {
   switch (kind) {
-    case 'coin':
-      particles.emit(x, y, PFX.coin);
+    case 'bolt':
+      particles.emit(x, y, PFX.bolt);
+      break;
+    case 'scrap':
+      particles.emit(x, y, PFX.scrap);
       break;
     case 'ring':
       particles.emit(x, y, PFX.ring);
+      break;
+    case 'explosion':
+      particles.emit(x, y, PFX.explosion);
+      if (save.settings.shake) camRig.shake(FX.shake.hit);
+      break;
+    case 'steamBurst':
+      particles.emit(x, y, { ...PFX.steam, n: 14, speed: 6, spread: Math.PI * 2 });
       break;
     case 'dust': {
       const d = PFX.dust;
@@ -189,7 +306,7 @@ function emitFx(kind, x, y, o = {}) {
     }
     case 'smash': {
       const s = PFX.smash;
-      const cols = o.type === 'scrap' ? pal.wreck : s.colors[o.type] || [pal.car.body, pal.car.trim, '#cccccc'];
+      const cols = o.type === 'scrap' ? pal.wreck : s.colors[o.type] || [carVisual.color, carVisual.accent, '#cccccc'];
       particles.emit(x, y, { ...s, colors: cols });
       break;
     }
@@ -200,8 +317,9 @@ function emitFx(kind, x, y, o = {}) {
 }
 
 // Wiederverwendete Partikel-Einstellungen für Effekte, die jedes Bild entstehen
-const BF = PFX.boostFlame, GD = PFX.groundDust, WD = PFX.windDust;
+const BF = PFX.boostFlame, GD = PFX.groundDust, WD = PFX.windDust, ST = PFX.steam, DS = PFX.driveSmoke;
 const flameOpts = { n: BF.n, colors: BF.colors, dir: 0, spread: BF.spread, speed: BF.speed, vx: 0, vy: 0, life: BF.life, size: BF.size, jitter: BF.jitter, zSpread: BF.zSpread, zSpeed: BF.zSpeed };
+const smokeOpts = { ...DS, dir: 0, vx: 0, vy: 0 };
 const groundDustOpts = { n: GD.n, colors: null, dir: Math.PI * GD.dir, spread: GD.spread, speed: GD.speed, life: GD.life, gravity: GD.gravity, size: GD.size, zSpread: GD.zSpread };
 const windOpts = { n: 1, colors: null, speed: 0, vx: 0, vy: WD.vy, life: WD.life, size: WD.sizeBase, jitter: 0, zSpread: WD.zSpread, zSpeed: 0 };
 
@@ -216,18 +334,28 @@ const hooks = {
 
 // ---------- Spielablauf ----------
 function startStage() {
-  stats = computeStats(save);
-  stage = new Stage({ world, track, stats, seed: (Math.random() * 2 ** 31) | 0, hooks });
+  const loadout = buildLoadout(save);
+  if (!save.garage.ownedChassis.includes(loadout.chassis.id)) return;
+  garage.closePicker(true);
+  setVehicle(loadout.chassis.id, partIds(loadout));
+  carModel.rotation.y = 0;
+  stage = new Stage({ world, track, loadout, seed: (Math.random() * 2 ** 31) | 0, hooks });
   state = 'stage';
   paused = false;
   input.reset();
   input.captureKeys = true;
+  input.boostSlot = Math.max(0, stage.abilities.boostSlot);
   particles.clear();
   popups.clear();
-  workshop.show(false);
+  garage.show(false);
   results.show(false);
   menus.showPause(false);
-  hud.show(true, { best: worldRec().bestDist, tutorial: save.tutorial.runs < CONTROLS.tutorialRuns, weather: stage.weather });
+  hud.show(true, {
+    best: worldRec().bestDist,
+    tutorial: save.tutorial.runs < CONTROLS.tutorialRuns,
+    weather: stage.weather,
+    abilities: stage.abilities.slots.map((s) => s.def),
+  });
   const bd = worldRec().bestDist;
   flag.visible = bd > FX.flag.minDist;
   flagX = bd;
@@ -241,21 +369,23 @@ function endStage(r) {
   const wr = worldRec();
   const newDist = r.dist > wr.bestDist && wr.runs > 0;
   const newHeight = r.height > wr.bestHeight && wr.runs > 0;
-  save.money += r.total;
-  s.totalEarned += r.total;
-  s.runs++;
+  save.meta.scrap += r.scrap;
+  s.totalScrap += r.scrap;
+  s.totalBolts += r.bolts;
+  s.testDrives++;
   wr.runs++;
   wr.bestDist = Math.max(wr.bestDist, r.dist);
   wr.bestHeight = Math.max(wr.bestHeight, r.height);
   s.bestDist = Math.max(s.bestDist, r.dist);
   s.bestHeight = Math.max(s.bestHeight, r.height);
-  s.bestTricks = Math.max(s.bestTricks, r.parts.tricks);
-  // Neue Welten freischalten?
+  s.bestTricks = Math.max(s.bestTricks, r.tricks);
+  markMilestone(save, 'firstTestDrive');
+  // Neue Strecken freischalten? (Welten bis Phase 3)
   const unlockedNow = [];
   for (const w of WORLDS) {
-    if (save.unlocked.includes(w.id) || !w.unlock) continue;
-    if (((save.worlds[w.unlock.world] || {}).bestDist || 0) >= w.unlock.dist) {
-      save.unlocked.push(w.id);
+    if (save.worlds.unlocked.includes(w.id) || !w.unlock) continue;
+    if (((save.worlds.records[w.unlock.world] || {}).bestDist || 0) >= w.unlock.dist) {
+      save.worlds.unlocked.push(w.id);
       unlockedNow.push(w);
     }
   }
@@ -264,9 +394,9 @@ function endStage(r) {
   state = 'results';
   input.captureKeys = false;
   platform.keepAwake(false);
-  const canUpgrade = UPGRADES.some((u) => {
-    const l = save.upgrades[u.id] || 0;
-    return l < u.max && upgradeCost(u, l) <= save.money;
+  const canUpgrade = PARTS.some((p) => {
+    const st = garageLogic.partState(save, p);
+    return (st.equipped && st.canUpgrade) || st.canBuy;
   });
   setTimeout(() => {
     if (state !== 'results') return;
@@ -276,42 +406,23 @@ function endStage(r) {
   }, FX.resultDelay * 1000);
 }
 
-function openWorkshop() {
-  state = 'workshop';
+function openGarage() {
+  state = 'garage';
   stage = null;
   paused = false;
   input.captureKeys = false;
   results.show(false);
   hud.show(false);
   menus.showPause(false);
-  workshop.render(save, world, nextGoal());
-  workshop.show(true);
+  vehicleFromSave();
+  if (carModel.userData.setScrap) carModel.userData.setScrap(0);
+  garage.viewId = save.garage.chassis;
+  garage.render(save, garageInfo());
+  garage.show(true);
   particles.clear();
-  const W = CAMERA.workshop;
-  camRig.snap(REST.x + W.offsetX, REST.y - W.snapLower, W.widthPortrait);
-}
-
-function buy(u, card) {
-  const l = save.upgrades[u.id] || 0;
-  if (l >= u.max) return;
-  const cost = upgradeCost(u, l);
-  if (save.money < cost) {
-    sfx.denied();
-    platform.haptic('light');
-    card.classList.remove('nope');
-    void card.offsetWidth;
-    card.classList.add('nope');
-    return;
-  }
-  save.money -= cost;
-  save.upgrades[u.id] = l + 1;
-  writeSave(save);
-  stats = computeStats(save);
-  sfx.buy();
-  platform.haptic('success');
-  workshop.render(save, world, nextGoal());
-  workshop.flash(card);
-  emitFx('sparkle', REST.x, REST.y + 1);
+  popups.clear();
+  const G = CAMERA.garage;
+  camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
 }
 
 function pauseGame() {
@@ -334,7 +445,7 @@ function resumeGame() {
 function quitStage() {
   menus.showPause(false);
   paused = false;
-  if (!stage || stage.phase === 'aim') { openWorkshop(); return; }
+  if (!stage || stage.phase === 'aim') { openGarage(); return; }
   stage.finish('stop');
 }
 
@@ -348,9 +459,11 @@ let exitAsked = false;
 platform.onBackButton(async () => {
   const modal = uiRoot.querySelector('.modal');
   if (modal) { modal.querySelector('.btn-secondary')?.click(); return; }
+  if (devMenu.isOpen) { devMenu.close(); return; }
   if (menus.settingsOpen) { menus.closeSettings(); return; }
+  if (state === 'garage' && garage.pickerOpen) { garage.closePicker(); return; }
   if (state === 'stage') { paused ? resumeGame() : pauseGame(); return; }
-  if (state === 'results') { openWorkshop(); return; }
+  if (state === 'results') { openGarage(); return; }
   if (exitAsked) return;
   exitAsked = true;
   const yes = await confirmDialog(uiRoot, 'Spiel beenden?', 'Beenden');
@@ -365,7 +478,8 @@ window.addEventListener('keydown', () => sfx.unlock(), { capture: true });
 
 // ---------- Hauptschleife ----------
 let last = performance.now();
-const carPos = { x: 0, y: 0, angle: 0 };
+let saveTimer = 0;
+const carPos = { x: 0, y: 0, angle: 0, back: 2 };
 const camTarget = { x: 0, y: 0, vx: 0, vy: 0, groundY: 0, aspect: 1, fovDeg: CAMERA.fovDeg, alt: 0 };
 const frameView = { x: 0, y: 0, width: 0, k: 0, aspect: 1, fovDeg: CAMERA.fovDeg, car: null };
 const hudView = { tilt: 0, indicator: null };
@@ -376,29 +490,41 @@ function frame(now) {
   last = now;
   const t = now / 1000;
 
+  // Spielzeit mitzählen (nur sichtbar und nicht pausiert), regelmäßig sichern
+  if (!document.hidden && !paused) {
+    addPlaytime(save, dt);
+    saveTimer += dt;
+    if (saveTimer > 15) { saveTimer = 0; writeSave(save); }
+  }
+
   const playing = state === 'stage' && stage && !paused;
   if (playing) stage.update(dt, input);
   const vdt = paused ? 0 : dt * (stage && state === 'stage' ? stage.timeScale : 1);
 
-  // Auto-Position (absolute Koordinaten)
+  // Fahrzeug-Position (absolute Koordinaten); in der Garage steht es auf dem Hügel und wippt leicht
   const v = stage ? stage.vehicle : null;
   carPos.x = REST.x;
-  carPos.y = REST.y + Math.sin(t * FX.idleBob.freq) * FX.idleBob.amp;
-  carPos.angle = REST.angle;
+  carPos.y = track.heightAt(REST.x) + PHYSICS.rideHeight + (1 + Math.sin(t * FX.idleBob.freq)) * FX.idleBob.amp;
+  carPos.angle = 0;
+  carPos.back = carModel.userData.rear;
   if (v) { carPos.x = v.x; carPos.y = v.y; carPos.angle = v.angle; }
 
   // Kamera-Logik (ohne three) → Floating Origin → THREE-Kamera
   const aspect = view.camera.aspect;
   if (!stage) {
-    const W = CAMERA.workshop;
-    const w = aspect < 1 ? W.widthPortrait : W.widthLandscape;
-    frameView.x = REST.x + W.offsetX;
-    frameView.y = REST.y - (w / aspect) * W.lowerFrac;
+    // Garage: Fahrzeug groß im oberen Bildteil (Querformat: links), dreht sich langsam
+    const G = CAMERA.garage;
+    const portrait = aspect < 1;
+    const w = portrait ? G.widthPortrait : G.widthLandscape;
+    const h = w / aspect;
+    frameView.x = REST.x - (portrait ? 0 : G.carNdcXLandscape) * (w / 2);
+    frameView.y = carPos.y - (portrait ? G.carNdcY : G.carNdcYLandscape) * (h / 2);
     frameView.width = w;
-    frameView.k = W.k;
+    frameView.k = G.k;
     frameView.aspect = aspect;
     frameView.car = null;
     cam = camRig.frame(dt, frameView);
+    garageSpin += dt * G.spin;
   } else if (stage.phase === 'aim') {
     const A = CAMERA.aim;
     frameView.x = REST.x + A.offsetX;
@@ -424,25 +550,38 @@ function frame(now) {
   view.camera.position.set(cam.x - ox + cam.shakeX, cam.y + cam.shakeY, cam.dist);
   view.camera.lookAt(cam.lookX - ox + cam.shakeX * lm, cam.lookY + cam.shakeY * lm, 0);
 
-  // Auto, Schleuder, Flagge (Render-Koordinaten = absolut - origin.x)
+  // Fahrzeug, Schleuder, Flagge (Render-Koordinaten = absolut - origin.x)
   carModel.position.set(carPos.x - ox, carPos.y, 0);
   carModel.rotation.z = carPos.angle;
-  const spin = v ? v.wheelSpin : 0;
+  carModel.rotation.y = stage ? 0 : garageSpin;
+  const spin = v ? v.wheelSpin : t * 2;
   for (const w of carModel.userData.wheels) w.rotation.z = -spin;
-  const attached = !stage || stage.phase === 'aim';
+  const spinning = !v || v.boosting || v.driving;
+  for (const s of carModel.userData.spinners) if (spinning) s.mesh.rotation.x += s.speed * Math.max(vdt, dt * 0.3);
+  if (stage && carModel.userData.setScrap) carModel.userData.setScrap(stage.scrapPickups);
+  const attached = !!stage && stage.phase === 'aim';
+  sling.root.visible = !!stage;   // in der Garage steht das Fahrzeug frei (Schleuder würde die Vorschau verdecken)
   sling.setOrigin(ox);
   sling.update(Math.max(vdt, 0.001), carPos, attached);
   flag.position.set(flagX - ox, flagY, FX.flag.z);
 
-  // Boost-Flamme und Staub
+  // Boost-Flamme, Antriebs-Rauch, Dampf bei Hitze und Staub
   if (v && playing && stage.phase === 'fly') {
-    const ca = v.angle;
+    const ca = v.angle, c = Math.cos(ca), s = Math.sin(ca);
+    const ex = carModel.userData.exhaust;
+    const px = v.x + c * ex.x - s * ex.y, py = v.y + s * ex.x + c * ex.y;
     if (v.boosting) {
       flameOpts.dir = ca + Math.PI;
       flameOpts.vx = v.vx * BF.inherit;
       flameOpts.vy = v.vy * BF.inherit;
-      particles.emit(v.x - Math.cos(ca) * BF.back, v.y - Math.sin(ca) * BF.back - BF.down, flameOpts);
+      particles.emit(px, py, flameOpts);
+    } else if (v.driving && Math.random() < DS.chance) {
+      smokeOpts.dir = ca + Math.PI * 0.85;
+      smokeOpts.vx = v.vx * 0.5;
+      smokeOpts.vy = v.vy * 0.5;
+      particles.emit(px, py, smokeOpts);
     }
+    if ((v.stall > 0 || v.heatFrac > 0.9) && Math.random() < ST.chance) particles.emit(v.x, v.y + 0.8, ST);
     if (v.onGround && Math.abs(v.s) > GD.minSpeed && Math.random() < GD.chance) {
       groundDustOpts.colors = pal.dirt;
       particles.emit(v.x + GD.dx, v.y + GD.dy, groundDustOpts);
@@ -500,7 +639,7 @@ function frame(now) {
 }
 
 applySettings();
-openWorkshop();
+openGarage();
 requestAnimationFrame(frame);
 
 // Für Tests (Playwright-Rauchtest) und die Browser-Konsole
@@ -512,9 +651,14 @@ window.__game = {
   get track() { return track; },
   get origin() { return origin.x; },
   get camera() { return cam; },
+  get model() { return carModel; },
   input,
+  garage,
+  devMenu,
   startStage,
-  openWorkshop,
+  openGarage,
+  loadout: () => buildLoadout(save),
+  abilityById,
   // Bildschirmposition des Autos in CSS-Pixeln (echte THREE-Projektion des gerenderten Bildes)
   carScreen() {
     view.camera.updateMatrixWorld();

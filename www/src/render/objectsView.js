@@ -13,15 +13,26 @@ function instanced(geo, mat, max) {
   return m;
 }
 
-// Zeichnet Münzen, Ringe und Hindernisse als Instanzen (je Typ ein Draw Call).
+// Zeichnet Schrauben, Schrott-Pickups, Ringe und Hindernisse als Instanzen (je Typ ein Draw Call).
 export class ObjectsView {
   constructor(scene) {
-    const coinGeo = merge([
-      part('cyl8', '#ffd23f', { rx: Math.PI / 2, sx: 0.62, sz: 0.62, sy: 0.16 }),
-      part('cyl8', '#ffae00', { rx: Math.PI / 2, sx: 0.36, sz: 0.36, sy: 0.2 }),
+    // Schraube: Sechskantkopf + Schaft mit Gewinde-Ringen (Run-Währung 🔩)
+    const boltGeo = merge([
+      part('cyl6', '#d7dde3', { y: 0.32, sx: 0.4, sz: 0.4, sy: 0.2 }),
+      part('cyl8', '#aab3bc', { y: -0.1, sx: 0.15, sz: 0.15, sy: 0.7 }),
+      part('cyl8', '#8a939c', { y: -0.05, sx: 0.18, sz: 0.18, sy: 0.05 }),
+      part('cyl8', '#8a939c', { y: -0.22, sx: 0.18, sz: 0.18, sy: 0.05 }),
+      part('box', '#5a636c', { y: 0.43, sx: 0.36, sy: 0.04, sz: 0.06 }),
     ]);
-    const coinMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#5a3a00' });
-    this.coins = instanced(coinGeo, coinMat, 600);
+    const boltMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#3a4450' });
+    this.bolts = instanced(boltGeo, boltMat, 600);
+
+    // Schrott-Pickup (Mülltonne): kleiner Haufen Blech
+    this.scraps = instanced(merge([
+      part('box', '#9a4a2e', { sx: 0.7, sy: 0.4, sz: 0.6, ry: 0.3 }, 0.2),
+      part('box', '#5b6e7a', { y: 0.3, x: 0.1, sx: 0.5, sy: 0.25, sz: 0.5, ry: -0.4, rz: 0.2 }, 0.2),
+      part('cyl8', '#a36a2c', { y: 0.1, x: -0.3, rx: Math.PI / 2, sx: 0.2, sz: 0.2, sy: 0.4 }),
+    ]), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#3a2010' }), 30);
 
     const ringGeo = merge([part(new THREE.TorusGeometry(OBJ.ringRadius, 0.3, 5, 18).toNonIndexed(), '#33e6ff')]);
     const ringMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#0b7a96' });
@@ -62,7 +73,7 @@ export class ObjectsView {
 
     this.obstacleMeshes = { tires: this.tires, scrap: this.scrap, cactus: this.cactus, pillar: this.pillar };
 
-    for (const m of [this.coins, this.rings, ...Object.values(this.obstacleMeshes)]) {
+    for (const m of [this.bolts, this.scraps, this.rings, ...Object.values(this.obstacleMeshes)]) {
       m.castShadow = true;
       scene.add(m);
     }
@@ -80,17 +91,31 @@ export class ObjectsView {
     const minX = camX - RENDER.objectsBehind, maxX = camX + RENDER.objectsAhead;
     let n = 0;
     if (objects) {
-      for (const c of objects.coins) {
+      for (const c of objects.bolts) {
         if (!c.alive || c.x < minX || c.x > maxX || n >= 600) continue;
         _o.position.set(c.x - originX, c.y, 0);
-        _o.rotation.set(0, time * 3 + c.x * 0.3, 0);
+        _o.rotation.set(0.35, time * 3 + c.x * 0.3, 0.25);
         _o.scale.setScalar(c.big ? 1.9 : c.v > 1 ? 1.2 : 1);
         _o.updateMatrix();
-        this.coins.setMatrixAt(n++, _o.matrix);
+        this.bolts.setMatrixAt(n++, _o.matrix);
       }
     }
-    this.coins.count = n;
-    this.coins.instanceMatrix.needsUpdate = true;
+    this.bolts.count = n;
+    this.bolts.instanceMatrix.needsUpdate = true;
+
+    n = 0;
+    if (objects) {
+      for (const c of objects.scraps) {
+        if (!c.alive || c.x < minX || c.x > maxX || n >= 30) continue;
+        _o.position.set(c.x - originX, c.y + Math.sin(time * 3 + c.x) * 0.1, 0);
+        _o.rotation.set(0, time * 1.5 + c.x, 0);
+        _o.scale.setScalar(1);
+        _o.updateMatrix();
+        this.scraps.setMatrixAt(n++, _o.matrix);
+      }
+    }
+    this.scraps.count = n;
+    this.scraps.instanceMatrix.needsUpdate = true;
 
     n = 0;
     if (objects) {
