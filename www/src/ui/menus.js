@@ -1,5 +1,5 @@
 import { el, show, confirmDialog } from './dom.js';
-import { GAME_VERSION } from '../config/balance.js';
+import { GAME_VERSION } from '../data/balance.js';
 
 // Pause-Menü und Einstellungen (inkl. Spielstand exportieren/importieren).
 export class Menus {

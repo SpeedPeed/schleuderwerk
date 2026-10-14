@@ -1,7 +1,7 @@
 import { el, fmt, short, show } from './dom.js';
-import { UPGRADES } from '../config/upgrades.js';
-import { upgradeCost } from '../game/stats.js';
-import { WORLDS } from '../config/worlds.js';
+import { UPGRADES } from '../data/upgrades.js';
+import { upgradeCost } from '../garage/stats.js';
+import { WORLDS } from '../data/worlds.js';
 
 // Werkstatt: Geld, Rekorde, Upgrade-Karten und der Start-Knopf.
 export class Workshop {

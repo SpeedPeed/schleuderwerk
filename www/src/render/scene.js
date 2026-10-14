@@ -1,26 +1,28 @@
 import * as THREE from 'three';
-import { FX } from '../config/balance.js';
+import { RENDER, CAMERA } from '../data/balance.js';
 
 // Renderer, Szene, Licht und Kamera.
 export function createView(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, FX.maxPixelRatio));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, RENDER.maxPixelRatio));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog('#ffffff', 150, 700);
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 2500);
+  scene.fog = new THREE.Fog('#ffffff', RENDER.fogNear, RENDER.fogFar);
+  const camera = new THREE.PerspectiveCamera(CAMERA.fovDeg, 1, CAMERA.near, CAMERA.far);
 
-  const hemi = new THREE.HemisphereLight('#ffffff', '#444444', 1.6);
+  const hemi = new THREE.HemisphereLight('#ffffff', '#444444', RENDER.hemiIntensity);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight('#ffffff', 2.4);
+  const sun = new THREE.DirectionalLight('#ffffff', RENDER.sunIntensity);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.mapSize.set(RENDER.shadowMapSize, RENDER.shadowMapSize);
   const sc = sun.shadow.camera;
-  sc.left = -28; sc.right = 28; sc.top = 28; sc.bottom = -28; sc.near = 1; sc.far = 160;
-  sun.shadow.bias = -0.0008;
-  sun.shadow.normalBias = 0.05;
+  const half = RENDER.shadowHalf;
+  sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+  sc.near = RENDER.shadowNear; sc.far = RENDER.shadowFar;
+  sun.shadow.bias = RENDER.shadowBias;
+  sun.shadow.normalBias = RENDER.shadowNormalBias;
   scene.add(sun, sun.target);
 
   function resize() {
@@ -40,10 +42,17 @@ export function createView(canvas) {
     document.getElementById('sky').style.background = `linear-gradient(to bottom, ${p.skyTop} 0%, ${p.skyBottom} 75%, ${p.fog} 100%)`;
   }
 
-  // Sonne und Schatten folgen dem Auto
+  // Sonne und Schatten folgen dem Auto (Render-Koordinaten, also schon relativ zum Ursprung)
   function followSun(x, y) {
-    sun.position.set(x + 25, y + 45, 35);
+    const o = RENDER.sunOffset;
+    sun.position.set(x + o.x, y + o.y, o.z);
     sun.target.position.set(x, y, 0);
+  }
+
+  // Nebel abhängig vom Kamera-Abstand
+  function setFog(dist) {
+    scene.fog.near = dist + RENDER.fogNear;
+    scene.fog.far = dist + RENDER.fogFar;
   }
 
   function setShadows(on) {
@@ -52,5 +61,5 @@ export function createView(canvas) {
     scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
   }
 
-  return { renderer, scene, camera, hemi, sun, resize, applyPalette, followSun, setShadows };
+  return { renderer, scene, camera, hemi, sun, resize, applyPalette, followSun, setFog, setShadows };
 }

@@ -1,4 +1,4 @@
-import { SAVE_VERSION } from '../config/balance.js';
+import { SAVE_VERSION } from '../data/balance.js';
 
 const KEY = 'schleuderwerk.save';
 

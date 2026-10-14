@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { part, merge, flatMat } from './models.js';
-import { OBJ } from '../game/objects.js';
+import { OBJ } from '../physics/objects.js';
+import { RENDER } from '../data/balance.js';
 
 const _o = new THREE.Object3D();
 
@@ -74,13 +75,14 @@ export class ObjectsView {
     scene.add(this.thermals);
   }
 
-  update(objects, camX, time) {
-    const minX = camX - 70, maxX = camX + 160;
+  // camX: absolute Kamera-x, originX: Render-Ursprung (alle Positionen relativ dazu)
+  update(objects, camX, time, originX = 0) {
+    const minX = camX - RENDER.objectsBehind, maxX = camX + RENDER.objectsAhead;
     let n = 0;
     if (objects) {
       for (const c of objects.coins) {
         if (!c.alive || c.x < minX || c.x > maxX || n >= 600) continue;
-        _o.position.set(c.x, c.y, 0);
+        _o.position.set(c.x - originX, c.y, 0);
         _o.rotation.set(0, time * 3 + c.x * 0.3, 0);
         _o.scale.setScalar(c.big ? 1.9 : c.v > 1 ? 1.2 : 1);
         _o.updateMatrix();
@@ -94,7 +96,7 @@ export class ObjectsView {
     if (objects) {
       for (const r of objects.rings) {
         if (r.x < minX || r.x > maxX) continue;
-        _o.position.set(r.x, r.y, 0);
+        _o.position.set(r.x - originX, r.y, 0);
         _o.rotation.set(0, 1.15, 0);
         _o.scale.setScalar(r.passed ? 0.001 : 1 + Math.sin(time * 6 + r.x) * 0.04);
         _o.updateMatrix();
@@ -111,7 +113,7 @@ export class ObjectsView {
         if (!o.alive || o.x < minX || o.x > maxX) continue;
         const mesh = this.obstacleMeshes[o.type];
         if (!mesh) continue;
-        _o.position.set(o.x, o.y0, 0);
+        _o.position.set(o.x - originX, o.y0, 0);
         _o.rotation.set(0, 0, 0);
         _o.scale.setScalar(1);
         _o.updateMatrix();
@@ -127,7 +129,7 @@ export class ObjectsView {
     if (objects) {
       for (const th of objects.thermals) {
         if (th.x + th.w < minX || th.x - th.w > maxX) continue;
-        _o.position.set(th.x, objects.ground(th.x) - 2, -1);
+        _o.position.set(th.x - originX, objects.ground(th.x) - 2, -1);
         _o.rotation.set(0, time * 0.5, 0);
         _o.scale.set(th.w, th.top * 1.6, th.w * 0.6);
         _o.updateMatrix();

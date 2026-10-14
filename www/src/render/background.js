@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { part, merge, flatMat } from './models.js';
-import { hash1 } from '../game/rng.js';
+import { hash1 } from '../core/rng.js';
 
 const TILE = 900;
 const MESA = new THREE.CylinderGeometry(0.7, 1, 1, 6).toNonIndexed();
@@ -59,12 +59,13 @@ export class Background {
     return merge(parts);
   }
 
-  update(camX, camY) {
+  // camX/camY: absolute Kamera-Position, originX: Render-Ursprung
+  update(camX, camY, originX = 0) {
     for (const l of this.layers) {
       const rel = camX * (1 - l.follow);
       const offset = (((-rel) % TILE) + TILE) % TILE;
       l.meshes.forEach((m, k) => {
-        m.position.x = camX + offset + (k - 1.5) * TILE;
+        m.position.x = camX - originX + offset + (k - 1.5) * TILE;
         m.position.y = camY * (l.follow * 0.6);
       });
     }

@@ -110,8 +110,16 @@ export function buildCar(c) {
 }
 
 // ---------- Schleuder ----------
+const _up = new THREE.Vector3(0, 1, 0);
+const _from = new THREE.Vector3();
+const _to = new THREE.Vector3();
+
+// Alle Teile hängen an `root`. Innen wird in absoluten Koordinaten gerechnet,
+// root.position.x = -origin.x verschiebt alles zum Render-Ursprung (Floating Origin).
 export class Slingshot {
   constructor(scene, groundY, restY, pal) {
+    this.root = new THREE.Group();
+    scene.add(this.root);
     this.restY = restY;
     this.postX = 2.9; // Gabel steht vor dem Auto, das Auto wird nach hinten gezogen
     const wood = '#7a5232', dark = '#5a3a20';
@@ -129,7 +137,7 @@ export class Slingshot {
     const mesh = new THREE.Mesh(merge(parts), flatMat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    scene.add(mesh);
+    this.root.add(mesh);
 
     this.topY = groundY + postH;
     const bandGeo = new THREE.CylinderGeometry(0.09, 0.09, 1, 5);
@@ -138,17 +146,19 @@ export class Slingshot {
     this.bands = [2.4, -2.4].map((z) => {
       const m = new THREE.Mesh(bandGeo, bandMat);
       m.userData.z = z;
-      scene.add(m);
+      this.root.add(m);
       return m;
     });
     const pouchGeo = merge([part('box', '#4a2d1c', { sx: 0.35, sy: 1.1, sz: 2.4 })]);
     this.pouch = new THREE.Mesh(pouchGeo, flatMat);
-    scene.add(this.pouch);
+    this.root.add(this.pouch);
     this.end = new THREE.Vector3(this.postX, this.topY, 0);
     this.vel = new THREE.Vector3();
   }
 
-  // attached: Band hängt am Auto; sonst schwingt es zurück in die Ruhelage
+  setOrigin(originX) { this.root.position.x = -originX; }
+
+  // attached: Band hängt am Auto; sonst schwingt es zurück in die Ruhelage (car in absoluten Koordinaten)
   update(dt, car, attached) {
     if (attached) {
       this.end.set(car.x - Math.cos(car.angle) * 2.3, car.y - Math.sin(car.angle) * 2.3, 0);
@@ -159,14 +169,13 @@ export class Slingshot {
       this.vel.y += ((this.topY - this.end.y) * k - this.vel.y * d) * dt;
       this.end.addScaledVector(this.vel, dt);
     }
-    const up = new THREE.Vector3(0, 1, 0);
     for (const b of this.bands) {
-      const from = new THREE.Vector3(this.postX, this.topY + 0.1, b.userData.z);
-      const to = new THREE.Vector3(this.end.x, this.end.y, Math.sign(b.userData.z) * 1.15); // seitlich am Auto vorbei
-      const dir = to.clone().sub(from);
-      const len = dir.length() || 0.01;
-      b.position.copy(from);
-      b.quaternion.setFromUnitVectors(up, dir.normalize());
+      _from.set(this.postX, this.topY + 0.1, b.userData.z);
+      _to.set(this.end.x, this.end.y, Math.sign(b.userData.z) * 1.15); // seitlich am Auto vorbei
+      _to.sub(_from);
+      const len = _to.length() || 0.01;
+      b.position.copy(_from);
+      b.quaternion.setFromUnitVectors(_up, _to.normalize());
       b.scale.set(1, len, 1);
     }
     this.pouch.position.copy(this.end);

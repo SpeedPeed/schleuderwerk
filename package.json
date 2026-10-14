@@ -1,9 +1,12 @@
 {
   "name": "schleuderwerk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
+  "type": "module",
   "description": "Schleuderwerk – Launch-&-Upgrade-Spiel",
   "scripts": {
+    "test": "node --test tests/",
+    "smoke": "node tools/smoke.mjs",
     "serve": "python tools/serve.py",
     "android:prepare": "npx cap add android && node tools/patch-android.mjs && npx cap sync android",
     "android:sync": "npx cap sync android",
