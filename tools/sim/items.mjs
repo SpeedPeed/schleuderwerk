@@ -29,6 +29,7 @@ const opt = (name, def) => { const i = args.indexOf(`--${name}`); return i >= 0 
 const N = opt('n', 10);          // Etappen je Konfiguration (ohne Items / je Synergie-Build)
 const NR = opt('random', 24);    // zufällige Builds je Konfiguration (je 1 Etappe)
 const NRUNS = opt('runs', 16);   // ganze Runs je Auswahl-Strategie
+const NS = opt('singles', 10);   // Etappen je Akt für die Einzel-Item-Messung
 export const MARK = '<!-- items -->';
 
 // Synergie-Builds (je 6 Items, ★1)
@@ -190,12 +191,38 @@ export function measureRuns() {
   return out;
 }
 
+// ---------- Einzel-Items (Phase 6) ----------
+// Jedes nicht verfluchte Item allein (★1) gegen „ohne Items“: Akt 2 und 3, Etage 2, gutes Loadout; Wirkung = Faktor auf
+// den Mittelwert der log-Weite. Ausreißer: Gewöhnlich > +15 %, Selten > +20 %, Episch > +30 %, Legendär > +100 %.
+export const SINGLE_LIMIT = { common: 0.15, rare: 0.2, epic: 0.3, legendary: 1.0 };
+export function measureSingles(n = NS) {
+  const meas = (inventory) => {
+    const lrs = [];
+    for (const act of [2, 3]) {
+      const b = BIOMES.find((x) => x.act === act);
+      for (let i = 0; i < n; i++) {
+        const spec = generateStageSpec({ biome: b, kind: 'stage', floor: 2, rng: makeRng(`single:${act}:${i}`) });
+        const sim = makeSimStage({ spec, biome: b, save: SAVE, seed: 7000 + i, inventory, runInfo: { bolts: 40, counters: {} } });
+        const r = playStage(sim.stage, () => sim.result, { seed: 31 * i + 5, tricks: wantsTricks(inventory) });
+        lrs.push(Math.log(Math.max(0.05, r.dist / r.target)));
+      }
+    }
+    return lrs.reduce((a, x) => a + x, 0) / lrs.length;
+  };
+  const base = meas(null);
+  const out = ITEMS.filter((i) => i.rarity !== 'cursed').map((it) => ({ id: it.id, name: it.name, icon: it.icon, rarity: it.rarity, gain: Math.exp(meas([{ itemId: it.id, tier: 1 }]) - base) - 1 }));
+  out.sort((a, b) => b.gain - a.gain);
+  for (const r of out) r.outlier = r.gain > (SINGLE_LIMIT[r.rarity] ?? 1);
+  console.log(`Einzel-Items: ${out.slice(0, 8).map((r) => `${r.id} ${fmtPct(r.gain)}`).join(' · ')} | Ausreißer: ${out.filter((r) => r.outlier).map((r) => r.id).join(', ') || 'keine'}`);
+  return out;
+}
+
 // Markdown-Abschnitt
-export function itemsSection(rows, secs, runs = null) {
+export function itemsSection(rows, secs, runs = null, singles = null) {
   const names = ['ohne Items', 'zufällig (6)', ...Object.keys(SYNERGY)];
   const L = [];
   L.push(MARK);
-  L.push('## Items (Phase 4)');
+  L.push('## Items (Phase 4, Phase 6 nachgemessen)');
   L.push('');
   L.push(`> Erzeugt von \`node tools/sim/items.mjs\` (${N} Etappen je Build, ${NR} zufällige Builds je Zeile; Rechenzeit ${secs} s).`);
   L.push('');
@@ -225,6 +252,17 @@ export function itemsSection(rows, secs, runs = null) {
     for (const [k, o] of Object.entries(runs)) L.push(`| ${k} | ${fmtPct(o.win)} | ${o.end.map(fmtPct).join(' | ')} | ${String(o.tows).replace('.', ',')} |`);
     L.push('');
   }
+  if (singles) {
+    const RN = { common: 'Gewöhnlich', rare: 'Selten', epic: 'Episch', legendary: 'Legendär' };
+    L.push('### Einzel-Items (Phase 6)');
+    L.push('');
+    L.push(`Jedes Item allein (★1) gegen „ohne Items“ (Akt 2 + 3, Etage 2, je ${NS} Etappen). Grenzen für Ausreißer: Gewöhnlich +15 %, Selten +20 %, Episch +30 %, Legendär +100 %. Gyro-Items liegen allein im Minus, weil der Bot mit einem Gyro-Item Saltos dreht (die Saltos lohnen sich erst mit weiteren Salto-Items).`);
+    L.push('');
+    L.push('| Item | Seltenheit | Weite | Ausreißer |');
+    L.push('|---|---|---|---|');
+    for (const r of [...singles.slice(0, 12), ...singles.slice(-4)]) L.push(`| ${r.icon} ${r.name} | ${RN[r.rarity] || r.rarity} | ${r.gain >= 0 ? '+' : ''}${fmtPct(r.gain)} | ${r.outlier ? '✗' : '–'} |`);
+    L.push('');
+  }
   L.push('### Ergebnis');
   L.push('');
   L.push(...lines);
@@ -241,8 +279,15 @@ export function writeSection(text) {
   const file = path.join(ROOT, 'docs', 'BALANCE.md');
   let doc = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
   const i = doc.indexOf(MARK);
-  if (i >= 0) doc = doc.slice(0, i).trimEnd();
-  doc = `${doc.trimEnd()}\n\n${text}`;
+  let tail = '';
+  if (i >= 0) {
+    // nur bis zur nächsten Marke ersetzen (z. B. <!-- progression --> von tools/sim/progression.mjs bleibt erhalten)
+    const rest = doc.slice(i + MARK.length);
+    const j = rest.indexOf('<!-- ');
+    tail = j >= 0 ? rest.slice(j) : '';
+    doc = doc.slice(0, i).trimEnd();
+  }
+  doc = `${doc.trimEnd()}\n\n${text}${tail ? `\n${tail}` : ''}`;
   fs.writeFileSync(file, doc);
 }
 
@@ -250,7 +295,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const t0 = Date.now();
   const rows = measureAll();
   const runs = measureRuns();
+  const singles = measureSingles();
   const secs = ((Date.now() - t0) / 1000).toFixed(0);
-  writeSection(itemsSection(rows, secs, runs));
+  writeSection(itemsSection(rows, secs, runs, singles));
   console.log(`\nAbschnitt „Items“ in docs/BALANCE.md geschrieben (${secs} s)`);
 }

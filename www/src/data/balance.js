@@ -4,7 +4,7 @@
 // Diese Datei importiert nichts und wird auch von node --test geladen.
 
 export const SAVE_VERSION = 3;
-export const GAME_VERSION = '0.5.0';
+export const GAME_VERSION = '0.6.0';
 
 // ---------- Speichern ----------
 export const SAVE = {
@@ -150,6 +150,8 @@ export const GARAGE = {
   maxPartLevel: 20,
   dimDivisor: 30,          // Wirkung = perLevel × L / (1 + L / dimDivisor) → Stufe 20 ≈ 12 effektive Stufen
   starterUpgradeBase: 40,  // Basispreis der Startteile (kosten 0 Schrott)
+  chassisCoreMul: 0.4,     // Faktor auf die Kern-Preise der Chassis (data/chassis.js → unlock.cores; data/index.js → chassisUnlock,
+                           // gerundet, mind. 1 → 1/1/1/1/2/2/2/2 💠). Phase 6: Simulator – alle Chassis nach ≈ 26 h (V2-DESIGN §8: ≈ 25 h)
   starterChassis: 'seifenkiste',
   starterAbilities: ['boost', 'sprung'],
   starterParts: {
@@ -247,6 +249,26 @@ export const RUN = {
   acts: 3,
   towPenalty: 0.15,        // nicht geschafft: Abschleppen kostet 15 % der max. Haltbarkeit, dann Neuversuch
   version: 1,              // Format von save.run (älteres/fremdes Format wird verworfen)
+};
+
+// ---------- Schrottstufen (data/ascension.js: Regeln je Stufe; hier nur die Parameter der Sonderregeln) ----------
+export const ASCENSION_RULES = {
+  eliteHazardExtra: 1,     // eliteHazards: Elite-Etappen bekommen so viele zusätzliche Bausteine …
+  eliteDangerMul: 2,       // … gefährliche Bausteine (Pressen, Schrottberge, Schluchten …) werden so viel häufiger gewürfelt …
+  eliteGust: 4,            // … und das Wetter bekommt so viele m/s Böen dazu
+};
+
+// ---------- Fortschritt (garage/progression.js, Simulator tools/sim/progression.mjs) ----------
+export const PROGRESSION = {
+  // Zielzeiten laut V2-DESIGN §8 in Stunden Spielzeit [von, bis] – Anzeige im Dev-Menü, Prüfung im Simulator
+  targets: {
+    firstRun: [10 / 60, 15 / 60],   // erster Run beendet (meist in Akt 1–2)
+    firstBossAct1: [1, 2],          // erster Akt-1-Boss besiegt
+    firstWin: [6, 10],              // erster Run-Sieg
+    allChassis: [20, 30],           // alle Chassis (≈ 25 h)
+    ascension15: [30, 50],          // alles inkl. Schrottstufe 15
+  },
+  historySize: 10,         // Garage → Statistik: so viele letzte Runs
 };
 
 // ---------- Run-Belohnungen (run/rewards.js) ----------
@@ -379,21 +401,22 @@ export const RULES = {
   shockRecharge: { cooldown: 3 },                                    // Teslaspule: Stromschlag-Abklingzeiten zurücksetzen, max. 1× je 3 s
   spinToSpeed: { perFlip: 4, perFlipDouble: 8, cleanMul: 0.5, maxFlips: 5 }, // Gyro-Set 6: Schub je Salto bei der Landung
   shockArc: { range: 8, rangeDouble: 12, cooldown: 0.5 },            // Elektro-Set 6: Lichtbogen
-  overheatAfterburner: { cooldown: 8, dur: 2, thrustMul: 1.5 },      // Feuer-Set 6: Nachbrenner statt Überhitzung
+  overheatAfterburner: { cooldown: 5, dur: 2.5, thrustMul: 1.8 },    // Feuer-Set 6: Nachbrenner statt Überhitzung (Phase 6: 8 s/2 s/×1,5 → 5/2,5/×1,8)
   coldGlide: { heatBelow: 40, frictionMul: 0.25 },                   // Eis-Set 6: Rollreibung × 0,25 unter 40 Hitze
   impactToThrust: { perPoint: 0.8, max: 12, crashMul: 0.5, perPointDouble: 1.6, maxDouble: 24, crashMulDouble: 0.25 }, // Hydraulik-Set 6
   gapTrampoline: { perStage: 1, perStageDouble: 2, angleDeg: 30, minVy: 16, minVx: 12, beyond: 3 }, // Gummi-Set 6
-  heatIsFuel: { heatPerFuel: 1 },                                    // Perpetuum Mobile: 1 Treibstoff = 1 Hitze
+  heatIsFuel: { heatPerFuel: 1, drive: false },                      // Perpetuum Mobile: 1 Treibstoff = 1 Hitze; drive: auch der Antrieb
+                                                                     // (Phase 6 aus – sonst fuhr die Kiste endlos bis Gold × 2, Bot: jede Etappe ×3)
   perfectLaunchLowGrav: { gravityMul: 0.65, maxTime: 5 },            // Levitron
   iceLanding: { heatBelow: 50, maxGain: 15 },                        // Schlittschuhkufen
   obstacleBounce: { vy: 7, vx: 4, rehit: 1 },                        // Hüpfburg
   doubleDamage: { mul: 2 },                                          // Hubstützen
-  boltsAreFuel: { fuelPerBolt: 4 },                                  // Schraubenvergaser: 1 Schraube je angefangene 4 Treibstoff
+  boltsAreFuel: { fuelPerBolt: 1 },                                  // Schraubenvergaser: 1 Schraube je angefangene 1 Treibstoff (Phase 6: 4 → 1)
   boltHoardThrust: { per: 5, mul: 0.01, max: 0.3 },                  // Schraubenvergaser: boostThrust +1 % je 5 Schrauben
   obstacleMagnet: { range: 6, accel: 7 },                            // Geisterbahn-Magnet (Fluch)
   mutualAttraction: { rangeMul: 3, accel: 8, accelDouble: 16 },      // Magnet-Set 6
   wreckingBall: { minSpeed: 16, minSpeedDouble: 12, speedKeep: 0.85, scrap: 2, scrapDouble: 4 }, // Schrott-Set 6
-  boostOvercap: { capMul: 1.4, capMulDouble: 1.8 },                  // Raketen-Set 6
+  boostOvercap: { capMul: 1.3, capMulDouble: 1.6 },                  // Raketen-Set 6 (Phase 6: 1,4/1,8 → 1,3/1,6 – Ausreißer nach oben)
 };
 
 // ---------- Abschuss (Halten / Loslassen) ----------
@@ -525,6 +548,7 @@ export const STAGE = {
   ringSpeed: 6,            // Tempo-Schub eines Boost-Rings (unterliegt der weichen Grenze)
   ringFuelRefill: 0.25,    // Anteil des maximalen Treibstoffs
   milestoneEvery: 100,     // Ereignis milestone alle 100 m
+  bossWarnLead: 45,        // Boss-Strecken: Warnhinweis (data/biomes.js → bosses[].warnings) so viele m vor jedem Baustein
   gust: { freqA: 0.8, freqB: 0.31, phaseB: 2, phaseRange: 10 },
   defaultWeather: { name: 'Windstill', icon: '☀️', weight: 1, wind: [0, 0] },
 };

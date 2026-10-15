@@ -9,7 +9,7 @@ import { cursedItemPool } from '../data/index.js';
 import { rollItemChoices } from '../run/rewards.js';
 import { durabilityMax, runStats, giveItem, addMaxDurability, addMaxFuel } from '../run/runState.js';
 import { isCursedEntry } from '../items/inventory.js';
-import { actMul, shopRng, ownedIds, shopState } from './common.js';
+import { actMul, shopRng, ownedIds, shopState, priceMul } from './common.js';
 
 export function openBlackMarket(run) {
   return shopState(run, 'blackmarket', () => {
@@ -54,7 +54,7 @@ export function buyCursed(run, save, index, pay, replace = null) {
 }
 
 // Preis fürs Fluch-Entfernen (Schrauben × Akt-Faktor)
-export const removeCurseCost = (run) => Math.round(BLACKMARKET.removeCurseBolts * actMul(run.act));
+export const removeCurseCost = (run) => Math.round(BLACKMARKET.removeCurseBolts * actMul(run.act) * priceMul(run));
 
 // Plätze mit (noch) wirksamem Fluch
 export const cursedSlots = (run) => run.inventory.map((e, i) => (isCursedEntry(e) ? i : -1)).filter((i) => i >= 0);

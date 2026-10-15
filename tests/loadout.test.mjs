@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GARAGE, BASE_STATS } from '../www/src/data/balance.js';
-import { CHASSIS, PARTS, ABILITIES, SLOTS, partsForSlot, chassisById, partById, abilityById, isStarterPart } from '../www/src/data/index.js';
+import { CHASSIS, PARTS, ABILITIES, SLOTS, partsForSlot, chassisById, partById, abilityById, isStarterPart, chassisUnlock } from '../www/src/data/index.js';
 import { buildLoadout } from '../www/src/garage/loadout.js';
 import * as G from '../www/src/garage/garage.js';
 import { defaultSave } from '../www/src/save/save.js';
@@ -143,7 +143,7 @@ test('Chassis kaufen: Forschung + Kerne; Fähigkeiten tauschen', () => {
   assert.equal(G.buyChassis(s, 'badewanne').reason, 'cores');
   s.meta.cores = 5;
   assert.equal(G.buyChassis(s, 'badewanne').ok, true);
-  assert.equal(s.meta.cores, 5 - chassisById('badewanne').unlock.cores);
+  assert.equal(s.meta.cores, 5 - chassisUnlock(chassisById('badewanne')).cores);
   assert.equal(s.garage.chassis, 'badewanne');
   assert.equal(G.selectChassis(s, 'seifenkiste').ok, true);
 

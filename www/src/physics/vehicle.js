@@ -44,6 +44,7 @@ export class Vehicle {
     this.g = gravity;
     this.rules = rules || NO_RULES;
     this.ev = [];
+    this.damageMul = 1;        // Schrottstufe 8: Faktor auf jeden Schaden (setzt stage/stage.js aus den Run-Effekten)
     this.reset(0, 0, 0);
   }
 
@@ -329,15 +330,18 @@ export class Vehicle {
 
     // Antrieb: am Boden automatisch, solange Treibstoff da ist (oder der Antrieb keinen braucht)
     const stalled = this.stall > 0 && !rules.heatIsFuel;
+    // heatIsFuel mit RULES.heatIsFuel.drive = false (Phase 6): nur der Boost läuft über Hitze, der Antrieb zahlt Treibstoff
+    const heatDrive = heatFuel && !!RULES.heatIsFuel.drive;
     this.driving = (this.onGround || !!this.loop) && st.driveAccel > 0 && !stalled && this.drivePause <= 0 && this.brake <= 0
-      && (this.fuel > 0 || st.driveFuel <= 0 || heatFuel || this.backupFuel > 0);
+      && (this.fuel > 0 || st.driveFuel <= 0 || heatDrive || this.backupFuel > 0);
+    let driveFuel = 0;
     if (this.driving) {
-      fuelUse += st.driveFuel * dt;
+      driveFuel = st.driveFuel * dt;
       heatGain += st.driveHeat * dt;
     }
 
     // Treibstoff (heatIsFuel: Verbrauch als Hitze, 1 Treibstoff = RULES.heatIsFuel.heatPerFuel Hitze)
-    if (heatFuel) { heatGain += fuelUse * RULES.heatIsFuel.heatPerFuel; fuelUse = 0; }
+    if (heatFuel) { heatGain += (fuelUse + (heatDrive ? driveFuel : 0)) * RULES.heatIsFuel.heatPerFuel; fuelUse = heatDrive ? 0 : driveFuel; } else fuelUse += driveFuel;
     if (fuelUse > 0) this.consumeFuel(fuelUse);
     if (this.fuel <= 0 && this.backupFuel <= 0) {
       if (!this.fuelWasEmpty) { this.fuelWasEmpty = true; ev.push({ type: 'fuelEmpty' }); }
@@ -723,7 +727,8 @@ export class Vehicle {
   damage(amount, source, ev = this.ev, opts = {}) {
     if (!(amount > 0)) return 0;
     // doubleDamage (Hubstützen): jeder Haltbarkeitsverlust nach Panzerung × RULES.doubleDamage.mul
-    const a = amount * (opts.pierce ? 1 : 1 - this.stats.armor) * (this.rules.doubleDamage ? RULES.doubleDamage.mul : 1);
+    // damageMul (Schrottstufe 8): × auf jeden Schaden vor der Panzerung
+    const a = amount * (this.damageMul || 1) * (opts.pierce ? 1 : 1 - this.stats.armor) * (this.rules.doubleDamage ? RULES.doubleDamage.mul : 1);
     if (!opts.pierce && this.shields > 0 && a >= R.shieldMinDamage) {
       this.shields--;
       ev.push({ type: 'bounce', source });

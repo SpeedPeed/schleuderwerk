@@ -3,9 +3,11 @@
 // Start-Loadout (neuer Spielstand), einmal mit einem „guten“ Loadout (Startteile auf Stufe 10).
 //
 // Kalibrier-Ziele (Median Distanz / Zielmarke):
-//   Akt 1: Start-Loadout Etage 0 ≈ 1,3 → Etage 5 ≈ 0,92, Boss ≈ 0,8 (braucht Items/Upgrades)
-//   Akt 2: gutes Loadout Etage 0 ≈ 1,0 → Etage 5 ≈ 0,85, Boss ≈ 0,75
-//   Akt 3: gutes Loadout Etage 0 ≈ 0,85 → Etage 5 ≈ 0,72, Boss ≈ 0,65 (ohne Synergien kaum zu schaffen)
+//   Akt 1: Start-Loadout Etage 0 ≈ 1,3 → Etage 5 ≈ 0,92, Boss ≈ 0,71 (braucht Items/Upgrades)
+//   Akt 2: gutes Loadout Etage 0 ≈ 0,94 → Etage 5 ≈ 0,80, Boss ≈ 0,71
+//   Akt 3: gutes Loadout Etage 0 ≈ 0,84 → Etage 5 ≈ 0,71, Boss ≈ 0,64 (ohne Synergien kaum zu schaffen)
+// Phase 6: Akt-1-Boss, Akt 2 und Akt 3 mit dem Progressions-Simulator (tools/sim/progression.mjs) auf die Zielzeiten
+// abgestimmt (Ziele ×1,12 / ×1,06 / ×1,01 gegenüber Phase 3) – die Soll-Verhältnisse unten sind entsprechend kleiner.
 // Die Zielmarken hängen leicht mit der Strecke zusammen (Bausteine liegen bis zur Gold-Marke), deshalb wird
 // mehrmals hintereinander gemessen und angepasst.
 //
@@ -33,9 +35,9 @@ const VERIFY = args.includes('--verify-only');
 
 // Soll-Verhältnis (Median Distanz / Ziel) je Akt: [Etage 0, Etage 5, Boss], Loadout der Kalibrierung
 const GOALS = {
-  1: { loadout: 'start', f0: 1.3, f5: 0.92, boss: 0.8 },
-  2: { loadout: 'gut', f0: 1.0, f5: 0.85, boss: 0.75 },
-  3: { loadout: 'gut', f0: 0.85, f5: 0.72, boss: 0.65 },
+  1: { loadout: 'start', f0: 1.3, f5: 0.92, boss: 0.714 },
+  2: { loadout: 'gut', f0: 0.943, f5: 0.8, boss: 0.71 },
+  3: { loadout: 'gut', f0: 0.84, f5: 0.714, boss: 0.641 },
 };
 const SAVES = { start: simSave('start'), gut: simSave('gut') };
 
@@ -156,8 +158,8 @@ const a1 = key(1, 'stage', 0, 'start'), a1b = key(1, 'boss', 6, 'start'), a2 = k
 lines.push('## Prüfpunkte');
 lines.push('');
 lines.push(`- Start-Loadout, Akt 1, Etage 0: Median ×${fmtR(a1.ratio)} (Soll ≈ 1,3).`);
-lines.push(`- Start-Loadout, Akt-1-Boss: Median ×${fmtR(a1b.ratio)} (Soll ≈ 0,8 – braucht Items/Upgrades).`);
-lines.push(`- Gutes Loadout, Akt 2, Etage 0: Median ×${fmtR(a2.ratio)} (Soll ≈ 1,0).`);
+lines.push(`- Start-Loadout, Akt-1-Boss: Median ×${fmtR(a1b.ratio)} (Soll ≈ 0,71 – braucht Items/Upgrades).`);
+lines.push(`- Gutes Loadout, Akt 2, Etage 0: Median ×${fmtR(a2.ratio)} (Soll ≈ 0,94).`);
 const normal = table.filter((r) => r.kind === 'stage' && r.floor <= 1 && r.loadout === 'start' && r.act === 1);
 lines.push(`- Schaden einer normalen Etappe (Akt 1, Etage 0–1, Start-Loadout, Bot ohne grobe Fehler): Median ${normal.map((r) => fmtPct(r.dmg)).join(' / ')} (Soll ≤ 4 %).`);
 lines.push('');

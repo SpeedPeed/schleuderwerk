@@ -40,10 +40,13 @@ export const partsForSlot = (slot) => PARTS.filter((p) => p.slot === slot);
 
 // ---------- Adapter (fehlende Felder mit sinnvollen Standardwerten) ----------
 
-// Freischalt-Bedingung eines Chassis: { research: id|null, cores: n }
+// Freischalt-Bedingung eines Chassis: { research: id|null, cores: n } – Kerne × GARAGE.chassisCoreMul (Phase 6, gerundet,
+// mindestens 1 bei Chassis mit Kernpreis)
 export function chassisUnlock(c) {
   const u = (c && c.unlock) || {};
-  return { research: u.research || null, cores: Math.max(0, u.cores || 0) };
+  const raw = Math.max(0, u.cores || 0);
+  const mul = GARAGE.chassisCoreMul ?? 1;
+  return { research: u.research || null, cores: raw > 0 ? Math.max(1, Math.round(raw * mul)) : 0 };
 }
 
 // Freischalt-Bedingung eines Teils: { research: id|null, scrap: n }

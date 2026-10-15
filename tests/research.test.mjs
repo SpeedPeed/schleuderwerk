@@ -15,7 +15,7 @@ import * as D from '../www/src/shops/scrapDealer.js';
 import { itemPool } from '../www/src/run/rewards.js';
 import { generateActMap } from '../www/src/map/mapGen.js';
 import { makeRng } from '../www/src/core/rng.js';
-import { chassisById, partById, abilityById } from '../www/src/data/index.js';
+import { chassisById, partById, abilityById, chassisUnlock } from '../www/src/data/index.js';
 import { itemById } from '../www/src/data/items.js';
 import { PAINTS } from '../www/src/data/cosmetics.js';
 import { REWARDS, RESEARCH as BAL } from '../www/src/data/balance.js';
@@ -129,7 +129,7 @@ test('Freischaltungen: Item-Pool (pool/items), Teile, Fähigkeiten, Chassis (For
   assert.equal(GL.buyChassis(s4, c.id).reason, 'research');
   const s5 = withResearch(['r_chassis_einkaufswagen']);
   assert.equal(GL.buyChassis(s5, c.id).reason, 'cores');
-  s5.meta.cores = c.unlock.cores;
+  s5.meta.cores = chassisUnlock(c).cores;   // Kerne × GARAGE.chassisCoreMul
   assert.ok(GL.buyChassis(s5, c.id).ok);
   assert.equal(s5.meta.cores, 0);
   assert.equal(s5.garage.chassis, c.id);

@@ -165,5 +165,18 @@ export class Sfx {
   medal(i = 0) { [0, 4, 7, 12].forEach((s, k) => this.tone(440 * Math.pow(2, (s + i * 3) / 12), 0.22, { type: 'triangle', vol: 0.12, delay: k * 0.07 })); }
   // Blitz-Warnung (Knistern) und Einschlag
   warn() { this.tone(1760, 0.05, { type: 'square', vol: 0.04 }); this.tone(1760, 0.05, { type: 'square', vol: 0.04, delay: 0.12 }); }
+  // Platzhalter-Erkennungsmelodie eines Bosses (data/biomes.js → bosses[].music: { wave, notes [Hz], beat [s] }):
+  // Melodie zweimal, darunter ein dumpfer Schlag auf jedem zweiten Ton
+  bossTheme(m) {
+    if (!m || !Array.isArray(m.notes)) return;
+    const beat = m.beat || 0.2;
+    for (let r = 0; r < 2; r++) {
+      m.notes.forEach((f, i) => {
+        const delay = (r * m.notes.length + i) * beat;
+        this.tone(f, beat * 0.9, { type: m.wave || 'square', vol: 0.09, delay });
+        if (i % 2 === 0) this.burst(0.12, 140, { vol: 0.25, delay });
+      });
+    }
+  }
   zap() { this.burst(0.6, 4000, { vol: 0.45, type: 'highpass', slide: 0.3 }); this.tone(90, 0.5, { type: 'sawtooth', vol: 0.18, slide: 0.4 }); }
 }

@@ -2,13 +2,13 @@
 // (+35 % der max. Haltbarkeit × (1 + Stat repairBonus)), Volltanken (+15 max. Treibstoff) oder Kühlerspülung
 // (+20 % Kühlung). Zahlen: balance.STATION. Reine Logik ohne three.js und DOM. (Bis Phase 4 in run/runState.js.)
 import { STATION } from '../data/balance.js';
-import { runStats, healRun, addMaxFuel, leaveNode } from '../run/runState.js';
+import { healRun, addMaxFuel, leaveNode, repairFactor } from '../run/runState.js';
 
 // Wahlmöglichkeiten mit Texten (Reparatur inkl. repairBonus)
 export function stationOptions(run = null) {
-  const bonus = run ? runStats(run).repairBonus || 0 : 0;
+  const f = run ? repairFactor(run) : 1;
   return [
-    { id: 'repair', icon: '🔧', name: 'Reparieren', desc: `+${Math.round(STATION.repairPct * (1 + bonus) * 100)} % Haltbarkeit` },
+    { id: 'repair', icon: '🔧', name: 'Reparieren', desc: `+${Math.round(STATION.repairPct * f * 100)} % Haltbarkeit` },
     { id: 'fuel', icon: '⛽', name: 'Volltanken', desc: `+${STATION.fuelMaxAdd} max. Treibstoff für den Run` },
     { id: 'cool', icon: '❄️', name: 'Kühlerspülung', desc: `+${Math.round(STATION.coolMul * 100)} % Kühlung für den Run` },
   ];

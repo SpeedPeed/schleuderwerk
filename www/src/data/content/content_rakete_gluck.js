@@ -25,18 +25,18 @@ export const TAGS = {
         ],
       },
       6: {
-        desc: 'Mehrstufenrakete: Beim Boosten greift die Tempo-Bremse 40 % später. Tank leer? 1×/Etappe: Explosion + 35 Treibstoff.',
+        desc: 'Mehrstufenrakete: Beim Boosten greift die Tempo-Bremse 30 % später. Tank leer? 1×/Etappe: Explosion + 25 Treibstoff.',
         rules: { boostOvercap: true },
         ruleSpec: {
           boostOvercap:
-            'Solange ein Boost aktiv ist (Fähigkeit oder Gratis-Boost), rechnet die Physik die weiche Tempo-Grenze mit speedSoftCap × 1,4 statt speedSoftCap: thrustFactor = 1 / (1 + (v / (speedSoftCap × 1,4))^softCapPow). Das gilt für den Boost-Schub und für Sofort-Schub aus thrust- und explosion-Effekten, die während des aktiven Boosts ausgeführt werden. Die harte Grenze PHYSICS.hardSpeedCap bleibt unverändert. Ohne aktiven Boost gilt sofort wieder die normale Grenze (kein Abbremsen, nur weniger Schubwirkung). Löst kein eigenes Ereignis aus. Mit setBonusDouble: Faktor 1,8. Auswertung: physics/vehicle.js bei der Berechnung von thrustFactor.',
+            'Solange ein Boost aktiv ist (Fähigkeit oder Gratis-Boost), rechnet die Physik die weiche Tempo-Grenze mit speedSoftCap × 1,3 statt speedSoftCap: thrustFactor = 1 / (1 + (v / (speedSoftCap × 1,3))^softCapPow). Das gilt für den Boost-Schub und für Sofort-Schub aus thrust- und explosion-Effekten, die während des aktiven Boosts ausgeführt werden. Die harte Grenze PHYSICS.hardSpeedCap bleibt unverändert. Ohne aktiven Boost gilt sofort wieder die normale Grenze (kein Abbremsen, nur weniger Schubwirkung). Löst kein eigenes Ereignis aus. Mit setBonusDouble: Faktor 1,6. Auswertung: physics/vehicle.js bei der Berechnung von thrustFactor.',
         },
         triggers: [
           {
             on: 'fuelEmpty',
             limit: { perStage: 1 },
             do: [
-              { fx: 'fuel', amount: 35 },
+              { fx: 'fuel', amount: 25 },
               { fx: 'explosion', amount: 8 },
             ],
           },

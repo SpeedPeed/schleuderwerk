@@ -12,6 +12,9 @@
 //   pendingChoices: [{ context, items: [ids], skipBolts }], poolAll, runMods: {fuelMaxAdd, coolMul, durabilityMaxAdd},
 //   counters: { trig: {perRun-Zähler}, rolls, events }, history, stats, earned: {scrap, blueprints, cores, actScrap},
 //   bossesBeaten: [acts], over,
+//   Phase 6: ascension (Schrottstufe 0–15, Regeln: runAsc), runMods zusätzlich mit Faktoren aus der Schrottstufe
+//   (durabilityMaxMul, fuelMaxMul, heatGainMul, damageMul, boltMul), bossTwin (Doppel-Boss Akt 3: zweite Boss-Strecke läuft),
+//   startPlaytime (Spielzeit beim Start → Run-Dauer in der Historie),
 //   Phase 5: perks (Forschungs-Boni beim Run-Start), reserve: [{ itemId, price }] (beim Händler reserviert),
 //   seenEvents: [ids], current.shop (Zustand des offenen Sonderknotens – speicherbar, Fortsetzen mitten im Shop) }
 //
@@ -22,18 +25,21 @@
 // ctx ohne Fahrzeug (emitRunEvent). Der Kodex im Spielstand (save.codex) merkt sich gesehene/besessene Items und Set-Boni.
 import { RUN, REWARDS, ITEMS as BAL_ITEMS } from '../data/balance.js';
 import { biomeForAct } from '../data/biomes.js';
-import { SLOTS } from '../data/index.js';
+import { SLOTS, cursedItemPool } from '../data/index.js';
 import { ITEMS, itemById } from '../data/items.js';
 import { makeRng, hashSeed } from '../core/rng.js';
 import { generateActMap, mapNode, isStageType, BOSS_FLOOR } from '../map/mapGen.js';
 import { generateStageSpec } from '../physics/trackGen.js';
 import { buildLoadout } from '../garage/loadout.js';
-import { markMilestone } from '../garage/progression.js';
+import { markMilestone, ascensionMods, ascensionState, ascensionCoreReward, recordRunEnd } from '../garage/progression.js';
 import { computeStats } from '../items/statMods.js';
 import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts } from '../items/inventory.js';
 import { dispatchRunEvent } from '../items/triggerEngine.js';
 import { ModState } from '../items/modState.js';
 import { stageRewards, runPayout, rollItemChoices, itemSkipBolts } from './rewards.js';
+import { runModStats, runDamageMul } from './runMods.js';
+
+export { runModStats };
 import { PERK_KEYS } from '../garage/research.js';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -70,11 +76,25 @@ export function runStats(run) {
   const lo = runLoadout(run);
   const setup = applyInventory(lo, run.inventory || [], { biome: biomeForAct(run.act) });
   const rm = run.runMods || {};
-  const extra = [{ stats: { durabilityMax: { add: rm.durabilityMaxAdd || 0 }, fuelMax: { add: rm.fuelMaxAdd || 0 }, coolRate: { mul: rm.coolMul || 0 } } }];
+  const extra = [runModStats(rm)];
   const stats = computeStats({ ...setup.statInput, extra });
   statCache.set(run, { key, stats, setup });
   return stats;
 }
+
+// Regeln der Schrottstufe des Runs (data/ascension.js, kumulativ) – zwischengespeichert je Stufe
+const ascCache = new Map();
+export function runAsc(run) {
+  const lv = (run && run.ascension) | 0;
+  if (!ascCache.has(lv)) ascCache.set(lv, Object.freeze(ascensionMods(lv)));
+  return ascCache.get(lv);
+}
+
+// Abschlepp-Strafe (Anteil der max. Haltbarkeit): RUN.towPenalty + Schrottstufe towPenaltyAdd
+export const towPenaltyPct = (run) => RUN.towPenalty + (runAsc(run).towPenaltyAdd || 0);
+
+// Schrauben-Einnahmen × Schrottstufe boltMul (Etappen-Belohnung, Überspringen, Ereignisse, Zerlegen)
+export const boltIncome = (run, n) => (n > 0 ? Math.round(n * (runAsc(run).boltMul || 1)) : n);
 
 // Max. Haltbarkeit im Run (Garage-Werte + Items + Run-Effekte, gleiche Rechnung wie in der Etappe)
 export const durabilityMax = (run) => Math.max(1, Math.round(runStats(run).durabilityMax * 10) / 10);
@@ -93,16 +113,21 @@ export function runStageSetup(run, save = null) {
   };
 }
 
-// Neuen Run aus der aktuellen Garage-Auswahl. opts: { seed, ascension }
+// Neuen Run aus der aktuellen Garage-Auswahl. opts: { seed, ascension } – ohne ascension gilt die in der Garage gewählte
+// Schrottstufe (save.ascension.selected, höchstens die freigeschaltete).
 export function newRun(save, opts = {}) {
   const seed = (opts.seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
   const lo = buildLoadout(save);
+  const asc = save && save.meta ? ascensionState(save) : null;
+  const level = Math.max(0, Math.min(15, opts.ascension ?? (asc ? asc.selected : 0)) | 0);
+  const am = ascensionMods(level);
   const parts = {};
   for (const slot of SLOTS) if (lo.parts[slot]) parts[slot] = { id: lo.parts[slot].id, level: lo.parts[slot].level };
   const run = {
     v: RUN.version,
     seed,
-    ascension: opts.ascension || 0,
+    ascension: level,
+    startPlaytime: save && save.meta ? save.meta.totalPlaytime : 0,
     chassisId: lo.chassis.id,
     parts,
     abilities: lo.abilities.filter((id) => id !== lo.special),
@@ -123,7 +148,11 @@ export function newRun(save, opts = {}) {
     seenEvents: [],
     pendingChoices: [],
     poolAll: !!BAL_ITEMS.devAllPools,
-    runMods: { fuelMaxAdd: 0, coolMul: 0, durabilityMaxAdd: 0 },
+    runMods: {
+      fuelMaxAdd: 0, coolMul: 0, durabilityMaxAdd: 0,
+      durabilityMaxMul: am.startDurabilityMul || 1, fuelMaxMul: am.fuelMaxMul || 1, heatGainMul: am.heatGainMul || 1,
+      damageMul: am.damageMul || 1, boltMul: am.boltMul || 1,
+    },
     counters: { trig: {}, rolls: 0, events: 0 },
     history: [],
     stats: {
@@ -139,6 +168,11 @@ export function newRun(save, opts = {}) {
   // Start-Item des Chassis
   const start = starterItemFor(lo.chassis, run.seed);
   if (start) giveItem(run, save, start);
+  // Schrottstufe 6 „Omas Erbstück“: zufällige verfluchte Items zum Start (Fluch-Pool wie Ereignis-Flüche)
+  for (let i = 0; i < (am.startCurse || 0); i++) {
+    const pool = cursedItemPool(run.research).filter((it) => !run.inventory.some((e) => e.itemId === it.id));
+    if (pool.length) giveItem(run, save, makeRng(hashSeed(`${run.seed}:start-fluch:${i}`)).pick(pool).id, { force: true });
+  }
   run.durability = durabilityMax(run);
   emitRunEvent(run, save, 'runStart', {});
   run.durability = Math.min(run.durability, durabilityMax(run));
@@ -186,7 +220,7 @@ function setupAct(run, act) {
   run.act = act;
   run.biome = biome.id;
   run.bossIds[act] = bossId;
-  run.map = generateActMap(act, rng.fork('karte'), { research: run.research || [], bossId });
+  run.map = generateActMap(act, rng.fork('karte'), { research: run.research || [], bossId, eliteWeightAdd: runAsc(run).eliteWeightAdd || 0 });
   run.pos = { floor: -1, node: null };
   run.current = null;
   run.path = [];
@@ -227,10 +261,13 @@ export function stageSpecFor(run, node) {
   const n = typeof node === 'string' ? mapNode(run.map, node) : node;
   const kind = n && nodeKind(run, n);
   if (!n || !isStageType(kind)) return null;
-  const rng = makeRng(hashSeed(`${run.seed}:${run.act}:${n.id}`));
+  const twin = kind === 'boss' && run.bossTwin ? ':zwilling' : '';
+  const rng = makeRng(hashSeed(`${run.seed}:${run.act}:${n.id}${twin}`));
+  const am = runAsc(run);
   return generateStageSpec({
     biome: currentBiome(run), kind, floor: n.floor, act: run.act, rng,
-    bossId: kind === 'boss' ? run.bossIds[run.act] || n.bossId : null, mods: {},
+    bossId: kind === 'boss' ? run.bossIds[run.act] || n.bossId : null,
+    mods: { targetMul: am.targetMul || 1, bossTargetMul: am.bossTargetMul || 1, eliteHazards: !!am.eliteHazards },
   });
 }
 
@@ -294,6 +331,8 @@ export function applyStageResult(run, result, save = null) {
   s.crates += result.crates || 0;
   if (result.stunts) { s.flips += result.stunts.flips || 0; s.loops += result.stunts.loops || 0; }
   const rw = stageRewards(run.act, kind, result);
+  // Schrottstufe 13: Schrauben-Belohnung der Etappe × boltMul (gesammelte Schrauben sind schon über boltGain gekürzt)
+  if (rw.base.bolts) { const b = boltIncome(run, rw.base.bolts); rw.bolts += b - rw.base.bolts; rw.base.bolts = b; }
   out.rewards = rw;
   // Schrauben, die in der Etappe als Treibstoff verbrannt wurden (Regel boltsAreFuel), gehen vom Run-Stand ab
   run.bolts = Math.max(0, run.bolts + rw.bolts - Math.max(0, result.boltsSpent || 0));
@@ -309,7 +348,7 @@ export function applyStageResult(run, result, save = null) {
   }
   if (!out.cleared) {
     // Abschleppen: Strafe, dann Neuversuch derselben Etappe
-    const pen = Math.round(durabilityMax(run) * RUN.towPenalty * 10) / 10;
+    const pen = Math.round(durabilityMax(run) * towPenaltyPct(run) * 10) / 10;
     out.towed = true;
     out.towPenalty = pen;
     run.durability = Math.max(0, run.durability - pen);
@@ -326,13 +365,28 @@ export function applyStageResult(run, result, save = null) {
   s.medals[out.medal] = (s.medals[out.medal] || 0) + 1;
   out.events = emitRunEvent(run, save, 'stageClear', { medal: out.medal, kind });
   const act = run.act;
-  completeNode(run);
+  // Schrottstufe 15 „Doppelter Ärger“: der erste Boss in Akt 3 öffnet sofort die zweite Boss-Strecke (andere Variante)
+  const twinNext = kind === 'boss' && act >= RUN.acts && !!runAsc(run).doubleBossAct3 && !run.bossTwin;
+  if (twinNext) cur.attempts = 0;
+  else completeNode(run);
   // Item-Auswahl: 1 nach der Etappe (Kontext = Knotenart) + 1 je Item-Kiste (nicht nach dem letzten Boss)
-  const lastBoss = kind === 'boss' && act >= RUN.acts;
+  const lastBoss = kind === 'boss' && act >= RUN.acts && !twinNext;
   if (!lastBoss) {
     queueChoice(run, save, kind, act);
     for (let i = 0; i < Math.max(0, result.crates || 0); i++) queueChoice(run, save, 'crate', act);
     out.choices = run.pendingChoices.length;
+  }
+  if (twinNext) {
+    const b = biomeForAct(act);
+    const other = b.bosses.find((x) => x.id !== run.bossIds[act]) || b.bosses[0];
+    run.bossTwin = true;
+    run.bossIds[act] = other.id;
+    if (save && markMilestone(save, `firstBossAct${act}`) && REWARDS.firstBossCores[act]) {
+      run.earned.cores += REWARDS.firstBossCores[act];
+      out.cores = REWARDS.firstBossCores[act];
+    }
+    out.secondBoss = { id: other.id, name: other.name, icon: other.icon };
+    return out;
   }
   if (kind === 'boss') {
     out.actComplete = true;
@@ -473,12 +527,12 @@ export function giveOrOffer(run, save, itemId, context = 'event', tier = 1) {
 export function queueChoice(run, save, context, act = run.act) {
   normalizeRun(run);
   const rng = makeRng(hashSeed(`${run.seed}:auswahl:${run.counters.rolls++}`));
-  const count = Math.max(1, Math.round(runStats(run).itemChoices));
+  const count = Math.max(1, Math.round(runStats(run).itemChoices) + (runAsc(run).itemChoicesAdd || 0));
   const items = rollItemChoices({
     rng, context, act, count, research: run.research || [], all: !!run.poolAll || !!BAL_ITEMS.devAllPools,
     owned: run.inventory.flatMap((e) => entryParts(e).map((p) => p.def.id)),
   });
-  const choice = { context, items, skipBolts: itemSkipBolts(act) };
+  const choice = { context, items, skipBolts: boltIncome(run, itemSkipBolts(act)) };
   run.pendingChoices.push(choice);
   for (const id of items) codexItem(save, id, 1);
   return choice;
@@ -514,23 +568,28 @@ export function skipChoice(run) {
 // Schrauben ± (Einnahmen zählen in die Statistik; nie unter 0). Ergebnis: tatsächliche Änderung
 export function addRunBolts(run, n) {
   const before = run.bolts;
+  n = boltIncome(run, n);
   run.bolts = Math.max(0, run.bolts + n);
   if (n > 0) run.stats.boltsEarned += n;
   return run.bolts - before;
 }
 
-// Haltbarkeit heilen (Anteil der max. Haltbarkeit × (1 + Stat repairBonus)). Ergebnis: geheilte Punkte
+// Reparatur-Faktor außerhalb der Etappe: (1 + Stat repairBonus) × Schrottstufe repairMul
+export const repairFactor = (run) => (1 + (runStats(run).repairBonus || 0)) * (runAsc(run).repairMul || 1);
+
+// Haltbarkeit heilen (Anteil der max. Haltbarkeit × Reparatur-Faktor). Ergebnis: geheilte Punkte
 export function healRun(run, pct) {
   const max = durabilityMax(run);
   const before = run.durability;
-  run.durability = Math.min(max, run.durability + max * pct * (1 + (runStats(run).repairBonus || 0)));
+  run.durability = Math.min(max, run.durability + max * pct * repairFactor(run));
   return run.durability - before;
 }
 
 // Schaden außerhalb der Etappe (Anteil der max. Haltbarkeit), nie unter minLeft. Ergebnis: Schaden
 export function damageRun(run, pct, minLeft = 1) {
   const before = run.durability;
-  run.durability = Math.max(Math.min(before, minLeft), run.durability - durabilityMax(run) * pct);
+  const mul = runDamageMul(run.runMods);   // Schrottstufe 8: erlittener Schaden × damageMul
+  run.durability = Math.max(Math.min(before, minLeft), run.durability - durabilityMax(run) * pct * mul);
   return before - run.durability;
 }
 
@@ -562,6 +621,11 @@ export function giveUp(run) {
 export function endRun(save, run = save.run) {
   if (!run) return null;
   if (!run.over) giveUp(run);
+  // Schrottstufen: erster Sieg auf Stufe 5/10/15 → Kern (wird mit ausgezahlt)
+  if (run.over.won && save && save.meta) {
+    const c = ascensionCoreReward(save, run.ascension);
+    if (c) { run.earned.cores += c; run.earned.ascCores = (run.earned.ascCores || 0) + c; }
+  }
   const payout = runPayout(run);
   save.meta.scrap += payout.scrap;
   save.meta.blueprints += payout.blueprints;
@@ -573,10 +637,15 @@ export function endRun(save, run = save.run) {
   st.bestDist = Math.max(st.bestDist || 0, run.stats.bestDist);
   st.bestAct = Math.max(st.bestAct || 0, run.over.won ? RUN.acts + 1 : run.act);
   if (run.over.won) st.wins = (st.wins || 0) + 1;
+  st.stagesCleared = (st.stagesCleared || 0) + run.stats.cleared;
+  st.bossesBeaten = (st.bossesBeaten || 0) + run.bossesBeaten.length;
+  st.totalFlips = (st.totalFlips || 0) + (run.stats.flips || 0);
   markMilestone(save, 'firstRunEnd');
   if (run.over.won) markMilestone(save, 'firstWin');
+  const time = Math.max(0, save.meta.totalPlaytime - (run.startPlaytime || 0));
+  const asc = recordRunEnd(save, run, { won: run.over.won, act: run.act, reason: run.over.reason, stages: run.stats.stages, cleared: run.stats.cleared, scrap: payout.scrap, time });
   save.run = null;
-  return { won: run.over.won, reason: run.over.reason, act: run.act, payout, stats: { ...run.stats, medals: { ...run.stats.medals } }, bolts: run.bolts };
+  return { won: run.over.won, reason: run.over.reason, act: run.act, ascension: run.ascension || 0, unlockedAscension: asc.unlocked, payout, stats: { ...run.stats, medals: { ...run.stats.medals } }, bolts: run.bolts, time };
 }
 
 // ---------- Dev-Menü ----------

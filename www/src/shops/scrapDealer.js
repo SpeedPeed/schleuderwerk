@@ -11,7 +11,7 @@ import { SHOP } from '../data/balance.js';
 import { ABILITIES, abilityById, isSlotAbility } from '../data/index.js';
 import { rollItemChoices } from '../run/rewards.js';
 import { runStats, giveItem, itemSlots } from '../run/runState.js';
-import { itemPrice, abilityPrice, shopRng, ownedIds, shopState } from './common.js';
+import { itemPrice, abilityPrice, shopRng, ownedIds, shopState, priceMul } from './common.js';
 
 const actKey = (act) => Math.max(1, Math.min(3, act | 0));
 
@@ -44,7 +44,7 @@ export const reserveSlots = (run) => SHOP.reserveSlots + Math.max(0, Math.round(
 export function rerollCost(run, st = run.current && run.current.shop) {
   const n = st ? st.rerolls : 0;
   const disc = runStats(run).rerollDiscount || 0;
-  return Math.max(0, Math.round((SHOP.rerollBase + SHOP.rerollStep * n) * (1 - disc)));
+  return Math.max(0, Math.round((SHOP.rerollBase + SHOP.rerollStep * n) * (1 - disc) * priceMul(run)));
 }
 
 // Anzeige: { offers: [{ …, canAfford }], ability, rerollCost, reserve: { used, slots, list }, bolts, abilitySlots }

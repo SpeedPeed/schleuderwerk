@@ -63,10 +63,10 @@ test('Inventar: Stat-Beiträge mit ★-Faktor, Hybrid ×0,75, Fluch-Teil unskali
   const lo = buildLoadout(defaultSave());
   const s0 = lo.stats;
   const st = (inv) => computeStats(applyInventory(lo, inv).statInput);
-  // Bügeleisen: boostThrust mul 0,08 je Stufe
-  near(st([{ itemId: 'feuer_buegeleisen', tier: 1 }]).boostThrust, s0.boostThrust * 1.08, 1e-9);
-  near(st([{ itemId: 'feuer_buegeleisen', tier: 3 }]).boostThrust, s0.boostThrust * (1 + 0.08 * BAL.tierMult[2]), 1e-9);
-  near(st([{ itemId: 'gyro_wasserwaage', tier: 1, hybrid: 'feuer_buegeleisen', hybridTier: 1 }]).boostThrust, s0.boostThrust * (1 + 0.08 * 0.75), 1e-9, 'Hybrid');
+  // Bügeleisen: boostThrust mul 0,1 je Stufe (Phase 6: 0,08 → 0,1)
+  near(st([{ itemId: 'feuer_buegeleisen', tier: 1 }]).boostThrust, s0.boostThrust * 1.1, 1e-9);
+  near(st([{ itemId: 'feuer_buegeleisen', tier: 3 }]).boostThrust, s0.boostThrust * (1 + 0.1 * BAL.tierMult[2]), 1e-9);
+  near(st([{ itemId: 'gyro_wasserwaage', tier: 1, hybrid: 'feuer_buegeleisen', hybridTier: 1 }]).boostThrust, s0.boostThrust * (1 + 0.1 * 0.75), 1e-9, 'Hybrid');
   // Verfluchter Turbolader: Fluch-Stats (xmul) wirken unskaliert
   const tl = itemById('rakete_verfluchter_turbolader');
   assert.ok(tl.curse && tl.curse.stats);
@@ -106,10 +106,10 @@ test('Inventar: Badewanne 5 Plätze, voller Rucksack → ersetzen; Fusion und Hy
 });
 
 test('describeItem: Platzhalter mit skalierten Werten (★1/★2/★3)', () => {
-  const it = itemById('feuer_zuendkerzen_kette');   // {dur} = 0,8
-  assert.match(describeItem(it, 1).desc, /Gratis-Boost 0,8 s/);
-  assert.match(describeItem(it, 2).desc, /Gratis-Boost 1,3 s/);
-  assert.match(describeItem(it, 3).desc, /Gratis-Boost 1,8 s/);
+  const it = itemById('feuer_zuendkerzen_kette');   // {dur} = 1,2 (Phase 6: 0,8 → 1,2)
+  assert.match(describeItem(it, 1).desc, /Gratis-Boost 1,2 s/);
+  assert.match(describeItem(it, 2).desc, /Gratis-Boost 1,9 s/);
+  assert.match(describeItem(it, 3).desc, /Gratis-Boost 2,8 s/);
   for (const i of ITEMS) {
     for (const t of [1, 2, 3]) {
       const d = describeItem(i, t);

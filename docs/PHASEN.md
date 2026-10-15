@@ -432,3 +432,92 @@ Voller Rucksack: Kauf → Platz zum Ersetzen wählen; Item aus Ereignis/Schatz �
 - Schrottstufen (`ascension`: Preise, Reparatur, Start-Fluch) wirken noch nicht – Phase 6. Lacke mit „Schrottstufe N“ sind bis dahin nur per Spielstand erreichbar.
 - Der Balance-Simulator (`tools/sim/items.mjs`) geht durch Sonderknoten nur hindurch; eine Ökonomie-Hochrechnung (Schrauben-Einnahmen gegen Händlerpreise, Meilenstein-Zeiten) folgt in Phase 6.
 - Version 0.5.0.
+
+## Phase 6 – Schrottstufen, Bosse, Content-Balance, Progressions-Simulator
+
+Der vorhandene Content ist jetzt vollständig wirksam und die Progression ist auf die Zielzeiten aus V2-DESIGN §8 abgestimmt. Spielbar: **erster Run-Sieg → ☠ Schrottstufen 1–15 in der Garage wählen → Run mit allen Erschwerungen → Belohnungen, Bestwerte, Statistik.**
+
+### Was ist neu
+
+**☠ Schrottstufen 1–15** (`data/ascension.js`, Logik `garage/progression.js`, Auswertung je Regel: ARCHITEKTUR §8b)
+- Freischaltung: der erste Run-Sieg schaltet Stufe 1 frei, ein Sieg auf Stufe N schaltet N+1 frei (höchstens 15). Wahl in der Garage über dem Start-Knopf (◀ Stufe ▶ mit Name, neuer Regel, Anzahl aktiver Erschwerungen und Schrott-Bonus); ein neuer Run übernimmt die gewählte Stufe.
+- Alle 15 Regeln wirken: mehr Elite (Kartengewicht) · Ziele +8 % · Abschleppen +5 % · Preise +10 % (Händler, Fähigkeit, Reroll, Fluch entfernen) · Reparatur −25 % (Tankstelle, Ereignisse) · Start-Fluch · Bosse +15 % · Schaden +15 % (Etappe und Ereignisse/Schatz) · 1 Item weniger zur Wahl · Start-Haltbarkeit −10 % · Hitze +15 % · Elite-Gefahren (+1 Baustein, gefährliche Bausteine ×2 so häufig, +4 m/s Böen – `balance.ASCENSION_RULES`) · Schrauben −15 % (gesammelt, Belohnung, Überspringen, Ereignisse, Zerlegen) · max. Treibstoff −10 % · **Doppel-Boss in Akt 3** (nach dem ersten Akt-3-Boss gibt es die Boss-Beute, dann sofort das Intro der anderen Boss-Variante; erst der zweite Boss ist der Sieg).
+- Anzeige im Run: ☠-Chip auf der Karte (Tippen → alle aktiven Erschwerungen), rote Chips im Etappen-Intro, Abschlepp-Anteil in Intro und Ergebnis.
+- Belohnungen: +10 % Schrott je Stufe auf allen Schrott des Runs (eigene Zeile in der Auszahlung), erster Sieg auf Stufe 5/10/15 → +1 💠 (Zeile „Erster Sieg auf Schrottstufe N“) und die Schrottstufen-Lackierungen (Ehrenrost ab 1, Werkstattmeister-Blau 5, Schrottbaron-Purpur 10, Ewiger Schrottkönig 15). Run-Ende: „Schrottstufe N freigeschaltet!“.
+- Bestwerte je Stufe (`save.ascension.records`: Runs, Siege, bester Akt, meiste Etappen, schnellster Sieg).
+
+**👹 Bosse** (`data/biomes.js → bosses`)
+- Jede der 6 Boss-Strecken hat jetzt Intro-Text, zwei Tipps, Warnhinweise je Baustein-Art (gelbe Einblendung `STAGE.bossWarnLead` = 45 m vor jeder Presse, jedem Magnetkran, jeder Riesen-Schlucht … mit Warnton) und eine eigene Platzhalter-Erkennungsmelodie (`audio/sfx.js → bossTheme`: Wellenform, Tonfolge, Takt) im Intro und beim Start.
+- Eindeutig verschieden: Schrottpresse (5 Pressen im Takt, Schlamm), Magnetkran (3 Magnetzonen, 2 Schluchten), Großer Graben (2 Riesen-Schluchten + Thermik), Glutdünen (3 Glutfelder, Sand, hohe Dünen), **Auge des Sturms** (neu: 4 Windwände mit 11–15 m/s + Böen bis 9, in der Mitte ruhige Hügel = das Auge, 1 Looping, 1 Blitzzone), **Blitzallee** (neu: 5 Blitzzonen mit fast doppelt so schnellem Einschlag-Takt `params.lightning.every` [1,3; 2,0] s, Looping, Schlucht). Ein Test prüft, dass jede Boss-Strecke eine eigene Bausteinmischung hat.
+- Intro zeigt die Belohnung: 👑 Episch/Legendär-Auswahl, 📘 3/4/5, ⚙ Akt-Bonus, 💠 beim ersten Sieg in Akt 2/3 bzw. Run-Sieg.
+
+**🔥 Feuer-Set & Item-Ausreißer** (Zahlen in `data/content/*`, `balance.RULES`; Texte mitgezogen, Validator grün). Neu in `tools/sim/items.mjs`: jedes Item wird einzeln gemessen (Ausreißer-Grenzen Gewöhnlich +15 %, Selten +20 %, Episch +30 %, Legendär +100 %).
+
+| Inhalt | vorher | jetzt | Grund |
+|---|---|---|---|
+| Feuer-Set 2 | +12 % Boost-Schub | +18 % | schwächstes Set (PHASEN Phase 4) |
+| Feuer-Set 4 | ab 70 Hitze, Explosion 4 m/s alle 2 s | ab 55 Hitze, 7 m/s alle 1,2 s | |
+| Feuer-Set 6 (Nachbrenner, `RULES.overheatAfterburner`) | alle 8 s, 2 s, Schub ×1,5, Explosion 8 | alle 5 s, 2,5 s, ×1,8, Explosion 12 + 15 Treibstoff | Akt 3 ×0,8 → ×1,0, Akt-2-Boss 58 % → 80 % |
+| Zündkerzen-Kette / Bügeleisen / Grillanzünder / Silvester-Restposten / Kachelofen | 0,8 s / +8 % & 3 m/s / 5 m/s / 30 % & 5 m/s / +5 % bis 30 % | 1,2 s / +10 % & 4 m/s / 7 m/s / 45 % & 6 m/s / +6 % bis 40 % (8×) | Feuer-Items allein kaum spürbar |
+| Raketen-Set 6 (`RULES.boostOvercap`) | Tempo-Grenze ×1,4 (doppelt 1,8), Notreserve 35 | ×1,3 (1,6), 25 | Ausreißer nach oben (Akt-3-Boss 100 %) |
+| Omas Nadeldose (Gewöhnlich, Start-Item der Seifenkiste) | jeder 6. Pickup | jeder 15. Pickup | Schrauben zählen als Pickups → fast Dauer-Boost: +29 % Weite allein, Bot gewann mit voller Meta ohne weitere Items 12 % der Runs |
+| Blitzableiter (Gewöhnlich) | 1 s Gratis-Boost alle 5 s | 0,5 s alle 6 s | +32 % → +10 % |
+| Perpetuum Mobile (`RULES.heatIsFuel.drive` neu = aus) | auch der Antrieb lief über Hitze | nur der Boost, der Antrieb zahlt Treibstoff | die Kiste fuhr endlos bis Gold × 2 (jede Etappe ×3) |
+| Schraubenschlucker-Vergaser (`RULES.boltsAreFuel.fuelPerBolt`, Pickup-Tank) | 1 Schraube = 4 Treibstoff, +2 je Schraube | 1 = 1, +0,5 | jede Etappe ×3 → +70 % (kostet weiter Run-Schrauben) |
+
+**📈 Progressions-/Ökonomie-Simulator** (`tools/sim/progression.mjs`, Ergebnis `docs/BALANCE.md` → „Progression & Ökonomie“)
+- `--fit`: Der Bot misst mit der echten Etappen-Logik je Akt, Etage/Elite/Boss und Teile-Stufe 0/5/10/15/20 die Verteilung Weite ÷ Ziel, Schaden, Schrauben, Schrott, Kisten, dazu Item-Wirkung (2/4/6 zufällige Items, 4 Items je Seltenheit, Sets 2/4/6), Schrottstufen-Physik und die Streuung beim Neuversuch derselben Strecke → `tools/sim/progression-model.json` (≈ 45 s).
+- Karriere: echte Run-Logik (Karte, Händler, Werkbank, Ereignisse, Schatz, Tankstelle, Belohnungen, Auszahlung, Schrottstufen); nur das Etappen-Ergebnis kommt aus dem Modell (empirische Verteilung, Strecken- und Abschuss-Anteil getrennt, Einarbeitung). Spielzeit: Etappe 75 s, Neuversuch 55 s, Händler 35 s, Ereignis 30 s … (Tabelle in BALANCE.md). Garage-Strategie: Forschung (billigste zuerst) → Chassis → billigste Teile-Verbesserung; nach dem ersten Sieg immer die höchste Schrottstufe.
+- Ergebnis (16 Karrieren, Median): **erster Run 12 min** (endet in Akt 1) · **erster Akt-1-Boss 1,2 h** · **erster Sieg 8,2 h** · **alle Chassis 25,4 h** · Schrottstufe 5 / 10 nach 21 / 29 h · **alles inkl. Schrottstufe 15: 45,5 h** – alle Korridore ✔.
+- Regel „ein schlechter Run muss auch mit voller Meta scheitern können“ (alle Startteile Stufe 20, ganzer Forschungsbaum): ohne Items 0 % Siege, 6 zufällige Gewöhnliche 2 %, **echter Bot ohne Items 5 % (40 Runs)** – Ziel < 30 % ✔.
+
+**Geänderte Balance-Werte** (Iteration mit dem Simulator; Varianten mit teureren Teilen, weniger Schrott, 2 Kernen je Sieg und niedrigerer Abschlepp-Strafe wurden verworfen, Begründung in BALANCE.md):
+
+| Wert | vorher | jetzt |
+|---|---|---|
+| Zielmarken Akt-1-Boss | 510 m | 570 m |
+| Zielmarken Akt 2 (Etage 0–5 / Boss) | 490–570 / 625 m | 520–605 / 660 m |
+| Zielmarken Akt 3 (Etage 0–5 / Boss) | 560–665 / 730 m | 565–670 / 740 m |
+| `GARAGE.chassisCoreMul` (neu, Adapter `chassisUnlock`) | – (Kerne 2–6, Σ 30) | 0,4 (1/1/1/1/2/2/2/2, Σ 12) |
+| `tools/sim/calibrate.mjs` Soll-Verhältnisse | Akt-1-Boss 0,8 · Akt 2 1,0/0,85/0,75 · Akt 3 0,85/0,72/0,65 | 0,71 · 0,94/0,80/0,71 · 0,84/0,71/0,64 (reproduzieren die neuen Ziele) |
+| `RULES.overheatAfterburner`, `boostOvercap`, `heatIsFuel.drive`, `boltsAreFuel` | siehe Item-Tabelle | |
+| neu: `ASCENSION_RULES`, `PROGRESSION` (Zielzeiten, Historie), `STAGE.bossWarnLead` | | |
+
+**Meilensteine & Dev-Menü**
+- Zeitmessung vollständig: erster Run (`firstRunEnd`), erster Akt-1-Boss, erster Sieg, **alle Chassis** (`allChassis`, beim Kauf des letzten), **Sieg auf Schrottstufe 5/10/15** (`ascension5/10/15`). Das Dev-Menü zeigt jede Zeit mit Zielkorridor (grün im Korridor, gelb zu früh, rot zu spät) und den Schrottstufen-Stand.
+- „Werte live ändern“: neben den 19 häufigen Werten jetzt **alle Abschnitte von `balance.js`** aufklappbar (34 Abschnitte, jede Zahl auch in verschachtelten Objekten/Listen als Zahlenfeld mit ↺). Neu: „☠ Schrottstufen 1–15 freischalten“.
+
+**📊 Codex/Statistik** (Garage-Reiter „📊 Statistik“): entdeckte Items (gesehen/besessen), Set-Boni, Chassis, Forschung, Lacke und gewonnene Schrottstufen in %, Bestwerte (Spielzeit, Runs/Siege, bester Akt, weiteste Etappe, Höhe, Etappen, Bosse, Saltos, Schrott), Tabelle je Schrottstufe und die **letzten 10 Runs** (Sieg/Akt, Chassis, Stufe, Etappen, Schrott, Dauer).
+
+**Spielstand** (Schema v3, ohne Versionswechsel): `ascension.selected/records`, `history`, Statistik-Summen; Migration repariert falsche Werte. Version 0.6.0.
+
+### Tests
+`npm test` (238 Tests) – neu: `tests/ascension.test.mjs` (je Schrottstufen-Regel ein Test inkl. Doppel-Boss mit Neuversuch, Freischaltung 0 → 1 → 2, Belohnung +50 % Schrott/Kern/Lack auf Stufe 5 nur beim ersten Sieg, Bestwerte, Historie + Migration, Meilensteine, 6 Boss-Varianten × 40 Seeds gültig und verschieden, Boss-Warnhinweise in der Etappe, Boss-Belohnungen), `tests/progression.test.mjs` (Modell vollständig, Ergebnis-Form, Schrottstufe senkt die Erfolgsquote, Determinismus, Meilensteine von 5 Karrieren im Korridor ±25 %, erster Run endet in Akt 1–2, schlechter Run mit voller Meta < 30 %). Angepasst: Item-/Regel-Tests auf die neuen Werte (Bügeleisen, Zündkerzen-Kette, Nachbrenner, Raketen-Set, Perpetuum Mobile, Schraubenvergaser), Chassis-Kernpreise über `chassisUnlock`.
+
+### So testest du Phase 6
+
+**Am PC (automatisch)**
+1. `npm test` → „# fail 0“.
+2. `npm run smoke` → „RAUCHTEST BESTANDEN“ (≈ 9 min). Neu in `/tmp/sw-smoke/`: `a1-garage-schrottstufe.png`, `a2-karte-schrottstufe.png`, `a3-intro-schrottstufe.png`, `b-boss-schrottpresse.png`, `b-boss-magnetkran.png`, `b-boss-grosser_graben.png`, `b-boss-gluedunen.png`, `b-boss-auge_des_sturms.png`, `b-boss-blitzallee.png`, `b-boss-warnung.png`, `a4-statistik.png`, `a5-statistik-historie.png`, `a6-devmenu-werte.png`.
+3. Optional: `node tools/sim/progression.mjs` (≈ 1 min mit dem gespeicherten Modell; `--fit` misst neu, `--bot` zusätzlich echte Bot-Runs, `--verbose` zeigt jeden Run), `node tools/sim/items.mjs` (≈ 1 min, inkl. Einzel-Items).
+
+**Am PC (von Hand)**
+1. `python tools/serve.py`, `http://localhost:8137` (F12 → Handy-Ansicht 412 × 915).
+2. ⚙ → 7× Versionsnummer → Dev-Menü → „☠ Schrottstufen 1–15 freischalten“. In der Garage über dem Start-Knopf mit ▶ eine Stufe wählen → **RUN STARTEN** → oben rechts auf der Karte ☠ antippen (Liste der Erschwerungen), ein Etappen-Intro zeigt die roten Chips.
+3. Dev-Menü „👹 Zum Boss“ → Boss antippen: Intro mit Text, Tipps, Belohnung und Melodie. LOS → vor jedem gefährlichen Baustein erscheint ein gelber Warnhinweis.
+4. Stufe 15 + Dev „➡ Nächster Akt“ ×2 + „👹 Zum Boss“ + „Etappe: 🥇 Gold“ → „Doppelter Ärger!“, nach der Beute folgt der zweite Boss.
+5. Garage → Reiter „📊 Statistik“. Dev-Menü → „Meilensteine“ (Zielkorridore) und „Werte live ändern“ → z. B. „Belohnungen“ aufklappen.
+
+**Am Handy**
+1. Wie bisher `python tools/serve.py` und die Handy-Adresse öffnen.
+2. Schrottstufen-Wahl: die ◀ ▶-Knöpfe über RUN STARTEN; die Garage-Reiter (Garage · Labor · Lack · Statistik) passen in eine Zeile.
+3. Boss-Warnhinweise erscheinen in der Bildmitte oben und verschwinden nach gut einer Sekunde.
+
+### Abweichungen / offene Punkte
+- **Meilenstein „erster Run“** ist `firstRunEnd` (Ende des ersten Runs), es gibt kein zusätzliches `firstRun`-Feld.
+- **Simulator-Grenzen**: Das Modell kennt Teile-Stufen nur als Mittel der 7 Slots (gekaufte Teile zählen mit ihrer Stufe, ihre anderen Grundwerte nicht), keine Chassis-Unterschiede und keine Fähigkeiten-Wahl; Item-Wirkung über Anzahl × Seltenheit × ★ + Set-Größe (gefittet). Die Einarbeitung (Weite × 0,88 am Anfang, τ = 1,5 h) und die Spielzeiten je Knoten sind Annahmen. Die Spannen zwischen den Karrieren sind groß (erster Sieg 5–12 h, Schrottstufe 15 34–70 h) – Siege sind Glückssache mit Items.
+- **Schrott-Überschuss im Endgame**: nach ≈ 20 h sind die Startteile auf Stufe 20; danach sammelt sich Schrott (Simulator: ≈ 58.000 ⚙ bei Schrottstufe 15) – Senken sind die Lackierungen (≈ 103.000 ⚙) und weitere Teile; die simulierte Person kauft beides nicht.
+- **Kerne**: Chassis kosten jetzt 1–2 💠 (Faktor auf die Inhaltsdaten im Adapter, `chassis.js` unverändert); Kerne bleiben knapp (1 je Sieg + erste Bosse Akt 2/3 + Schrottstufen 5/10/15).
+- **priceMul** wirkt auf alle Schrauben-Preise (Händler, Fähigkeit, Reroll, Fluch entfernen); Schwarzmarkt-Preise in Haltbarkeit/Treibstoff/Kernen und Ereignis-Kosten bleiben. **damageMul** wirkt auch auf Ereignis- und Schatz-Schaden, nicht auf die Abschlepp-Strafe (dafür gibt es `towPenaltyAdd`).
+- Raketen-Set 6 bleibt das stärkste Set (Akt-3-Boss 90 %) – gewollt als „sichere“ Synergie; Gyro-Items liegen einzeln im Minus, weil der Bot mit ihnen Saltos dreht (Bot-Fahrweise, kein Item-Wert).
+- Zielmarken in `biomes.js` kommen weiter aus `tools/sim/calibrate.mjs`; dessen Soll-Verhältnisse sind auf die Phase-6-Ziele gesetzt (`--apply` würde sie bis auf Rundung reproduzieren, ungeprüft).

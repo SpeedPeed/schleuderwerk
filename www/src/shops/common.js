@@ -4,7 +4,7 @@
 import { SHOP } from '../data/balance.js';
 import { itemById } from '../data/items.js';
 import { makeRng, hashSeed } from '../core/rng.js';
-import { runStats } from '../run/runState.js';
+import { runStats, runAsc } from '../run/runState.js';
 import { entryParts } from '../items/inventory.js';
 
 const actKey = (act) => Math.max(1, Math.min(3, act | 0));
@@ -19,16 +19,19 @@ export function basePrice(itemId, act) {
   return Math.round((SHOP.price[def.rarity] ?? SHOP.price.common) * actMul(act));
 }
 
-// Händlerpreis: Grundpreis × (1 − Stat shopDiscount) (Einkaufswagen, Items), mind. 1
+// Preis-Faktor der Schrottstufe (Stufe 4 „Inflation“: alle Preise × priceMul)
+export const priceMul = (run) => runAsc(run).priceMul || 1;
+
+// Händlerpreis: Grundpreis × (1 − Stat shopDiscount) (Einkaufswagen, Items) × Schrottstufe, mind. 1
 export function itemPrice(run, itemId) {
   const disc = runStats(run).shopDiscount || 0;
-  return Math.max(1, Math.round(basePrice(itemId, run.act) * (1 - disc)));
+  return Math.max(1, Math.round(basePrice(itemId, run.act) * (1 - disc) * priceMul(run)));
 }
 
 // Preis einer Fähigkeit beim Händler
 export function abilityPrice(run) {
   const disc = runStats(run).shopDiscount || 0;
-  return Math.max(1, Math.round(SHOP.abilityPrice * actMul(run.act) * (1 - disc)));
+  return Math.max(1, Math.round(SHOP.abilityPrice * actMul(run.act) * (1 - disc) * priceMul(run)));
 }
 
 // Zufall eines Sonderknotens: deterministisch aus Run-Seed, Akt, Knoten und Zweck (Neustart = gleiche Angebote)

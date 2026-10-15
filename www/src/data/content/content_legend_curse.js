@@ -16,12 +16,12 @@ export const ITEMS = [
     rarity: 'legendary',
     tags: ['feuer'],
     pool: 'r_legend_1',
-    desc: 'Antrieb und Boost erzeugen Hitze, statt Treibstoff zu verbrauchen. Überhitzung knallt und tankt {amount} – Notreserve.',
+    desc: 'Der Boost erzeugt Hitze, statt Treibstoff zu verbrauchen. Überhitzung knallt und tankt {amount} – Notreserve.',
     flavor: 'Läuft ewig. Bisher jedenfalls drei Minuten.',
     rules: { heatIsFuel: true },
     ruleSpec: {
       heatIsFuel:
-        'Antrieb und Boost (Fähigkeit) verbrauchen keinen Treibstoff mehr. Stattdessen wird ihr Treibstoffverbrauch (driveFuel bzw. boostFuel pro Sekunde) zusätzlich zur normalen Hitze (driveHeat/boostHeat) als Hitze addiert: 1 Treibstoff = 1 Hitze, multipliziert mit heatGain; eine negative boostHeat (z. B. Feuerlöscher-Rakete) zählt beim Boosten dabei als 0, die Verbrauchs-Hitze lässt sich also nicht wegrechnen. Gratis-Boosts bleiben kostenlos und erzeugen nur ihre normale Hitze; andere Fähigkeiten zahlen weiter Treibstoff. Notbetrieb: Während der 2-s-Überhitzungssperre sowie solange die Hitze mit noOverheat oder heatIsResource auf heatMax steht, laufen Antrieb und Boost aus dem Tank (normaler Treibstoffverbrauch, in dieser Zeit keine Verbrauchs-Hitze); ist der Tank leer, stoppen sie (fuelEmpty wird erst dann ausgelöst). Damit gibt es in keiner Kombination Dauer-Boost ohne Kosten. Überhitzungsschaden (5) und Hitzeabfall auf 50 bleiben, wo sie sonst gelten, unverändert. Auswertung: physics/vehicle.js im Verbrauchsschritt von Antrieb/Boost.',
+        'Der Boost (Fähigkeit) verbraucht keinen Treibstoff mehr (Phase 6: der Antrieb zahlt wieder normal Treibstoff – Schalter RULES.heatIsFuel.drive; mit drive gilt alles hier Gesagte auch für den Antrieb). Stattdessen wird sein Treibstoffverbrauch (boostFuel pro Sekunde) zusätzlich zur normalen Hitze (boostHeat) als Hitze addiert: 1 Treibstoff = 1 Hitze, multipliziert mit heatGain; eine negative boostHeat (z. B. Feuerlöscher-Rakete) zählt beim Boosten dabei als 0, die Verbrauchs-Hitze lässt sich also nicht wegrechnen. Gratis-Boosts bleiben kostenlos und erzeugen nur ihre normale Hitze; andere Fähigkeiten zahlen weiter Treibstoff. Notbetrieb: Während der 2-s-Überhitzungssperre sowie solange die Hitze mit noOverheat oder heatIsResource auf heatMax steht, laufen Antrieb und Boost aus dem Tank (normaler Treibstoffverbrauch, in dieser Zeit keine Verbrauchs-Hitze); ist der Tank leer, stoppen sie (fuelEmpty wird erst dann ausgelöst). Damit gibt es in keiner Kombination Dauer-Boost ohne Kosten. Überhitzungsschaden (5) und Hitzeabfall auf 50 bleiben, wo sie sonst gelten, unverändert. Auswertung: physics/vehicle.js im Verbrauchsschritt von Antrieb/Boost.',
     },
     triggers: [
       {
@@ -141,11 +141,11 @@ export const ITEMS = [
     rules: { boltsAreFuel: true, boltHoardThrust: true },
     ruleSpec: {
       boltsAreFuel:
-        'Schrauben sind Treibstoff: Ist der Treibstoff 0 und Antrieb, Boost oder eine Fähigkeit bräuchte Treibstoff, wird stattdessen mit Run-Schrauben bezahlt – 1 Schraube je angefangene 4 Treibstoff (abgebucht über ctx.addBolts(-1), sobald der nächste 4er-Block angebrochen wird; in der laufenden Etappe gewonnene Schrauben zählen mit). fuelEmpty wird erst ausgelöst, wenn Treibstoff UND Schrauben 0 sind; danach gilt das normale Verhalten. Schrauben gehen dabei nie unter 0. Auswertung: stage/stage.js beim Treibstoffverbrauch (Schrauben sind Run-Zustand, Zugriff über ctx).',
+        'Schrauben sind Treibstoff: Ist der Treibstoff 0 und Antrieb, Boost oder eine Fähigkeit bräuchte Treibstoff, wird stattdessen mit Run-Schrauben bezahlt – 1 Schraube je angefangenen Treibstoff-Block von RULES.boltsAreFuel.fuelPerBolt (Phase 6: 1; abgebucht über ctx.addBolts(-1), sobald der nächste Block angebrochen wird; in der laufenden Etappe gewonnene Schrauben zählen mit). fuelEmpty wird erst ausgelöst, wenn Treibstoff UND Schrauben 0 sind; danach gilt das normale Verhalten. Schrauben gehen dabei nie unter 0. Auswertung: stage/stage.js beim Treibstoffverbrauch (Schrauben sind Run-Zustand, Zugriff über ctx).',
       boltHoardThrust:
         'Schraubenhort: Je volle 5 Run-Schrauben, die der Spieler gerade besitzt (Run-Stand inklusive der in der laufenden Etappe gewonnenen Schrauben), erhält die Kiste boostThrust mul +0,01, höchstens +0,30 (ab 150 Schrauben). Der Bonus wird bei jeder Änderung des Schraubenstands neu berechnet (wie ein Stapel ohne eigenes Ereignis) und sinkt daher auch, wenn boltsAreFuel Schrauben verbrennt oder im Laden bezahlt wird. Wird nicht mit ★ skaliert; mehrere Quellen addieren sich nicht. Auswertung: stage/stage.js beim Neuberechnen der Fahrzeug-Stats (Schraubenstand über ctx).',
     },
-    triggers: [{ on: 'pickup', if: { kind: 'bolt' }, do: [{ fx: 'fuel', amount: 2 }] }],
+    triggers: [{ on: 'pickup', if: { kind: 'bolt' }, do: [{ fx: 'fuel', amount: 0.5 }] }],
   },
 
   // ── r_legend_3 ──

@@ -21,11 +21,14 @@ export function defaultSave() {
       abilities: [...GARAGE.starterAbilities],
     },
     research: { done: [], levels: {} },   // levels: Stufen der wiederholbaren Forschung (Feinschliff)
-    ascension: { unlocked: 0, best: 0 },
+    // Schrottstufen (garage/progression.js): unlocked = höchste wählbare (0 = gesperrt), best = höchste gewonnene,
+    // selected = Wahl für den nächsten Run, records = Bestwerte je Stufe { runs, wins, bestAct, bestStages, fastestWin }
+    ascension: { unlocked: 0, best: 0, selected: 0, records: {} },
     codex: { items: {}, sets: {} },
     cosmetics: { owned: [], paint: null },
     settings: { sound: true, vibration: true, shake: true, shadows: true },
-    stats: { testDrives: 0, runs: 0, wins: 0, bestAct: 0, bestDist: 0, bestHeight: 0, bestTricks: 0, totalScrap: 0, totalBolts: 0 },
+    stats: { testDrives: 0, runs: 0, wins: 0, bestAct: 0, bestDist: 0, bestHeight: 0, bestTricks: 0, totalScrap: 0, totalBolts: 0, stagesCleared: 0, bossesBeaten: 0, totalFlips: 0 },
+    history: [],          // letzte Runs (garage/progression.js → recordRunEnd), neueste zuerst
     // laufender Run (run/runState.js) oder null – nach App-Neustart fortsetzbar
     run: null,
     tutorial: { runs: 0 },
@@ -107,7 +110,13 @@ export function migrate(data) {
   for (const k of ['scrap', 'blueprints', 'cores', 'totalPlaytime']) data.meta[k] = n0(data.meta[k]);
   for (const [k, t] of Object.entries(data.meta.milestones)) if (typeof t !== 'number' || !isFinite(t) || t < 0) delete data.meta.milestones[k];
   for (const k of Object.keys(data.stats)) data.stats[k] = n0(data.stats[k]);
-  for (const k of Object.keys(data.ascension)) data.ascension[k] = n0(data.ascension[k]);
+  for (const k of ['unlocked', 'best', 'selected']) data.ascension[k] = Math.min(15, Math.floor(n0(data.ascension[k])));
+  data.ascension.selected = Math.min(data.ascension.selected, data.ascension.unlocked);
+  for (const [lv, r] of Object.entries(data.ascension.records)) {
+    if (!isObj(r) || !(Number(lv) >= 0 && Number(lv) <= 15)) { delete data.ascension.records[lv]; continue; }
+    for (const k of ['runs', 'wins', 'bestAct', 'bestStages', 'fastestWin']) r[k] = n0(r[k]);
+  }
+  data.history = data.history.filter(isObj).slice(0, 50);
   data.tutorial.runs = n0(data.tutorial.runs);
   data.research.done = [...new Set(data.research.done.filter((id) => typeof id === 'string'))];
   for (const [k, v] of Object.entries(data.research.levels)) {

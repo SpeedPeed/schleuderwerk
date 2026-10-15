@@ -110,13 +110,13 @@ export const ITEMS = [
     rarity: 'common',
     tags: ['magnet'],
     pool: 'base',
-    desc: 'Magnet +0,5 m. Jeder 6. Pickup: {amount} Schrauben extra und {dur} s Gratis-Boost.',
+    desc: 'Magnet +0,5 m. Jeder 15. Pickup: {amount} Schrauben extra und {dur} s Gratis-Boost.',
     flavor: 'Fand jede Stecknadel. Und Opas Ehering. Zweimal.',
     stats: { magnet: { add: 0.5 } },
     triggers: [
       {
         on: 'pickup',
-        do: [{ fx: 'charge', key: 'magnet_nadeldose', n: 1, at: 6, then: [{ fx: 'bolts', amount: 3 }, { fx: 'boost', dur: 0.5 }] }],
+        do: [{ fx: 'charge', key: 'magnet_nadeldose', n: 1, at: 15, then: [{ fx: 'bolts', amount: 3 }, { fx: 'boost', dur: 0.5 }] }],
       },
     ],
   },

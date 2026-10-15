@@ -134,7 +134,7 @@ export class Objects {
           break;
         case 'lightning': {
           const zr = makeRng(f.seed >>> 0);
-          this.lightning.push({ x0: f.x0, x1: f.x1, rng: zr, t: zr.range(0.2, 0.8) });
+          this.lightning.push({ x0: f.x0, x1: f.x1, rng: zr, t: zr.range(0.2, 0.8), every: Array.isArray(f.every) ? f.every : FEATURES.lightning.every });
           break;
         }
         case 'magnetZone':
@@ -247,7 +247,7 @@ export class Objects {
       if (car.x < z.x0 - 6 || car.x > z.x1) continue;
       z.t -= dt;
       if (z.t <= 0) {
-        z.t = z.rng.range(L.every[0], L.every[1]);
+        z.t = z.rng.range(z.every[0], z.every[1]);
         const lead = z.rng.range(L.lead[0], L.lead[1]);
         const sx = Math.max(z.x0, Math.min(z.x1, car.x + car.vx * L.warn * lead));
         this.strikes.push({ x: sx, y: this.refGround(sx), t: L.warn, flash: 0, hit: false });

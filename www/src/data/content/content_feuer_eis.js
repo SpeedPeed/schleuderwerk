@@ -9,24 +9,24 @@ export const TAGS = {
     desc: 'Hitze ist Kraft: Wer heiß fährt, schiebt stärker, zündet Explosionen und macht aus Überhitzung einen Vorteil.',
     sets: {
       2: {
-        desc: '+12 % Boost-Schub. Wer heizt, der schiebt.',
-        stats: { boostThrust: { mul: 0.12 } },
+        desc: '+18 % Boost-Schub. Wer heizt, der schiebt.',
+        stats: { boostThrust: { mul: 0.18 } },
       },
       4: {
-        desc: 'Ab 70 Hitze zündet eine Boost-Sekunde eine Explosion (4 m/s, alle 2 s).',
+        desc: 'Ab 55 Hitze zündet eine Boost-Sekunde eine Explosion (7 m/s, alle 1,2 s).',
         triggers: [
-          { on: 'boostSecond', if: { heatAbove: 70 }, limit: { cooldown: 2 }, do: [{ fx: 'explosion', amount: 4 }] },
+          { on: 'boostSecond', if: { heatAbove: 55 }, limit: { cooldown: 1.2 }, do: [{ fx: 'explosion', amount: 7 }] },
         ],
       },
       6: {
-        desc: 'Nachbrenner: Überhitzung sperrt und schadet nicht – 2 s Gratis-Boost mit +50 % Schub plus Explosion (alle 8 s).',
+        desc: 'Nachbrenner: Überhitzen sperrt und schadet nicht – 2,5 s Gratis-Boost (+80 % Schub), Knall, +15 Treibstoff (alle 5 s).',
         rules: { overheatAfterburner: true },
         ruleSpec: {
           overheatAfterburner:
-            'Erreicht die Hitze heatMax und liegt der letzte Nachbrenner mindestens 8 s zurück, wird das Ereignis overheat normal ausgelöst, aber die 2-s-Sperre für Boost/Antrieb und der Überhitzungsschaden (5) entfallen. Stattdessen startet sofort ein Gratis-Boost von 2 s ohne Treibstoffverbrauch (löst boost {free:true, source:"set_feuer"} aus) mit boostThrust ×1,5; dieser Nachbrenner-Boost erzeugt selbst keine Hitze. Die Hitze fällt wie gewohnt auf 50. Innerhalb der 8 s Abklingzeit gilt die normale Überhitzung (Sperre + Schaden). Mit noOverheat (Kühlschrank) wirkungslos. Auswertung: physics/vehicle.js beim Erreichen von heatMax.',
+            'Erreicht die Hitze heatMax und liegt der letzte Nachbrenner mindestens 5 s zurück, wird das Ereignis overheat normal ausgelöst, aber die 2-s-Sperre für Boost/Antrieb und der Überhitzungsschaden (5) entfallen. Stattdessen startet sofort ein Gratis-Boost von 2,5 s ohne Treibstoffverbrauch (löst boost {free:true, source:"set_feuer"} aus) mit boostThrust ×1,8; dieser Nachbrenner-Boost erzeugt selbst keine Hitze. Die Hitze fällt wie gewohnt auf 50. Innerhalb der 5 s Abklingzeit gilt die normale Überhitzung (Sperre + Schaden). Mit noOverheat (Kühlschrank) wirkungslos. Auswertung: physics/vehicle.js beim Erreichen von heatMax.',
         },
         triggers: [
-          { on: 'overheat', limit: { cooldown: 8 }, do: [{ fx: 'explosion', amount: 8 }] },
+          { on: 'overheat', limit: { cooldown: 5 }, do: [{ fx: 'explosion', amount: 12 }, { fx: 'fuel', amount: 15 }] },
         ],
       },
     },
@@ -85,7 +85,7 @@ export const ITEMS = [
     triggers: [
       {
         on: 'flip',
-        do: [{ fx: 'charge', key: 'feuer_zuendung', n: 1, at: 3, then: [{ fx: 'boost', dur: 0.8 }] }],
+        do: [{ fx: 'charge', key: 'feuer_zuendung', n: 1, at: 3, then: [{ fx: 'boost', dur: 1.2 }] }],
       },
     ],
   },
@@ -96,11 +96,11 @@ export const ITEMS = [
     rarity: 'common',
     tags: ['feuer'],
     pool: 'base',
-    desc: '+8 % Boost-Schub. Über 60 Hitze gibt eine Boost-Sekunde zusätzlich +{amount} m/s Schub.',
+    desc: '+10 % Boost-Schub. Über 60 Hitze gibt eine Boost-Sekunde zusätzlich +{amount} m/s Schub.',
     flavor: 'Bügelt Hemdfalten und Gegenwind glatt.',
-    stats: { boostThrust: { mul: 0.08 } },
+    stats: { boostThrust: { mul: 0.1 } },
     triggers: [
-      { on: 'boostSecond', if: { heatAbove: 60 }, limit: { cooldown: 1.5 }, do: [{ fx: 'thrust', amount: 3 }] },
+      { on: 'boostSecond', if: { heatAbove: 60 }, limit: { cooldown: 1.2 }, do: [{ fx: 'thrust', amount: 4 }] },
     ],
   },
   {
@@ -113,7 +113,7 @@ export const ITEMS = [
     desc: 'Überhitzung zündet den Grill: Explosion mit {amount} m/s nach vorn.',
     flavor: 'Riecht nach Sommer, Bratwurst und Feuerwehreinsatz.',
     triggers: [
-      { on: 'overheat', limit: { cooldown: 3 }, do: [{ fx: 'explosion', amount: 5 }] },
+      { on: 'overheat', limit: { cooldown: 3 }, do: [{ fx: 'explosion', amount: 7 }] },
     ],
   },
   {
@@ -137,14 +137,14 @@ export const ITEMS = [
     rarity: 'rare',
     tags: ['feuer'],
     pool: 'r_feuer_2',
-    desc: 'Ab 30 Hitze zündet jeder Boost mit 30 % Chance einen Böller: Explosion {amount} m/s.',
+    desc: 'Ab 30 Hitze zündet jeder Boost mit 45 % Chance einen Böller: Explosion {amount} m/s.',
     flavor: 'Seit 2009 im Keller. „Die gehen noch“, sagt Opa.',
     triggers: [
       {
         on: 'boost',
         if: { heatAbove: 30 },
         limit: { cooldown: 2 },
-        do: [{ fx: 'chance', p: 0.3, then: [{ fx: 'explosion', amount: 5 }] }],
+        do: [{ fx: 'chance', p: 0.45, then: [{ fx: 'explosion', amount: 6 }] }],
       },
     ],
   },
@@ -177,14 +177,14 @@ export const ITEMS = [
     rarity: 'epic',
     tags: ['feuer'],
     pool: 'r_feuer_3',
-    desc: 'Boost-Sekunde über 50 Hitze: +5 % Boost-Schub (bis Etappenende, max. +30 %). Überhitzung heilt {amount} Haltbarkeit.',
+    desc: 'Boost-Sekunde über 50 Hitze: +6 % Boost-Schub (bis Etappenende, max. +40 %). Überhitzung heilt {amount} Haltbarkeit.',
     flavor: 'Speichert Wärme stundenlang. Und Omas Groll jahrelang.',
     triggers: [
       {
         on: 'boostSecond',
         if: { heatAbove: 50 },
-        limit: { perStage: 6 },
-        do: [{ fx: 'stack', stat: 'boostThrust', mul: 0.05, max: 0.3 }],
+        limit: { perStage: 8 },
+        do: [{ fx: 'stack', stat: 'boostThrust', mul: 0.06, max: 0.4 }],
       },
       { on: 'overheat', limit: { cooldown: 3 }, do: [{ fx: 'heal', amount: 5 }] },
     ],

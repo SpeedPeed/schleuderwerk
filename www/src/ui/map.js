@@ -5,6 +5,7 @@ import { RESOURCES } from '../data/balance.js';
 import { reachableNodes, durabilityMax, itemSlots } from '../run/runState.js';
 import { itemBarHtml } from './items.js';
 import { BOSS_FLOOR } from '../map/mapGen.js';
+import { ascensionList } from '../garage/progression.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const ROW_H = 92;        // Abstand der Etagen (px)
@@ -22,6 +23,7 @@ export class MapScreen {
       <div class="map-head">
         <button class="icon-btn" data-id="garage" aria-label="Zur Garage">🔧</button>
         <div class="map-title"><b data-id="act">Akt 1</b><small data-id="biome"></small></div>
+        <button class="map-asc hidden" data-id="asc" aria-label="Schrottstufe">☠ <b data-id="ascn">0</b></button>
         <div class="map-bolts">🔩 <b data-id="bolts">0</b></div>
       </div>
       <div class="map-res">
@@ -37,6 +39,7 @@ export class MapScreen {
     this.el.querySelectorAll('[data-id]').forEach((e) => { this.q[e.dataset.id] = e; });
     this.q.garage.onclick = () => h.onGarage();
     this.q.items.onclick = () => h.onInventory && h.onInventory();
+    this.q.asc.onclick = () => this.showAscension();
     this.run = null;
   }
 
@@ -50,6 +53,8 @@ export class MapScreen {
     q.act.textContent = `Akt ${run.act} · ${b.icon} ${b.name}`;
     q.biome.textContent = run.current ? 'Knoten läuft – weiter geht’s!' : run.pos.floor < 0 ? 'Wähle deinen Weg (Etage 0)' : `Etage ${run.pos.floor + 1} geschafft – wähle die nächste`;
     q.bolts.textContent = fmt(run.bolts);
+    show(q.asc, (run.ascension || 0) > 0);
+    q.ascn.textContent = String(run.ascension || 0);
     const max = durabilityMax(run);
     const df = Math.max(0, Math.min(1, run.durability / max));
     q.dur.style.width = `${df * 100}%`;
@@ -111,6 +116,16 @@ export class MapScreen {
       const sc = q.scroll;
       sc.scrollTop = Math.max(0, yOf(Math.min(BOSS_FLOOR, Math.max(0, focus))) - sc.clientHeight * 0.6);
     });
+  }
+
+  // Aktive Erschwerungen der Schrottstufe (alle Stufen 1..N)
+  showAscension() {
+    const lv = (this.run && this.run.ascension) || 0;
+    if (!lv) return;
+    this.q.info.innerHTML = `<b>☠ Schrottstufe ${lv}</b>${ascensionList(lv).map((a) => `<p><b>${a.level}</b> · ${esc(a.desc)}</p>`).join('')}<small>+${lv * 10} % Schrott am Run-Ende</small>`;
+    show(this.q.info, true);
+    clearTimeout(this.infoTimer);
+    this.infoTimer = setTimeout(() => show(this.q.info, false), 8000);
   }
 
   tap(id, reachable) {

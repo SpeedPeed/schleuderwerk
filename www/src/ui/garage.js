@@ -1,12 +1,17 @@
 import { el, fmt, short, show } from './dom.js';
 import { GARAGE } from '../data/balance.js';
-import { CHASSIS, ABILITIES, SLOTS, SLOT_INFO, partsForSlot, partById, abilityById, isSlotAbility, researchLabel } from '../data/index.js';
+import { CHASSIS, ABILITIES, SLOTS, SLOT_INFO, partsForSlot, partById, abilityById, isSlotAbility, researchLabel, chassisById } from '../data/index.js';
 import { chassisState, partState, abilityState, PAINTS, paintState } from '../garage/garage.js';
 import { LabPanel } from './lab.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { isBoostAbility } from '../stage/abilities.js';
 import { statDiff } from '../items/statMods.js';
 import { fmtStat, statName, statTrend, tagLabel } from './statLabels.js';
+import { ASCENSION } from '../data/ascension.js';
+import { ascensionState, ascensionSummary, fmtPlaytime, MAX_ASCENSION } from '../garage/progression.js';
+import { ITEMS } from '../data/items.js';
+import { TAG_IDS, TAGS, SET_LEVELS, setId } from '../data/tags.js';
+import { RESEARCH } from '../data/research.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -46,6 +51,7 @@ export class GarageScreen {
         <button class="g-tab on" data-tab="garage">🔧 Garage</button>
         <button class="g-tab" data-tab="lab">🧪 Labor</button>
         <button class="g-tab" data-tab="paint">🎨 Lack</button>
+        <button class="g-tab" data-tab="stats">📊 Statistik</button>
       </div>
       <div class="g-preview" data-id="preview"><div class="g-title" data-id="gtitle">GARAGE</div>
         <div class="g-clock hidden" data-id="clock"></div>
@@ -69,6 +75,12 @@ export class GarageScreen {
             <div class="g-abil" data-id="abil"></div>
           </div>
           <div class="g-paints hidden" data-id="paints"></div>
+          <div class="g-statsv hidden" data-id="statsv"></div>
+        </div>
+        <div class="g-asc hidden" data-id="asc">
+          <button class="icon-btn small" data-id="ascprev" aria-label="Schrottstufe runter">◀</button>
+          <div class="ga-info" data-id="ascinfo"></div>
+          <button class="icon-btn small" data-id="ascnext" aria-label="Schrottstufe hoch">▶</button>
         </div>
         <div class="g-startrow">
           <button class="btn btn-danger g-giveup hidden" data-id="giveup">Aufgeben</button>
@@ -94,6 +106,8 @@ export class GarageScreen {
     q.cnext.onclick = () => this.browse(1);
     q.giveup.onclick = () => h.onGiveUp && h.onGiveUp();
     q.pickclose.onclick = () => this.closePicker();
+    q.ascprev.onclick = () => this.h.onAction('selectAscension', ascensionState(this.save).selected - 1);
+    q.ascnext.onclick = () => this.h.onAction('selectAscension', ascensionState(this.save).selected + 1);
     q.tabs.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => this.setTab(b.dataset.tab); });
     this.tab = 'garage';
     this.paintSel = undefined;   // im Lack-Reiter angetippter Lack (Vorschau), undefined = keiner
@@ -156,7 +170,7 @@ export class GarageScreen {
     if (!on) this.closePicker(true);
   }
 
-  // Reiter wechseln: 'garage' | 'lab' | 'paint'
+  // Reiter wechseln: 'garage' | 'lab' | 'paint' | 'stats'
   setTab(tab) {
     if (this.tab === tab) return;
     this.closePicker(true);
@@ -197,8 +211,10 @@ export class GarageScreen {
     if (this.tab === 'lab') this.lab.render(save);
     show(q.main, this.tab === 'garage');
     show(q.paints, this.tab === 'paint');
-    q.gtitle.textContent = this.tab === 'paint' ? 'LACKIEREREI' : 'GARAGE';
+    show(q.statsv, this.tab === 'stats');
+    q.gtitle.textContent = this.tab === 'paint' ? 'LACKIEREREI' : this.tab === 'stats' ? 'STATISTIK' : 'GARAGE';
     if (this.tab === 'paint') this.renderPaints();
+    if (this.tab === 'stats') this.renderStatsTab();
     q.scrap.textContent = short(save.meta.scrap);
     q.bp.textContent = fmt(save.meta.blueprints);
     q.cores.textContent = fmt(save.meta.cores);
@@ -224,6 +240,7 @@ export class GarageScreen {
     q.start.textContent = run ? 'RUN FORTSETZEN ▶' : cs.owned ? 'RUN STARTEN ▶' : '🔒 Chassis gesperrt';
     show(q.giveup, !!run);
     show(q.runinfo, !!run);
+    this.renderAscension(run);
     if (run) {
       q.runinfo.innerHTML = `<b>Run läuft:</b> Akt ${run.act} · ${run.biomeIcon} ${esc(run.biomeName)} · 🔧 ${fmt(Math.ceil(run.durability))}/${fmt(run.durabilityMax)} · 🔩 ${fmt(run.bolts)}`
         + '<small>Die Ausrüstung des Runs ist ab dem Start fest – Änderungen gelten ab dem nächsten Run.</small>';
@@ -269,6 +286,69 @@ export class GarageScreen {
     q.abil.querySelectorAll('button.ab-chip').forEach((b) => { b.onclick = () => this.openAbilities(Number(b.dataset.i)); });
 
     if (this.picker) this.renderPicker();
+  }
+
+  // ---------- Schrottstufen (nach dem ersten Run-Sieg, Wahl für den nächsten Run) ----------
+  renderAscension(run) {
+    const q = this.q;
+    const a = ascensionState(this.save);
+    const on = a.unlocked > 0 && !run && this.tab === 'garage';
+    show(q.asc, on);
+    if (!on) return;
+    const lv = a.selected;
+    const def = ASCENSION[lv - 1];
+    q.ascprev.disabled = lv <= 0;
+    q.ascnext.disabled = lv >= a.unlocked;
+    const rec = a.records[lv];
+    const best = rec && rec.wins ? ` · ✔ ${rec.wins}× gewonnen` : '';
+    q.ascinfo.innerHTML = lv === 0
+      ? `<b>☠ Schrottstufe 0</b><small>normal · freigeschaltet bis ${a.unlocked}/${MAX_ASCENSION}</small>`
+      : `<b>☠ ${lv} · ${esc(def.name)}</b><small class="ga-desc">${esc(def.desc)}</small>`
+        + `<small class="ga-sum" title="${esc(ascensionSummary(lv).join(' · '))}">${lv} Erschwerung${lv > 1 ? 'en' : ''} aktiv · <b>+${lv * 10} % Schrott</b>${best}</small>`;
+    q.asc.classList.toggle('lv', lv > 0);
+  }
+
+  // ---------- Statistik & Kodex (Run-Historie, Bestwerte, entdeckte Inhalte) ----------
+  renderStatsTab() {
+    const save = this.save;
+    const st = save.stats;
+    const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+    const bar = (label, a, b) => `<div class="gs-prog"><span>${label}</span><div class="sb-track"><div class="sb-fill" style="width:${pct(a, b)}%"></div></div><b>${fmt(a)}/${fmt(b)} · ${pct(a, b)} %</b></div>`;
+    const items = ITEMS.length;
+    const seen = ITEMS.filter((it) => (save.codex.items[it.id] || 0) >= 1).length;
+    const owned = ITEMS.filter((it) => (save.codex.items[it.id] || 0) >= 2).length;
+    const sets = TAG_IDS.reduce((n, t) => n + SET_LEVELS.filter((l) => TAGS[t].sets[l]).length, 0);
+    const setsSeen = TAG_IDS.reduce((n, t) => n + SET_LEVELS.filter((l) => save.codex.sets[setId(t, l)]).length, 0);
+    const research = RESEARCH.filter((r) => !r.repeatable);
+    const resDone = research.filter((r) => save.research.done.includes(r.id)).length;
+    const asc = ascensionState(save);
+    let html = '<h4 class="g-h">Entdeckt</h4><div class="gs-progs">'
+      + bar('📖 Items gesehen', seen, items) + bar('🎒 Items besessen', owned, items) + bar('✨ Set-Boni', setsSeen, sets)
+      + bar('🚗 Chassis', save.garage.ownedChassis.length, CHASSIS.length) + bar('🧪 Forschung', resDone, research.length)
+      + bar('🎨 Lacke', PAINTS.filter((p) => paintState(save, p).owned).length, PAINTS.length) + bar('☠ Schrottstufen gewonnen', st.wins ? asc.best + 1 : 0, MAX_ASCENSION + 1)
+      + '</div>';
+    const rows = [
+      ['Spielzeit', fmtPlaytime(save.meta.totalPlaytime)], ['Runs / Siege', `${fmt(st.runs)} / ${fmt(st.wins)}`],
+      ['Bester Akt', st.bestAct > 3 ? '🏆 Sieg' : st.bestAct ? `Akt ${st.bestAct}` : '–'], ['Höchste Schrottstufe gewonnen', st.wins ? `☠ ${asc.best}` : '–'],
+      ['Weiteste Etappe', `${fmt(st.bestDist)} m`], ['Größte Höhe', `${fmt(st.bestHeight)} m`],
+      ['Etappen geschafft', fmt(st.stagesCleared || 0)], ['Bosse besiegt', fmt(st.bossesBeaten || 0)],
+      ['Saltos', fmt(st.totalFlips || 0)], ['Schrott verdient', `⚙ ${fmt(st.totalScrap)}`],
+    ];
+    html += `<h4 class="g-h">Bestwerte</h4><div class="re-stats gs-best">${rows.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('')}</div>`;
+    const recs = Object.entries(asc.records).map(([lv, r]) => [Number(lv), r]).sort((x, y) => x[0] - y[0]);
+    if (recs.length) {
+      html += '<h4 class="g-h">Je Schrottstufe</h4><div class="gs-table"><div class="gs-tr gs-th"><span>☠</span><span>Runs</span><span>Siege</span><span>Bester Akt</span><span>Schnellster Sieg</span></div>'
+        + recs.map(([lv, r]) => `<div class="gs-tr"><span>${lv}</span><span>${fmt(r.runs)}</span><span>${fmt(r.wins)}</span><span>${r.bestAct > 3 ? '🏆' : r.bestAct}</span><span>${r.fastestWin ? fmtPlaytime(r.fastestWin) : '–'}</span></div>`).join('')
+        + '</div>';
+    }
+    const hist = save.history || [];
+    html += `<h4 class="g-h">Letzte Runs</h4>`;
+    html += hist.length ? `<div class="gs-hist">${hist.map((h) => {
+      const c = chassisById(h.chassis);
+      const res = h.won ? '🏆 Sieg' : `✗ Akt ${h.act}`;
+      return `<div class="gs-run ${h.won ? 'won' : ''}"><span class="gs-res">${res}</span><span>${c ? c.icon : '🚗'}${h.ascension ? ` ☠${h.ascension}` : ''}</span><span>🏁 ${fmt(h.cleared)}</span><span>⚙ ${fmt(h.scrap)}</span><span>${h.time ? fmtPlaytime(h.time) : ''}</span></div>`;
+    }).join('')}</div>` : '<p class="small">Noch keine Runs – ab in die Kiste!</p>';
+    this.q.statsv.innerHTML = html;
   }
 
   // ---------- Lackierungen ----------

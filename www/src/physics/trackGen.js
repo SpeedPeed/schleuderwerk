@@ -6,7 +6,7 @@
 //     length, features: [{ type, x0, x1, … }], hazards: [type…], weather: {…}, blueprintX }
 // Bausteine (features) überlappen sich nie ([x0, x1] = ganzer Platzbedarf inkl. Übergängen), die ersten
 // FEATURES.firstFree Meter bleiben frei. Alle Positionen liegen auf dem 2-m-Raster der Strecke (TRACK.step).
-import { FEATURES as F, TRACK, PICKUPS } from '../data/balance.js';
+import { FEATURES as F, TRACK, PICKUPS, ASCENSION_RULES as AR } from '../data/balance.js';
 import { FEATURE_DEFAULTS, FEATURE_INFO, biomeById } from '../data/biomes.js';
 import { clamp, lerp, DEG } from '../core/math.js';
 
@@ -159,7 +159,10 @@ const BUILDERS = {
   lightning(x0, room, p, d, r) {
     const len = snap(Math.min(room, pickRange(p.len, d, r)));
     if (len < 30) return null;
-    return { type: 'lightning', x0, x1: x0 + len, seed: r.int(1, 2 ** 30) };
+    // every: Abstand der Einschläge [min, max] s (Boss Blitzallee: dichter), sonst FEATURES.lightning.every
+    const f = { type: 'lightning', x0, x1: x0 + len, seed: r.int(1, 2 ** 30) };
+    if (Array.isArray(p.every)) f.every = [...p.every];
+    return f;
   },
   magnetZone(x0, room, p, d, r) {
     const len = snap(Math.min(room, pickRange(p.len, d, r)));
@@ -177,8 +180,9 @@ export function buildFeature(type, biome, x0, room, d, r, boss = null) {
   return b(snap(x0), room, featureParams(biome, type, boss), d, r);
 }
 
-// Erlaubte Bausteine einer Etage mit Gewicht (Elite: gefährliche × 1,4)
-function featureWeights(biome, kind, floor) {
+// Erlaubte Bausteine einer Etage mit Gewicht (Elite: gefährliche × 1,4, mit Schrottstufe 12 „Elite-Gemeinheiten“
+// zusätzlich × ASCENSION_RULES.eliteDangerMul)
+function featureWeights(biome, kind, floor, mods = {}) {
   const fs = biome.features;
   const out = [];
   for (const [type, w] of Object.entries(fs.weights || {})) {
@@ -186,7 +190,8 @@ function featureWeights(biome, kind, floor) {
     const minF = (fs.minFloor && fs.minFloor[type]) || 0;
     if (floor + (kind === 'elite' ? 1 : 0) < minF) continue;
     const danger = FEATURE_INFO[type] && FEATURE_INFO[type].danger;
-    out.push([type, w * (kind === 'elite' && danger ? 1.4 : 1)]);
+    const hard = kind === 'elite' && danger ? 1.4 * (mods.eliteHazards ? AR.eliteDangerMul : 1) : 1;
+    out.push([type, w * hard]);
   }
   return out;
 }
@@ -209,9 +214,9 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
   if (boss) types = [...boss.sequence];
   else {
     const c = bio.features.count;
-    let n = Math.round(c[0] + c[1] * floor + (kind === 'elite' ? F.eliteExtra : 0) + (mods.eliteHazards && kind === 'elite' ? 1 : 0));
+    let n = Math.round(c[0] + c[1] * floor + (kind === 'elite' ? F.eliteExtra : 0) + (mods.eliteHazards && kind === 'elite' ? AR.eliteHazardExtra : 0));
     n = Math.max(1, Math.min(n, Math.floor(span / F.minSlot)));
-    const weights = featureWeights(bio, kind, floor);
+    const weights = featureWeights(bio, kind, floor, mods);
     types = [];
     for (let i = 0; i < n; i++) {
       let t = r.weighted(weights);
@@ -248,6 +253,8 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
   const forced = boss && boss.weather ? list.find((w) => w.name === boss.weather) : null;
   const wx = forced || wr.weighted(list);
   const weather = { name: wx.name, icon: wx.icon, wind: [...wx.wind], gust: wx.gust || 0, rain: !!wx.rain, base: wr.range(wx.wind[0], wx.wind[1]), phase: wr.next() * 10 };
+  // Schrottstufe 12: Elite-Etappen bekommen zusätzliche Böen
+  if (mods.eliteHazards && kind === 'elite') weather.gust += AR.eliteGust;
 
   // Gefahren für das Etappen-Intro (Reihenfolge des ersten Auftretens)
   const hazards = [];

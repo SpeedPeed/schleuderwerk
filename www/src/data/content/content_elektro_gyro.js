@@ -83,11 +83,11 @@ export const ITEMS = [
     rarity: 'common',
     tags: ['elektro'],
     pool: 'base',
-    desc: 'Landungen erzeugen Stromschläge (alle 3 s). Ein Stromschlag zündet {dur} s Gratis-Boost (alle 5 s).',
+    desc: 'Landungen erzeugen Stromschläge (alle 3 s). Ein Stromschlag zündet {dur} s Gratis-Boost (alle 6 s).',
     flavor: 'Vom Kirchturm „ausgeliehen“. Der Pfarrer ahnt nichts.',
     triggers: [
       { on: 'landing', limit: { cooldown: 3 }, do: [{ fx: 'emit', event: 'shock', data: { source: 'blitzableiter' } }] },
-      { on: 'shock', limit: { cooldown: 5 }, do: [{ fx: 'boost', dur: 1 }] },
+      { on: 'shock', limit: { cooldown: 6 }, do: [{ fx: 'boost', dur: 0.5 }] },
     ],
   },
   {

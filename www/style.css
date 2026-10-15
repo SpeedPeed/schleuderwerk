@@ -220,6 +220,7 @@ html, body {
 .popup-bank { color: var(--good); font-size: 19px; }
 .popup-bad { color: var(--bad); }
 .popup-info { color: #d9e2ff; font-size: 18px; }
+.popup-warn { color: #ffd23f; font-size: 20px; background: rgba(90, 20, 10, .55); border-radius: 10px; }
 
 /* ---------- Garage ---------- */
 #garage { position: absolute; inset: 0; display: flex; flex-direction: column; }
@@ -476,6 +477,7 @@ textarea {
 .map-title b { display: block; font-size: 19px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .map-title small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; }
 .map-bolts { background: rgba(20,24,38,.72); padding: 8px 12px; border-radius: 12px; font-weight: 800; white-space: nowrap; }
+.map-asc { background: rgba(122,31,31,.85); color: #ffd23f; border: 0; padding: 8px 10px; border-radius: 12px; font-weight: 900; font-size: 15px; white-space: nowrap; }
 .map-res { display: flex; align-items: center; gap: 10px; padding: 0 14px 8px; }
 .map-dur { flex: 1; display: flex; align-items: center; gap: 6px; }
 .map-dur b { width: 22px; text-align: center; }
@@ -511,6 +513,7 @@ textarea {
   position: absolute; left: 12px; right: 12px; bottom: calc(var(--safe-bottom) + 12px); padding: 12px 14px; border-radius: 14px;
   background: var(--panel-solid); box-shadow: 0 6px 20px rgba(0,0,0,.4); animation: rise .2s ease-out; pointer-events: none;
 }
+.map-info { max-height: 72vh; overflow: hidden; }
 .map-info p { margin: 4px 0; font-size: 13px; color: #d6dbe8; }
 .map-info small { color: var(--muted); }
 
@@ -534,6 +537,12 @@ textarea {
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { background: var(--panel-2); border-radius: 10px; padding: 5px 9px; font-size: 13px; font-weight: 700; }
 .chip.danger { background: rgba(142,47,58,.55); }
+.chip.good { background: rgba(46,158,106,.45); }
+.ri-tips { margin: 6px 0 2px; padding-left: 20px; font-size: 13px; color: #ffe6b0; }
+.ri-tips li { margin: 2px 0; }
+.ri-twin { margin-top: 10px; text-align: center; color: #ffd23f; font-weight: 900; font-size: 15px; background: rgba(122,31,31,.55); border-radius: 10px; padding: 6px; }
+.rc-boss { box-shadow: 0 0 0 2px rgba(192,57,43,.8), 0 0 30px rgba(192,57,43,.35); }
+
 .rr-dist { text-align: center; margin: 2px 0 10px; }
 .rr-dist b { font-size: 34px; font-weight: 900; }
 .rr-dist small { color: var(--muted); font-size: 14px; }
@@ -651,7 +660,7 @@ textarea {
 
 /* ---------- Phase 5: Garage-Reiter, Erfinder-Labor, Lackierungen ---------- */
 .g-tabs { display: flex; gap: 6px; padding: 6px 12px 0; pointer-events: auto; }
-.g-tab { flex: 1; min-height: 40px; border-radius: 12px; border: 1px solid var(--line); background: rgba(20,24,38,.72); color: var(--muted); font: inherit; font-weight: 800; font-size: 14px; }
+.g-tab { flex: 1; min-width: 0; min-height: 40px; padding: 0 2px; border-radius: 12px; border: 1px solid var(--line); background: rgba(20,24,38,.72); color: var(--muted); font: inherit; font-weight: 800; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-tab.on { color: var(--text); border-color: rgba(255,138,61,.7); background: rgba(255,138,61,.24); }
 #garage[data-tab=lab] .g-chassis, #garage[data-tab=lab] .g-sheet { visibility: hidden; }
 .g-lab { position: absolute; left: 0; right: 0; bottom: 0; top: calc(var(--safe-top) + 104px); display: flex; flex-direction: column; background: var(--panel-solid); border-radius: 18px 18px 0 0; pointer-events: auto; z-index: 3; box-shadow: 0 -6px 24px rgba(0,0,0,.35); }
@@ -742,3 +751,31 @@ textarea {
 .ev-log.bad { border-left: 4px solid var(--bad); }
 .tr-sus { margin: 10px 0; padding: 10px; border-radius: 12px; background: rgba(214,51,74,.22); border: 1px solid rgba(255,90,90,.5); font-size: 14px; }
 .tr-ok { margin: 10px 0; text-align: center; color: var(--good); font-weight: 800; font-size: 13px; }
+
+/* ---------- Phase 6: Schrottstufen-Wahl, Statistik ---------- */
+.g-asc { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 6px; border-radius: 12px; background: rgba(20,24,38,.6); border: 1px solid var(--line); }
+.g-asc.lv { background: rgba(122,31,31,.45); border-color: rgba(192,57,43,.8); }
+.ga-info { flex: 1; min-width: 0; text-align: center; font-size: 14px; }
+.ga-info b { color: #ffd23f; }
+.ga-info small { display: block; color: #e3d6c8; font-size: 11px; line-height: 1.3; }
+.ga-info .ga-sum { color: var(--muted); }
+.ga-info .ga-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gs-progs { display: flex; flex-direction: column; gap: 6px; }
+.gs-prog { display: grid; grid-template-columns: 1.2fr 1fr auto; gap: 8px; align-items: center; font-size: 13px; font-weight: 700; }
+.gs-prog b { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.gs-table { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.gs-tr { display: grid; grid-template-columns: 36px 1fr 1fr 1fr 1.6fr; gap: 4px; padding: 4px 6px; border-radius: 8px; background: var(--panel-2); text-align: center; }
+.gs-th { background: transparent; color: var(--muted); font-size: 11px; font-weight: 800; }
+.gs-hist { display: flex; flex-direction: column; gap: 4px; }
+.gs-run { display: grid; grid-template-columns: 1.2fr 1fr .8fr 1fr 1.3fr; gap: 4px; align-items: center; font-size: 13px; padding: 6px 8px; border-radius: 10px; background: var(--panel-2); }
+.gs-run.won { background: rgba(46,158,106,.3); }
+.gs-res { font-weight: 900; }
+.dev-sections { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.dev-sec { border: 1px solid var(--line); border-radius: 10px; padding: 4px 8px; }
+.dev-sec summary { font-weight: 800; font-size: 14px; min-height: 36px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.dev-sec summary small { color: var(--muted); font-size: 10px; font-family: monospace; }
+.dev-sec .dev-tweaks { padding: 6px 0; }
+.dev-row small { display: block; color: var(--muted); font-size: 10px; }
+.dev-row.ok b { color: var(--good); }
+.dev-row.early b { color: #ffd23f; }
+.dev-row.late b { color: var(--bad); }

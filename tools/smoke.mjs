@@ -15,6 +15,9 @@
 //   Knotentyp einmal besuchen (Dev „Nächste Knoten → Typ“): Schrotthändler (kaufen, Reroll, reservieren, Fähigkeit,
 //   Seite neu laden mitten im Shop → geht im Shop weiter), Werkbank (★-Fusion, Zerlegen), Schwarzmarkt (Kauf mit
 //   Treibstoff, Fluch entfernen), Ereignis, Schatzhaufen, Tankstelle – mit Bildschirmfotos aller Shop-Bildschirme.
+// Phase 6: Schrottstufen per Dev freischalten, Stufe 3 in der Garage wählen, Run mit aktiver Stufe (☠ auf der Karte,
+//   Erschwerungen im Intro), Boss-Intros aller 6 Bosse (Bildschirmfotos b-boss-<id>.png), Boss-Warnhinweis in der Etappe,
+//   Garage-Reiter „Statistik“, Dev-Menü (Meilensteine mit Zielzeiten, alle balance.js-Abschnitte live änderbar).
 // Geprüft wird außerdem:
 //   - keine Konsolenfehler / pageerrors
 //   - das Fahrzeug liegt in JEDEM 100-ms-Sample im Bild (window.__game.carScreen())
@@ -809,6 +812,87 @@ async function main() {
     await shot('93-karte-nach-shops');
     await page.tap('#map [data-id=garage]');
     await waitState('garage', 5000);
+
+    // ---------- Phase 6: Schrottstufen, Boss-Intros aller 6 Bosse, Statistik, Dev-Menü ----------
+    // laufenden Run beenden (Aufgeben → Auszahlung), Schrottstufen per Dev freischalten, Stufe 3 in der Garage wählen
+    await g(() => { const G = window.__game; G.runLogic.giveUp(G.run); G.runLogic.endRun(G.save, G.run); G.openGarage(); });
+    await waitState('garage', 5000);
+    check(/Schrottstufen bis 15/.test(await devTap('asc')), 'Dev: Schrottstufen freigeschaltet');
+    await closeDev();
+    await g(() => window.__game.openGarage());
+    await sleep(300);
+    check(await page.locator('#garage [data-id=asc]').isVisible(), 'Garage: Schrottstufen-Wahl sichtbar');
+    for (let i = 0; i < 3; i++) { await page.tap('#garage [data-id=ascnext]'); await sleep(150); }
+    check((await g(() => window.__game.save.ascension.selected)) === 3, 'Garage: Schrottstufe 3 gewählt (▶ ×3)');
+    await shot('a1-garage-schrottstufe');
+    await page.tap('#garage [data-id=start]');
+    await waitState('map', 5000);
+    await sleep(300);
+    const ascRun = await g(() => ({ asc: window.__game.run.ascension, chip: !document.querySelector('#map [data-id=asc]').classList.contains('hidden') }));
+    check(ascRun.asc === 3 && ascRun.chip, `Run mit Schrottstufe 3 gestartet, Karte zeigt ☠ (${JSON.stringify(ascRun)})`);
+    await page.tap('#map [data-id=asc]');
+    await sleep(300);
+    check(/Schrottstufe 3/.test(await page.locator('#map [data-id=info]').textContent()), 'Karte: aktive Erschwerungen');
+    await shot('a2-karte-schrottstufe');
+    await tapNode();
+    check((await kindNow()) === 'intro', 'Etappen-Intro');
+    const ascChips = await page.locator('#runui .chip.danger').allTextContents();
+    check(ascChips.some((t) => /Ziele \+8 %/.test(t)) && ascChips.some((t) => /Abschleppen/.test(t)), `Intro: Schrottstufen-Erschwerungen (${ascChips.join(' | ')})`);
+    const tgt = await g(() => { const G = window.__game; const sp = G.runLogic.stageSpecFor(G.run, G.reachable()[0].id); return { t: sp.target, base: sp.floor === 0 ? 330 : 0 }; });
+    check(tgt.base === 0 || tgt.t === Math.round((tgt.base * 1.08) / 5) * 5, `Zielmarke mit Schrottstufe (${tgt.t} m)`);
+    await shot('a3-intro-schrottstufe');
+    await tapRun('[data-a=back]');
+    // Boss-Intros: alle 6 Bosse (Intro-Text, Tipps, Belohnung) mit Erkennungsmelodie
+    const bossIds = { 1: ['schrottpresse', 'magnetkran'], 2: ['grosser_graben', 'gluedunen'], 3: ['auge_des_sturms', 'blitzallee'] };
+    for (const act of [1, 2, 3]) {
+      if (act > 1) await g(() => window.__game.devNextAct());
+      for (const id of bossIds[act]) {
+        await g((bid) => { const G = window.__game; G.run.bossIds[G.run.act] = bid; G.run.current = null; G.devToBoss(); G.openMap(); G.selectNode(G.run.map.boss.id); }, id);
+        await sleep(500);
+        const intro = await g(() => ({ kind: window.__game.runScreens.kind, title: document.querySelector('#runui .ri-kind')?.textContent || '', tips: document.querySelectorAll('#runui .ri-tips li').length, boss: document.querySelector('#runui .rc-boss') !== null, reward: /Episch\/Legendär/.test(document.querySelector('#runui').textContent) }));
+        check(intro.kind === 'intro' && intro.boss && intro.tips >= 2 && intro.reward, `Boss-Intro ${id}: ${intro.title.trim()} (Tipps ${intro.tips})`);
+        await shot(`b-boss-${id}`);
+        await tapRun('[data-a=back]');
+      }
+    }
+    // Boss-Strecke: Warnhinweis in der Etappe (Schrottpresse als Dev-Testfahrt nicht nötig – echte Run-Etappe)
+    await g(() => { const G = window.__game; G.run.current = null; G.devToBoss(); G.openMap(); G.selectNode(G.run.map.boss.id); });
+    await sleep(400);
+    await tapRun('[data-a=go]');
+    await waitState('stage', 8000);
+    await g(() => { const st = window.__game.stage; st.launchNow(0.8, 32); st.vehicle.maxX = st.bossWarn.length ? st.bossWarn[0].x : 0; });
+    await page.waitForFunction(() => [...document.querySelectorAll('#popups .popup-warn')].length > 0, null, { timeout: 8000 }).then(() => check(true, 'Boss-Strecke: Warnhinweis eingeblendet')).catch(() => check(false, 'Boss-Strecke: Warnhinweis eingeblendet'));
+    await shot('b-boss-warnung');
+    await devTap('end');
+    await closeDev();
+    await page.waitForFunction(() => window.__game.state === 'results', null, { timeout: 10000 });
+    await g(() => { const G = window.__game; G.runLogic.giveUp(G.run); G.runLogic.endRun(G.save, G.run); G.openGarage(); });
+    await waitState('garage', 5000);
+    // Statistik-Reiter: Historie, Bestwerte, entdeckt in %
+    await page.tap('#garage [data-tab=stats]');
+    await sleep(300);
+    const stats = await g(() => ({ runs: document.querySelectorAll('#garage .gs-run').length, progs: document.querySelectorAll('#garage .gs-prog').length, table: document.querySelectorAll('#garage .gs-tr').length }));
+    check(stats.runs >= 2 && stats.progs >= 6 && stats.table >= 2, `Statistik: ${stats.runs} Runs in der Historie, ${stats.progs} Fortschrittsbalken, ${stats.table - 1} Schrottstufen-Zeilen`);
+    await shot('a4-statistik');
+    await page.locator('#garage .gs-hist').scrollIntoViewIfNeeded();
+    await shot('a5-statistik-historie');
+    await page.tap('#garage [data-tab=garage]');
+    await sleep(200);
+    // Dev-Menü: Meilensteine mit Zielzeiten, alle balance.js-Abschnitte als Zahlenfelder
+    await openDev();
+    const devInfo = await g(() => ({ ms: [...document.querySelectorAll('#devmenu .dev-ms .dev-row small')].filter((e) => /Ziel/.test(e.textContent)).length, secs: document.querySelectorAll('#devmenu .dev-sec').length }));
+    check(devInfo.ms >= 5 && devInfo.secs >= 25, `Dev: ${devInfo.ms} Meilensteine mit Zielzeit, ${devInfo.secs} balance.js-Abschnitte`);
+    await page.locator('#devmenu .dev-sec[data-g=REWARDS] summary').scrollIntoViewIfNeeded();
+    await page.tap('#devmenu .dev-sec[data-g=REWARDS] summary');
+    await sleep(200);
+    const rwInputs = await page.locator('#devmenu .dev-sec[data-g=REWARDS] input').count();
+    await page.locator('#devmenu .dev-sec[data-g=REWARDS] input').first().fill('25');
+    await page.locator('#devmenu .dev-sec[data-g=REWARDS] input').first().dispatchEvent('change');
+    const live = await g(() => window.__game.balance ? window.__game.balance.REWARDS.bolts[1] : null);
+    check(rwInputs >= 10 && (live === null || live === 25), `Dev: Abschnitt REWARDS mit ${rwInputs} Zahlenfeldern, Wert live geändert (${live})`);
+    await shot('a6-devmenu-werte');
+    await page.locator('#devmenu .dev-sec[data-g=REWARDS] [data-pr]').first().tap();
+    await closeDev();
 
     // ---------- Streckenbausteine: Dev-Testfahrten über die Boss-Strecken ----------
     const seenTypes = new Set();

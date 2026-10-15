@@ -14,10 +14,14 @@
 //   spawn                     zufällige Schrauben/Ringe/Pickups/kleine Hindernisse zwischen den Bausteinen
 //   pickups                   Anteile der Pickup-Arten
 //   targets                   Zielmarke (Bronze) je Etage 0–5, eliteMult, Boss-Ziel; medals = Faktoren Silber/Gold
-//   bosses                    2 Boss-Strecken: feste Bausteinfolge (sequence) + Parameter-Überschreibungen
+//   bosses                    2 Boss-Strecken: feste Bausteinfolge (sequence) + Parameter-Überschreibungen,
+//                             Phase 6: intro (Text im Etappen-Intro), tips (Tipps im Intro), warnings (Warnhinweis in der
+//                             Etappe ≈ STAGE.bossWarnLead m vor jedem Baustein dieser Art), music (Platzhalter-Erkennungs-
+//                             melodie, audio/sfx.js → bossTheme: Wellenform, Töne in Hz, Takt in s)
 //   decor                     Anteil der Deko-Objekte am Streckenrand
 //
-// Zielmarken: kalibriert mit tools/sim/calibrate.mjs (Ergebnis docs/BALANCE.md).
+// Zielmarken: kalibriert mit tools/sim/calibrate.mjs (Ergebnis docs/BALANCE.md). Phase 6: mit dem Progressions-Simulator
+// (tools/sim/progression.mjs) nachgezogen – Akt-1-Boss ×1,12, Akt 2 ×1,06, Akt 3 ×1,01 (Zielzeiten V2-DESIGN §8).
 
 const SCHROTT_PAL = {
   skyTop: '#3f86c6',
@@ -152,7 +156,7 @@ export const BIOMES = [
       obstacles: { tires: 0.8, scrap: 0.2 },
     },
     pickups: { fuel: 0.32, cool: 0.12, repair: 0.07, scrap: 0.34, crate: 0.15 },
-    targets: { stage: [330, 355, 355, 410, 425, 445], eliteMult: 1.3, boss: 510 },
+    targets: { stage: [330, 355, 355, 410, 425, 445], eliteMult: 1.3, boss: 570 },
     medals: { silver: 1.25, gold: 1.5 },
     bosses: [
       {
@@ -160,6 +164,10 @@ export const BIOMES = [
         name: 'Die Schrottpresse',
         icon: '🗜️',
         desc: 'Eine ganze Batterie Schrottpressen im Gleichtakt. Wer zögert, wird zum Würfel.',
+        intro: 'Opas Presse-Batterie stampft im Takt der Kuckucksuhr: fünf Stempel, Schrottberge und ein Schlammloch dazwischen. Rhythmus ist hier wichtiger als Tempo.',
+        tips: ['Pressen offen = durchfahren, geschlossen = Hüpfer oder warten', 'Schlamm frisst Tempo – vorher Schwung holen'],
+        warnings: { crusher: '🗜️ Presse! Takt abpassen', scrapPile: '🗑️ Schrottberg – Hüpfer!', mud: '🟤 Schlamm voraus' },
+        music: { wave: 'square', notes: [110, 110, 147, 110, 98, 110], beat: 0.2 },
         sequence: ['ramp', 'crusher', 'scrapPile', 'crusher', 'mud', 'crusher', 'ramp', 'crusher', 'crusher'],
         params: { crusher: { period: [2.8, 2.4], open: [0.56, 0.5] } },
       },
@@ -168,6 +176,10 @@ export const BIOMES = [
         name: 'Der Magnetkran',
         icon: '🧲',
         desc: 'Ein riesiger Elektromagnet am Kran zieht alles aus Blech zu sich – auch dich.',
+        intro: 'Der Kran pendelt über drei Abschnitten und zerrt an allem, was aus Blech ist. Dazwischen zwei Schluchten – wer zu langsam ist, hängt plötzlich in der Luft und fällt.',
+        tips: ['Unter dem Magneten nicht trödeln – er zieht nach oben und zurück', 'Vor Schluchten Anlauf nehmen'],
+        warnings: { magnetZone: '🧲 Magnetkran! Mit Tempo durch', gap: '🕳️ Schlucht – Anlauf!' },
+        music: { wave: 'sawtooth', notes: [82, 87, 82, 78, 82, 123], beat: 0.24 },
         sequence: ['ramp', 'magnetZone', 'gap', 'scrapPile', 'magnetZone', 'hills', 'magnetZone', 'gap'],
         params: {},
       },
@@ -203,7 +215,7 @@ export const BIOMES = [
       obstacles: { cactus: 1 },
     },
     pickups: { fuel: 0.28, cool: 0.24, repair: 0.07, scrap: 0.27, crate: 0.14 },
-    targets: { stage: [490, 525, 525, 530, 550, 570], eliteMult: 1.3, boss: 625 },
+    targets: { stage: [520, 555, 555, 560, 585, 605], eliteMult: 1.3, boss: 660 },
     medals: { silver: 1.25, gold: 1.5 },
     bosses: [
       {
@@ -211,6 +223,10 @@ export const BIOMES = [
         name: 'Der Große Graben',
         icon: '🕳️',
         desc: 'Zwei Schluchten so breit, dass man drüben kaum noch die Kante sieht. Thermik hilft – wenn man sie trifft.',
+        intro: 'Zwei Schluchten, so breit wie ein Fußballfeld. Die Thermik-Säulen davor tragen dich hoch – wer sie verpasst, braucht jedes bisschen Boost.',
+        tips: ['Volle Kraft auf die Rampe, Boost für die Mitte aufheben', 'In der Thermik flach gleiten'],
+        warnings: { gap: '🕳️ RIESEN-SCHLUCHT! Vollgas', thermal: '♨️ Thermik – mitnehmen', heatZone: '🔥 Hitzefeld' },
+        music: { wave: 'triangle', notes: [196, 147, 131, 98, 131, 196], beat: 0.26 },
         sequence: ['ramp', 'thermal', 'gap', 'sand', 'thermal', 'heatZone', 'gap', 'hills'],
         params: { gap: { width: [26, 32], rampH: [4.2, 5], rampAngleDeg: [24, 28] } },
       },
@@ -219,6 +235,10 @@ export const BIOMES = [
         name: 'Die Glutdünen',
         icon: '🔥',
         desc: 'Endlose Dünen, Sand und Hitzefelder. Wer hier überhitzt, schiebt.',
+        intro: 'Keine Schlucht, kein Hindernis – nur Hitze. Drei Glutfelder, Sand und Dünen kochen jede Kühlung. Wer überhitzt, steht still.',
+        tips: ['Boost in Hitzefeldern sparsam einsetzen', 'Dünen-Kuppen als Rampe nutzen'],
+        warnings: { heatZone: '🔥 Glutfeld! Hitze im Blick', sand: '🏖️ Sand bremst' },
+        music: { wave: 'sawtooth', notes: [147, 156, 147, 131, 117, 131], beat: 0.18 },
         sequence: ['hills', 'heatZone', 'sand', 'hills', 'thermal', 'heatZone', 'sand', 'hills', 'heatZone'],
         params: { heatZone: { heat: [13, 16] }, hills: { amp: [3, 4.5] } },
       },
@@ -253,7 +273,7 @@ export const BIOMES = [
       obstacles: { tires: 0.6, scrap: 0.4 },
     },
     pickups: { fuel: 0.3, cool: 0.1, repair: 0.1, scrap: 0.32, crate: 0.18 },
-    targets: { stage: [560, 565, 610, 610, 640, 665], eliteMult: 1.3, boss: 730 },
+    targets: { stage: [565, 570, 615, 615, 650, 670], eliteMult: 1.3, boss: 740 },
     medals: { silver: 1.25, gold: 1.5 },
     bosses: [
       {
@@ -261,18 +281,26 @@ export const BIOMES = [
         name: 'Das Auge des Sturms',
         icon: '🌪️',
         desc: 'Mitten durch den Sturm: Windwände, Blitze und Loopings. Im Auge ist es kurz ganz still.',
-        sequence: ['ramp', 'wind', 'lightning', 'loop', 'wind', 'hills', 'lightning', 'wind', 'loop', 'lightning'],
+        intro: 'Vier Windwände – mal Gegenwind, mal Rückenwind, mit Böen bis 9 m/s. In der Mitte das Auge: kurz ruhige Hügel, dann ein Looping und der Sturm auf der anderen Seite.',
+        tips: ['Bei Gegenwind flach und tief fliegen', 'Rückenwind: hoch hinaus und segeln lassen'],
+        warnings: { wind: '🌬️ Sturmwand!', loop: '➰ Looping – Schwung!', lightning: '⚡ Blitze', hills: '👁 Das Auge – kurz Ruhe' },
+        music: { wave: 'sawtooth', notes: [110, 165, 147, 110, 98, 82], beat: 0.16 },
+        sequence: ['ramp', 'wind', 'wind', 'lightning', 'hills', 'loop', 'wind', 'wind', 'ramp'],
         weather: 'Sturmböen',
-        params: { wind: { wind: [10, 14], gust: [5, 8] } },
+        params: { wind: { wind: [11, 15], gust: [6, 9] }, hills: { amp: [1.2, 1.8], humps: [2, 2] } },
       },
       {
         id: 'blitzallee',
         name: 'Die Blitzallee',
         icon: '⚡',
         desc: 'Eine Allee aus Blitzableitern, die leider nichts ableiten. Hier schlägt es ständig ein.',
-        sequence: ['ramp', 'lightning', 'loop', 'lightning', 'gap', 'lightning', 'loop', 'lightning', 'ramp', 'lightning'],
+        intro: 'Fünf Blitzzonen hintereinander, und die Einschläge kommen hier fast doppelt so schnell. Gelber Ring = gleich kracht es: Gas geben oder bremsen.',
+        tips: ['Gelber Warnring: Tempo ändern statt geradeaus weiter', 'Elektro-Items lieben diese Strecke'],
+        warnings: { lightning: '⚡ Blitzallee! Warnringe beachten', loop: '➰ Looping – Schwung!', gap: '🕳️ Schlucht – Anlauf!' },
+        music: { wave: 'square', notes: [220, 330, 220, 415, 220, 330], beat: 0.12 },
+        sequence: ['ramp', 'lightning', 'lightning', 'loop', 'lightning', 'gap', 'lightning', 'lightning', 'ramp'],
         weather: 'Gewitter',
-        params: {},
+        params: { lightning: { every: [1.3, 2.0], len: [70, 100] } },
       },
     ],
     decor: { rock: 0.12, bush: 0.12, wreck: 0.05, tires: 0.02 },
@@ -280,6 +308,8 @@ export const BIOMES = [
 ];
 
 export const biomeById = (id) => BIOMES.find((b) => b.id === id) || null;
+// Boss-Daten per ID (alle Biome)
+export const bossById = (id) => { for (const b of BIOMES) { const x = b.bosses.find((y) => y.id === id); if (x) return x; } return null; };
 export const biomeForAct = (act) => BIOMES.find((b) => b.act === act) || BIOMES[0];
 
 // Anzeige-Namen und Symbole der Bausteine (Etappen-Intro, Gefahrenliste)

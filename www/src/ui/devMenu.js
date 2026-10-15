@@ -1,6 +1,6 @@
 import { el, fmt, show } from './dom.js';
-import { BASE_STATS, PHYSICS, CAMERA, LAUNCH, RESOURCES, GARAGE, TESTDRIVE, RUN, GAME_VERSION } from '../data/balance.js';
-import { MILESTONES, fmtPlaytime } from '../garage/progression.js';
+import * as BAL from '../data/balance.js';
+import { MILESTONES, fmtPlaytime, milestoneTarget, ascensionState, MAX_ASCENSION } from '../garage/progression.js';
 import { BIOMES } from '../data/biomes.js';
 import { ITEMS, RARITIES } from '../data/items.js';
 import { TAGS } from '../data/tags.js';
@@ -8,9 +8,36 @@ import { entryName } from '../items/inventory.js';
 import { chainLogOn } from '../items/triggerEngine.js';
 import { NODE_TYPES } from '../data/nodes.js';
 
-// Werte, die live geändert werden können (Objekt, Schlüssel, Beschreibung).
-// BASE_STATS wirkt sofort (laufende Etappe wird neu berechnet), alles andere sofort bzw. ab der nächsten Etappe.
-const GROUPS = { BASE_STATS, PHYSICS, CAMERA, LAUNCH, RESOURCES, GARAGE, TESTDRIVE, RUN };
+const { GAME_VERSION } = BAL;
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+// Alle Abschnitte von data/balance.js (exportierte Objekte) – jede Zahl (auch in verschachtelten Objekten und
+// Zahlen-Listen) ist live änderbar. BASE_STATS wirkt sofort (laufende Etappe wird neu berechnet), alles andere sofort
+// bzw. ab der nächsten Etappe/Aktion.
+const GROUPS = Object.fromEntries(Object.entries(BAL).filter(([, v]) => isObj(v)));
+
+// Alle Zahlen eines Abschnitts als Pfade: [['physics','dt'], ['REWARDS','bolts','1'], …]
+function numberPaths(obj, path = [], out = []) {
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'number') out.push([...path, k]);
+    else if (Array.isArray(v)) v.forEach((x, i) => { if (typeof x === 'number') out.push([...path, k, String(i)]); else if (isObj(x) || Array.isArray(x)) numberPaths(x, [...path, k, String(i)], out); });
+    else if (isObj(v)) numberPaths(v, [...path, k], out);
+  }
+  return out;
+}
+const getPath = (g, p) => p.reduce((o, k) => (o == null ? o : o[k]), GROUPS[g]);
+function setPath(g, p, v) {
+  let o = GROUPS[g];
+  for (let i = 0; i < p.length - 1; i++) o = o[p[i]];
+  o[p[p.length - 1]] = v;
+}
+// Abschnitt → Liste der Zahlen-Pfade (einmal beim Laden), Originalwerte zum Zurücksetzen
+export const ALL_TWEAKS = Object.fromEntries(Object.keys(GROUPS).map((g) => [g, numberPaths(GROUPS[g])]));
+const ALL_ORIGINAL = new Map();
+for (const [g, paths] of Object.entries(ALL_TWEAKS)) for (const p of paths) ALL_ORIGINAL.set(`${g}.${p.join('.')}`, getPath(g, p));
+export const tweakCount = () => Object.values(ALL_TWEAKS).reduce((n, l) => n + l.length, 0);
+
+// Häufig gebrauchte Werte (oben, immer sichtbar): Objekt, Schlüssel, Beschreibung
 export const TWEAKS = [
   ['BASE_STATS', 'launchSpeed', 'Startkraft (m/s)'],
   ['BASE_STATS', 'airControl', 'Luftsteuerung'],
@@ -33,6 +60,14 @@ export const TWEAKS = [
   ['RUN', 'towPenalty', 'Abschlepp-Strafe (Anteil)'],
 ];
 const ORIGINAL = TWEAKS.map(([g, k]) => GROUPS[g][k]);
+const SECTION_NAMES = {
+  PHYSICS: 'Physik', BASE_STATS: 'Fahrzeug-Grundwerte', SOFTCAPS: 'Stat-Grenzen', GARAGE: 'Garage', RESOURCES: 'Ressourcen',
+  TESTDRIVE: 'Testfahrt', FEATURES: 'Streckenbausteine', PICKUPS: 'Pickups', MAP: 'Karte', RUN: 'Run', ASCENSION_RULES: 'Schrottstufen',
+  PROGRESSION: 'Fortschritt (Zielzeiten)', REWARDS: 'Belohnungen', SHOP: 'Schrotthändler', WORKBENCH: 'Werkbank', BLACKMARKET: 'Schwarzmarkt',
+  STATION: 'Tankstelle', EVENTS: 'Ereignisse', TREASURE: 'Schatzhaufen', RESEARCH: 'Forschung', ITEMS: 'Items', RULES: 'Regel-Schalter',
+  LAUNCH: 'Abschuss', CAMERA: 'Kamera', ORIGIN: 'Floating Origin', TRACK: 'Strecke', OBJECTS: 'Objekte', SPAWN: 'Verteilung', STAGE: 'Etappe',
+  CONTROLS: 'Steuerung', RENDER: 'Darstellung', KOMBO: 'Kombos', FX: 'Effekte', SAVE: 'Speichern',
+};
 
 // Verstecktes Entwickler-Menü (7× schnell auf die Versionsnummer in den Einstellungen tippen).
 // h: { getSave(), getStage(), onCurrency(kind, n), onResearch(), onUnlockAll(), onGiftParts(), onEndStage(),
@@ -57,6 +92,7 @@ export class DevMenu {
         <button class="btn btn-secondary" data-a="researchAll">🧪 Ganzen Baum erforschen</button>
         <button class="btn btn-secondary" data-a="unlock">🔓 Alles freischalten</button>
         <button class="btn btn-secondary" data-a="gift">🎁 Alle Teile geschenkt</button>
+        <button class="btn btn-secondary" data-a="asc">☠ Schrottstufen 1–${MAX_ASCENSION} freischalten</button>
         <button class="btn btn-danger" data-a="end">⏹ Etappe sofort beenden</button>
       </div>
       <h3>Run</h3>
@@ -86,6 +122,7 @@ export class DevMenu {
       <div class="msg" data-id="msg"></div>
       <h3>Werte live ändern</h3>
       <div class="dev-tweaks" data-id="tweaks"></div>
+      <div class="dev-sections" data-id="sections"></div>
       <h3>Meilensteine (Spielzeit)</h3>
       <div class="dev-ms" data-id="ms"></div>
       <h3>Ereignisse der letzten Etappe</h3>
@@ -105,6 +142,7 @@ export class DevMenu {
     on('researchAll', () => { h.onResearchAll(); this.say('Ganzer Forschungsbaum erforscht (Feinschliff Stufe 1) – Werkbank/Schwarzmarkt ab dem nächsten Akt bzw. Run'); });
     on('force', () => { this.say(h.onForceNode(this.q.ntype.value)); });
     on('unlock', () => { h.onUnlockAll(); this.say('Alle Chassis, Fähigkeiten und Forschungs-Bedingungen freigeschaltet'); });
+    on('asc', () => { this.say(h.onAscension ? h.onAscension() : ''); });
     on('gift', () => { h.onGiftParts(); this.say('Alle Teile gehören dir'); });
     on('end', () => { h.onEndStage(); this.close(); });
     on('skipGold', () => { this.say(h.onSkip('gold')); this.closeIfDone(); });
@@ -154,6 +192,43 @@ export class DevMenu {
         this.refresh();
       };
     });
+
+    // Alle Abschnitte von balance.js: aufklappbar, Felder werden erst beim Aufklappen angelegt
+    this.q.sections.innerHTML = Object.keys(ALL_TWEAKS).filter((g) => ALL_TWEAKS[g].length).map((g) => `<details class="dev-sec" data-g="${g}">
+      <summary>${SECTION_NAMES[g] || g} <small>${g} · ${ALL_TWEAKS[g].length}</small></summary><div class="dev-tweaks"></div></details>`).join('');
+    this.q.sections.querySelectorAll('details').forEach((d) => {
+      d.ontoggle = () => { if (d.open && !d.dataset.built) this.buildSection(d); };
+    });
+  }
+
+  // Zahlenfelder eines balance.js-Abschnitts anlegen
+  buildSection(d) {
+    const g = d.dataset.g;
+    const box = d.querySelector('.dev-tweaks');
+    d.dataset.built = '1';
+    box.innerHTML = ALL_TWEAKS[g].map((p, i) => `<label class="dev-tw"><span>${p.join(' › ')}<small>${g}.${p.join('.')}</small></span>
+      <input type="number" step="any" inputmode="decimal" data-p="${i}" value="${getPath(g, p)}">
+      <button class="icon-btn small" data-pr="${i}" aria-label="Zurücksetzen">↺</button></label>`).join('');
+    box.querySelectorAll('input').forEach((inp) => {
+      inp.onchange = () => {
+        const p = ALL_TWEAKS[g][Number(inp.dataset.p)];
+        const v = Number(String(inp.value).replace(',', '.'));
+        if (!isFinite(v)) { inp.value = String(getPath(g, p)); return; }
+        setPath(g, p, v);
+        this.h.onTweak(g, p.join('.'));
+        this.say(`${g}.${p.join('.')} = ${v}`);
+      };
+    });
+    box.querySelectorAll('[data-pr]').forEach((b) => {
+      b.onclick = (e) => {
+        e.preventDefault();
+        const p = ALL_TWEAKS[g][Number(b.dataset.pr)];
+        const v = ALL_ORIGINAL.get(`${g}.${p.join('.')}`);
+        setPath(g, p, v);
+        b.parentElement.querySelector('input').value = String(v);
+        this.h.onTweak(g, p.join('.'));
+      };
+    });
   }
 
   say(t) { this.q.msg.textContent = t || ''; }
@@ -169,8 +244,18 @@ export class DevMenu {
       if (document.activeElement !== inp) inp.value = String(GROUPS[g][k]);
     });
     const ms = save.meta.milestones;
+    // Meilensteine mit Zielzeit-Korridor (V2-DESIGN §8): grün = im Korridor, gelb = zu früh, rot = zu spät
+    const msRow = (m) => {
+      const t = milestoneTarget(m);
+      const v = ms[m.id];
+      const cls = t && v !== undefined ? (v < t.min ? 'early' : v > t.max ? 'late' : 'ok') : '';
+      const corr = t ? `<small>Ziel ${fmtPlaytime(t.min)} – ${fmtPlaytime(t.max)}</small>` : '';
+      return `<div class="dev-row ${cls}"><span>${m.name}${corr}</span><b>${v !== undefined ? fmtPlaytime(v) : '–'}</b></div>`;
+    };
+    const asc = ascensionState(save);
     this.q.ms.innerHTML = `<div class="dev-row"><span>Spielzeit gesamt</span><b>${fmtPlaytime(save.meta.totalPlaytime)}</b></div>`
-      + MILESTONES.map((m) => `<div class="dev-row"><span>${m.name}</span><b>${ms[m.id] !== undefined ? fmtPlaytime(ms[m.id]) : '–'}</b></div>`).join('')
+      + `<div class="dev-row"><span>Schrottstufen: freigeschaltet / gewonnen / gewählt</span><b>${asc.unlocked} / ${asc.best} / ${asc.selected}</b></div>`
+      + MILESTONES.map(msRow).join('')
       + Object.keys(ms).filter((k) => !MILESTONES.some((m) => m.id === k)).map((k) => `<div class="dev-row"><span>${k}</span><b>${fmtPlaytime(ms[k])}</b></div>`).join('');
     const counts = (stage && stage.eventCounts) || this.lastCounts || {};
     if (stage) this.lastCounts = stage.eventCounts;

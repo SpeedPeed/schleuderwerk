@@ -204,7 +204,7 @@ test('spinToSpeed (Gyro-Set 6): Schub je Salto nach perfekter/sauberer Landung',
   assert.deepEqual(d.thrusts, [RULES.spinToSpeed.perFlipDouble]);
 });
 
-test('overheatAfterburner (Feuer-Set 6): Überhitzung ohne Sperre/Schaden → 2 s Nachbrenner mit ×1,5 Schub, alle 8 s', () => {
+test('overheatAfterburner (Feuer-Set 6): Überhitzung ohne Sperre/Schaden → Nachbrenner (RULES: 2,5 s, ×1,8 Schub, alle 5 s)', () => {
   const v = vehicle({ overheatAfterburner: true });
   air(v);
   const ev = [];
@@ -326,7 +326,7 @@ test('wreckingBall (Schrott-Set 6): ab 16 m/s wird das Hindernis zerstört, sons
   assert.equal(st.vehicle.damageTaken, 0);
 });
 
-test('boostOvercap (Raketen-Set 6): während eines Boosts weiche Grenze × 1,4', () => {
+test('boostOvercap (Raketen-Set 6): während eines Boosts weiche Grenze × RULES.boostOvercap.capMul (1,3)', () => {
   const v = vehicle({ boostOvercap: true });
   air(v, { vx: 50 });
   assert.equal(v.thrustCap, v.softCap);
@@ -361,7 +361,7 @@ test('luckyEcho (Glück-Set 6): Item-Auslösung wird zweimal ausgeführt (max. 1
 
 // ================= Legendäre Items =================
 
-test('heatIsFuel (Perpetuum Mobile): Boost/Antrieb verbrauchen Hitze statt Treibstoff; Notbetrieb aus dem Tank', () => {
+test('heatIsFuel (Perpetuum Mobile): Boost (und mit RULES.heatIsFuel.drive der Antrieb) verbraucht Hitze statt Treibstoff; Notbetrieb aus dem Tank', () => {
   const v = vehicle({ heatIsFuel: true }, { coolRate: 0 });
   air(v);
   steps(v, 1, BOOST);
@@ -371,8 +371,22 @@ test('heatIsFuel (Perpetuum Mobile): Boost/Antrieb verbrauchen Hitze statt Treib
   const g = vehicle({ heatIsFuel: true }, { coolRate: 0 });
   ground(g);
   steps(g, 1);
-  near(g.fuel, BASE_STATS.fuelMax, 1e-9);
-  near(g.heat, BASE_STATS.driveFuel + BASE_STATS.driveHeat, 0.3);
+  if (RULES.heatIsFuel.drive) {
+    near(g.fuel, BASE_STATS.fuelMax, 1e-9);
+    near(g.heat, BASE_STATS.driveFuel + BASE_STATS.driveHeat, 0.3);
+  } else {
+    near(g.fuel, BASE_STATS.fuelMax - BASE_STATS.driveFuel, 0.3, 'Antrieb zahlt Treibstoff');
+    near(g.heat, BASE_STATS.driveHeat, 0.3);
+  }
+  // Schalter drive: Antrieb über Hitze
+  const was = RULES.heatIsFuel.drive;
+  RULES.heatIsFuel.drive = true;
+  const h = vehicle({ heatIsFuel: true }, { coolRate: 0 });
+  ground(h);
+  steps(h, 1);
+  near(h.fuel, BASE_STATS.fuelMax, 1e-9);
+  near(h.heat, BASE_STATS.driveFuel + BASE_STATS.driveHeat, 0.3);
+  RULES.heatIsFuel.drive = was;
   // Überhitzungssperre: Notbetrieb aus dem Tank (Boost läuft weiter, kostet Treibstoff)
   const s = vehicle({ heatIsFuel: true });
   air(s);
@@ -437,8 +451,9 @@ test('iceLanding (Schlittschuhkufen): unter 50 Hitze kein Tempoverlust beim Aufp
   near(c.s, a.s, 0.05, 'heiß: normal');
 });
 
-test('boltsAreFuel (Schraubenvergaser): leerer Tank wird mit Schrauben bezahlt (1 je 4 Treibstoff)', () => {
-  const st = stageWith({ rules: { boltsAreFuel: true }, runInfo: { bolts: 3, counters: {} } });
+test('boltsAreFuel (Schraubenvergaser): leerer Tank wird mit Schrauben bezahlt (1 je RULES.boltsAreFuel.fuelPerBolt Treibstoff)', () => {
+  // so viele Schrauben, dass sie ≈ 12 Treibstoff (≈ 0,75 s Boost) ergeben
+  const st = stageWith({ rules: { boltsAreFuel: true }, runInfo: { bolts: Math.round(12 / RULES.boltsAreFuel.fuelPerBolt), counters: {} } });
   st.launchNow(0.5, 30);
   const v = st.vehicle;
   v.y = st.track.heightAt(v.x) + 200; v.vy = 0; v.angle = 0;

@@ -5,6 +5,7 @@
 //  - itemPool / rarityWeights / rollItemChoices: Item-Auswahl nach einer Etappe (Etappe/Elite/Boss/Item-Kiste)
 import { REWARDS, ITEMS as BAL } from '../data/balance.js';
 import { ITEMS } from '../data/items.js';
+import { ascensionScrapBonus } from '../garage/progression.js';
 
 const actKey = (act) => Math.max(1, Math.min(3, act | 0));
 
@@ -45,10 +46,16 @@ export function runPayout(run) {
   const gain = (run.perks && run.perks.scrapGain) || 0;
   const perkScrap = gain > 0 ? Math.round((Math.round(e.scrap) + boltScrap) * gain) : 0;
   if (perkScrap > 0) rows.push({ label: `Feinschliff (+${Math.round(gain * 100)} % Schrott)`, scrap: perkScrap });
+  // Schrottstufe: +10 % Schrott je Stufe auf allen Schrott des Runs (wie Feinschliff)
+  const asc = ascensionScrapBonus(run.ascension || 0);
+  const ascScrap = asc > 0 ? Math.round((Math.round(e.scrap) + boltScrap) * asc) : 0;
+  if (ascScrap > 0) rows.push({ label: `Schrottstufe ${run.ascension} (+${Math.round(asc * 100)} % Schrott)`, scrap: ascScrap });
   if (e.blueprints) rows.push({ label: 'Blaupausen', blueprints: e.blueprints });
-  if (e.cores) rows.push({ label: 'Kerne', cores: e.cores });
+  const ascCores = e.ascCores || 0;
+  if (e.cores - ascCores > 0) rows.push({ label: 'Kerne', cores: e.cores - ascCores });
+  if (ascCores) rows.push({ label: `Erster Sieg auf Schrottstufe ${run.ascension}`, cores: ascCores });
   return {
-    scrap: Math.round(e.scrap) + boltScrap + perkScrap,
+    scrap: Math.round(e.scrap) + boltScrap + perkScrap + ascScrap,
     blueprints: e.blueprints || 0,
     cores: e.cores || 0,
     rows,

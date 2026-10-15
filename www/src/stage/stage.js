@@ -15,6 +15,7 @@ import { isEvent } from '../items/events.js';
 import { computeStats, baseStats } from '../items/statMods.js';
 import { TriggerEngine } from '../items/triggerEngine.js';
 import { applyInventory, entryParts } from '../items/inventory.js';
+import { runModStats, runDamageMul } from '../run/runMods.js';
 
 // Ruheposition des Autos in der Schleuder
 export const REST = { x: LAUNCH.restX, y: PLATEAU_H + LAUNCH.restHeight, angle: LAUNCH.restAngleDeg * DEG };
@@ -55,7 +56,7 @@ const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, 
 export class Stage {
   // biome (alt: world): Biom aus data/biomes.js. spec: StageSpec (sonst einfache Etappe Etage 0 des Bioms).
   // track: fertige Strecke (sonst aus spec). loadout: garage/loadout.js buildLoadout; alternativ nur `stats` (Tests).
-  // durability: Start-Haltbarkeit (aus dem Run); sonst voll. runMods: { fuelMaxAdd, coolMul, durabilityMaxAdd } (Run).
+  // durability: Start-Haltbarkeit (aus dem Run); sonst voll. runMods: { fuelMaxAdd, coolMul, durabilityMaxAdd, … } (Run, run/runMods.js).
   // inventory: Run-Inventar [{ itemId, tier, hybrid? }]. runInfo: { bolts (Run-Schrauben beim Start), counters (perRun-
   // Zähler der Trigger, wird verändert) } – null bei Testfahrten.
   // farEnd: Ende 'far' bei Gold × STAGE.farMul (Dev-Testfahrten schalten es ab).
@@ -88,11 +89,7 @@ export class Stage {
     this.boltHoard = 0;
     this.hoardMods = { stats: { boostThrust: { mul: 0 } } };
     this.worldMods = { stats: { rollFriction: { xmul: bio.physics?.rollFriction ?? 1 }, landTolDeg: { add: bio.physics?.landTolAdd || 0 } } };
-    this.runMods = { stats: {
-      durabilityMax: { add: runMods.durabilityMaxAdd || 0 },
-      fuelMax: { add: runMods.fuelMaxAdd || 0 },
-      coolRate: { mul: runMods.coolMul || 0 },
-    } };
+    this.runMods = runModStats(runMods);
     this.mods = new ModState();
     this.updateBoltHoard(false);
     this.stats = this.computeStats();
@@ -101,6 +98,7 @@ export class Stage {
     this.vehicle = new Vehicle(this.stats, bio.gravity, this.rules);
     this.vehicle.reset(REST.x, REST.y, REST.angle);
     this.vehicle.ev = this.ev;
+    this.vehicle.damageMul = runDamageMul(runMods);   // Schrottstufe 8 „Dosenblech“
     // Regel boltsAreFuel (Schraubenvergaser): leerer Tank wird mit Run-Schrauben bezahlt
     if (this.rules.boltsAreFuel) {
       const per = RULES.boltsAreFuel.fuelPerBolt;
@@ -128,6 +126,12 @@ export class Stage {
       ax: 0,
       ay: 0,
     };
+
+    // Boss-Strecke: Daten des Bosses (Warnhinweise je Baustein-Art, Erkennungsmelodie)
+    this.boss = this.spec.bossId ? (bio.bosses || []).find((b) => b.id === this.spec.bossId) || null : null;
+    const warn = (this.boss && this.boss.warnings) || {};
+    this.bossWarn = (this.spec.features || []).filter((f) => warn[f.type]).map((f) => ({ x: f.x0, text: warn[f.type] }));
+    this.bossWarnIdx = 0;
 
     // Ziel und Medaillen
     this.kind = this.spec.kind || 'stage';
@@ -579,6 +583,11 @@ export class Stage {
   afterStep(dt) {
     const v = this.vehicle;
     const alt = this.altitude;
+    // Boss-Strecke: Warnhinweis kurz vor jedem gefährlichen Baustein (data/biomes.js → bosses[].warnings)
+    while (this.bossWarnIdx < this.bossWarn.length && v.maxX >= this.bossWarn[this.bossWarnIdx].x - STAGE.bossWarnLead) {
+      this.hooks.popup(this.bossWarn[this.bossWarnIdx++].text, 'warn');
+      this.hooks.sfx('warn');
+    }
     // Medaillen-Marken überfahren
     const md = medalFor(v.maxX, this.medals);
     if (md && md !== this.medal) {

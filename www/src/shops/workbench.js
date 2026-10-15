@@ -7,7 +7,7 @@
 // Zustand (run.current.shop): { type: 'workbench', fusions }
 import { WORKBENCH } from '../data/balance.js';
 import { fuseSame, makeHybrid, entryParts, isHybrid, isValidEntry, MAX_TIER } from '../items/inventory.js';
-import { durabilityMax, updateCodexSets } from '../run/runState.js';
+import { durabilityMax, updateCodexSets, boltIncome } from '../run/runState.js';
 import { basePrice, shopState } from './common.js';
 
 export function openWorkbench(run) {
@@ -23,7 +23,7 @@ export const fusionsLeft = (run) => {
 export function scrapValue(run, entry) {
   let sum = 0;
   for (const { def, tier } of entryParts(entry)) sum += basePrice(def.id, run.act) * Math.pow(2, Math.max(0, (tier || 1) - 1));
-  return Math.max(1, Math.round(sum * WORKBENCH.scrapPct));
+  return Math.max(1, boltIncome(run, Math.round(sum * WORKBENCH.scrapPct)));   // Schrottstufe 13: × boltMul
 }
 
 // Was geht mit Platz a und b? { kind: 'tier'|'hybrid'|null, reason?, entry? (Vorschau) }

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { BIOMES, biomeById } from './data/biomes.js';
 import { FX, CAMERA, CONTROLS, STAGE, PHYSICS, SAVE } from './data/balance.js';
+import * as BALANCE from './data/balance.js';
 import { PARTS, abilityById, chassisById, chassisVisual } from './data/index.js';
 import { loadSave, writeSave, exportSave, importSave, clearSave, defaultSave, getLoadIssue, allowOverwrite, getBackup } from './save/save.js';
 import { buildLoadout, partIds } from './garage/loadout.js';
 import * as garageLogic from './garage/garage.js';
-import { addPlaytime, markMilestone } from './garage/progression.js';
+import { addPlaytime, markMilestone, checkAllChassis, selectAscension, devUnlockAscension, ascensionState } from './garage/progression.js';
 import { Track } from './physics/track.js';
 import { generateStageSpec, medalFor } from './physics/trackGen.js';
 import { Stage, REST } from './stage/stage.js';
@@ -238,6 +239,7 @@ const devMenu = new DevMenu(uiRoot, {
   onTierUp: (slot) => devTierUp(slot),
   onAllPool: () => devAllPool(),
   onChainLog: (on) => setChainLog(on),
+  onAscension: () => { const n = devUnlockAscension(save); writeSave(save); refreshGarage(); return `Schrottstufen bis ${n} wählbar (Garage, über dem Start-Knopf)`; },
 });
 
 function applySettings() {
@@ -288,6 +290,7 @@ function garageAction(name, ...args) {
     setAbility: (s, i, id) => garageLogic.setAbility(s, i, id, buildLoadout(s).slots.abilities),
     buyPaint: garageLogic.buyPaint,
     equipPaint: garageLogic.equipPaint,
+    selectAscension: (s, lv) => ({ ok: true, level: selectAscension(s, lv) }),
   }[name];
   if (!fn) return { ok: false };
   const res = fn(save, args[0], args[1]);
@@ -302,9 +305,10 @@ function garageAction(name, ...args) {
   }
   if (name === 'upgradePart') markMilestone(save, 'firstPartUpgrade');
   if (name === 'buyPart') markMilestone(save, 'firstPartBought');
-  if (name === 'buyChassis') markMilestone(save, 'firstChassisUnlocked');
+  if (name === 'buyChassis') { markMilestone(save, 'firstChassisUnlocked'); checkAllChassis(save); }
   if (name === 'buyPaint') markMilestone(save, 'firstPaint');
   writeSave(save);
+  if (name === 'selectAscension') { sfx.click(); garage.render(save, garageInfo()); return res; }
   if (name === 'buyPaint' || name === 'equipPaint') {
     if (name === 'buyPaint') { sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1); } else sfx.click();
     garage.paintSel = undefined;
@@ -455,6 +459,9 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
   }
   flyHintTimer = 0;
   platform.keepAwake(true);
+  // Boss-Strecke: Erkennungsmelodie (Platzhalter) – im Run spielt sie schon das Intro, hier nur bei Neuversuch/Testfahrt
+  const retry = mode === 'run' && save.run && save.run.current && save.run.current.attempts > 0;
+  if (stage.boss && (mode === 'test' || retry)) sfx.bossTheme(stage.boss.music);
 }
 
 // Testfahrt (Dev-Menü): Etappe (Standard: Etage 0) des Bioms mit der Garage-Ausrüstung, Schrott wie in Phase 2.
@@ -517,10 +524,12 @@ function showRunResult(r) {
     hud.show(false);
     if (o.cleared) { sfx.record(); platform.haptic('success'); }
     reportRunEvents(o.events);
-    runScreens.stageResult(r, o, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
+    runScreens.stageResult(r, o, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run), towPct: runLogic.towPenaltyPct(run) }, {
       onNext: () => {
         sfx.click();
         if (o.won) { finishRun(); return; }
+        // Schrottstufe 15: nach der Boss-Beute sofort das Intro des Zwillingsbosses
+        if (o.secondBoss) { showChoices(() => { openMap(); if (save.run && save.run.current) selectNode(save.run.current.node); }); return; }
         // erst die Item-Auswahl(en), dann Akt-Übergang bzw. Karte
         showChoices(() => {
           if (o.nextAct) runScreens.actTransition({ act: run.act, biome: run.biome, prevBiome: r.biome }, { onNext: () => { sfx.click(); openMap(); } });
@@ -664,7 +673,12 @@ function selectNode(id) {
   if (isStageType(runLogic.nodeKind(run, node))) {
     // Intro (Knoten wird erst mit LOS betreten)
     const sp = runLogic.stageSpecFor(run, node);
-    runScreens.intro({ spec: sp, node, attempts: run.current ? run.current.attempts : 0, durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
+    const firstBoss = sp.kind === 'boss' && save.meta.milestones[`firstBossAct${run.act}`] === undefined;
+    if (sp.kind === 'boss') sfx.bossTheme(biomeById(sp.biome).bosses.find((b) => b.id === sp.bossId)?.music);
+    runScreens.intro({
+      spec: sp, node, attempts: run.current ? run.current.attempts : 0, durability: run.durability, durabilityMax: runLogic.durabilityMax(run),
+      ascension: run.ascension || 0, towPct: runLogic.towPenaltyPct(run), firstBoss, twin: sp.kind === 'boss' && !!run.bossTwin,
+    }, {
       onGo: () => {
         const e = runLogic.enterNode(run, id);
         if (!e.ok) { popups.show('Dieser Knoten ist gerade nicht erreichbar', 'info'); return; }
@@ -1391,6 +1405,9 @@ window.__game = {
   devAllPool,
   devForceNode,
   openShop,
+  selectNode,
+  balance: BALANCE,
+  devUnlockAscension: () => { const n = devUnlockAscension(save); writeSave(save); refreshGarage(); return n; },
   runLogic,
   researchLogic,
   shops: { Dealer, Workbench, BlackMarket, GasStation, TextEvent, Treasure },
