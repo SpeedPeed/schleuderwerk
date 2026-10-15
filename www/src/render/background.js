@@ -45,15 +45,20 @@ export class Background {
     return merge(parts);
   }
 
+  // Wolken; Gewitter-Paletten (pal.storm): mehr, tiefer und dunkler
   clouds(pal) {
     const parts = [];
-    for (let i = 0; i < 9; i++) {
-      const x = (i / 9) * TILE + hash1(i + 7) * 60;
-      const y = 45 + hash1(i + 17) * 90;
+    const storm = !!pal.storm;
+    const n = storm ? 18 : 9;
+    for (let i = 0; i < n; i++) {
+      const x = (i / n) * TILE + hash1(i + 7) * 60;
+      const y = storm ? 35 + hash1(i + 17) * 55 : 45 + hash1(i + 17) * 90;
       const z = -140 - hash1(i + 27) * 60;
-      const s = 5 + hash1(i + 37) * 6;
-      for (let j = 0; j < 4; j++) {
-        parts.push(part('ico', pal.cloud, { x: x + (j - 1.5) * s * 0.9, y: y + (j % 2) * s * 0.3, z, s: s * (0.7 + hash1(i * 4 + j) * 0.5), sy: s * 0.55 }, 0.05));
+      const s = storm ? 9 + hash1(i + 37) * 8 : 5 + hash1(i + 37) * 6;
+      const parts4 = storm ? 6 : 4;
+      for (let j = 0; j < parts4; j++) {
+        const col = storm && j % 2 ? '#2a303b' : pal.cloud;
+        parts.push(part('ico', col, { x: x + (j - parts4 / 2 + 0.5) * s * 0.9, y: y + (j % 2) * s * 0.3, z, s: s * (0.7 + hash1(i * 4 + j) * 0.5), sy: s * 0.55 }, 0.05));
       }
     }
     return merge(parts);

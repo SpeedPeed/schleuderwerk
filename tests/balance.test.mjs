@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PHYSICS as P, RESOURCES as R, RULES } from '../www/src/data/balance.js';
 import { Vehicle } from '../www/src/physics/vehicle.js';
-import { WORLDS } from '../www/src/data/worlds.js';
+import { BIOMES as WORLDS } from '../www/src/data/biomes.js';
 import { CHASSIS } from '../www/src/data/index.js';
 import { baseStats } from '../www/src/items/statMods.js';
 import { makeStage, mockInput, fnTrack, flat } from './helpers.mjs';

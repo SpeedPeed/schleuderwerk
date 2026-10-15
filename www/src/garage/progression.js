@@ -1,12 +1,20 @@
 // Meta-Fortschritt: Spielzeit und Meilenstein-Zeitmessung (V2-DESIGN.md §8 „Fortschritt & Zielzeiten“).
 // meta.milestones[key] = Spielzeit in Sekunden beim ersten Erreichen. Reine Logik ohne three.js und DOM.
 
-// Bekannte Meilensteine (Anzeige im Dev-Menü). Phase 2: erste Testfahrt, erstes Chassis, erste Teile-Stufe.
+// Bekannte Meilensteine (Anzeige im Dev-Menü; Zielzeiten V2-DESIGN.md §8).
 export const MILESTONES = [
-  { id: 'firstTestDrive', name: 'Erste Testfahrt' },
+  { id: 'firstRunStart', name: 'Erster Run gestartet' },
+  { id: 'firstRunEnd', name: 'Erster Run beendet' },
+  { id: 'firstBossAct1', name: 'Erster Akt-1-Boss besiegt' },
+  { id: 'firstAct2', name: 'Erstmals in Akt 2' },
+  { id: 'firstBossAct2', name: 'Erster Akt-2-Boss besiegt' },
+  { id: 'firstAct3', name: 'Erstmals in Akt 3' },
+  { id: 'firstBossAct3', name: 'Erster Akt-3-Boss besiegt' },
+  { id: 'firstWin', name: 'Erster Run-Sieg' },
   { id: 'firstPartUpgrade', name: 'Erste Teile-Verbesserung' },
   { id: 'firstPartBought', name: 'Erstes Teil gekauft' },
   { id: 'firstChassisUnlocked', name: 'Erstes neues Chassis' },
+  { id: 'firstTestDrive', name: 'Erste Testfahrt (Dev)' },
 ];
 
 // Spielzeit (s) addieren

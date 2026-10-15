@@ -23,8 +23,9 @@ function diffRows(a, b, max = 8) {
 }
 
 // Garage: Währungen, 3D-Vorschau (oben, durchsichtig), Chassis-Wahl, Werte-Übersicht, 7 Teile-Slots,
-// Fähigkeiten und der Start-Knopf. Teile- und Fähigkeits-Auswahl als Unterblatt.
-// h: { onAction(name, ...args) → Ergebnis {ok}, onPreview(override|null), onSettings(), onStart(), onWorld(dir) }
+// Fähigkeiten und der Start-Knopf (RUN STARTEN bzw. RUN FORTSETZEN + Aufgeben). Teile- und Fähigkeits-Auswahl als
+// Unterblatt. Läuft ein Run, zeigt eine Zeile Akt/Biom/Haltbarkeit (die Run-Ausrüstung ist ab dem Start fest).
+// h: { onAction(name, ...args) → Ergebnis {ok}, onPreview(override|null), onSettings(), onStart(), onGiveUp() }
 export class GarageScreen {
   constructor(root, h) {
     this.h = h;
@@ -50,18 +51,17 @@ export class GarageScreen {
       </div>
       <div class="sheet g-sheet">
         <div class="g-scroll" data-id="scroll">
-          <div class="g-world" data-id="world">
-            <button class="icon-btn small" data-id="wprev" aria-label="Vorherige Strecke">◀</button>
-            <div data-id="wname"></div>
-            <button class="icon-btn small" data-id="wnext" aria-label="Nächste Strecke">▶</button>
-          </div>
+          <div class="g-run hidden" data-id="runinfo"></div>
           <div class="g-stats" data-id="stats"></div>
           <h4 class="g-h">Teile</h4>
           <div class="g-slots" data-id="slots"></div>
           <h4 class="g-h">Fähigkeiten</h4>
           <div class="g-abil" data-id="abil"></div>
         </div>
-        <button class="btn btn-start" data-id="start">TESTFAHRT ▶</button>
+        <div class="g-startrow">
+          <button class="btn btn-danger g-giveup hidden" data-id="giveup">Aufgeben</button>
+          <button class="btn btn-start" data-id="start">RUN STARTEN ▶</button>
+        </div>
       </div>
       <div class="g-pick hidden" data-id="pick">
         <div class="g-pick-sheet">
@@ -79,8 +79,7 @@ export class GarageScreen {
     q.start.onclick = () => { if (!q.start.disabled) h.onStart(); };
     q.cprev.onclick = () => this.browse(-1);
     q.cnext.onclick = () => this.browse(1);
-    q.wprev.onclick = () => h.onWorld(-1);
-    q.wnext.onclick = () => h.onWorld(1);
+    q.giveup.onclick = () => h.onGiveUp && h.onGiveUp();
     q.pickclose.onclick = () => this.closePicker();
     q.pick.addEventListener('click', (e) => { if (e.target === q.pick) this.closePicker(); });
 
@@ -155,7 +154,7 @@ export class GarageScreen {
 
   get viewingLocked() { return !!this.save && !this.save.garage.ownedChassis.includes(this.viewId); }
 
-  // info: { worldName, worldIndex, worldCount, prevOk, nextOk, nextLocked, nextText, factor }
+  // info: { run: { act, biomeName, biomeIcon, durability, durabilityMax, floor } | null }
   render(save = this.save, info = this.info) {
     this.save = save;
     this.info = info || this.info || {};
@@ -182,17 +181,16 @@ export class GarageScreen {
         + `<button class="btn btn-buy small-btn g-cbuy ${cs.canBuy ? '' : 'cant'}">${cs.researchOk ? `Kaufen 💠 ${cs.cores}` : '🔒 Forschung fehlt'}</button>`;
       q.clock.querySelector('.g-cbuy').onclick = () => this.h.onAction('buyChassis', c.id);
     }
-    q.start.disabled = !cs.owned;
-    q.start.textContent = cs.owned ? 'TESTFAHRT ▶' : '🔒 Chassis gesperrt';
-
-    // Strecke (Welten bis Phase 3)
-    const w = this.info;
-    q.wname.innerHTML = `🗺️ Strecke: <b>${esc(w.worldName || '')}</b>${w.factor > 1 ? ` · ⚙×${String(w.factor).replace('.', ',')}` : ''}`
-      + (w.nextLocked && w.nextText ? `<small>🔒 ${esc(w.nextName || 'Nächste')}: ${esc(w.nextText)}</small>` : '');
-    q.wprev.disabled = !w.prevOk;
-    q.wnext.disabled = !w.nextOk;
-    q.wnext.textContent = w.nextLocked ? '🔒' : '▶';
-    show(q.world, (w.worldCount || 1) > 1);
+    // Start-Knopf: neuer Run (mit der gewählten Ausrüstung) oder laufenden Run fortsetzen
+    const run = this.info.run || null;
+    q.start.disabled = !run && !cs.owned;
+    q.start.textContent = run ? 'RUN FORTSETZEN ▶' : cs.owned ? 'RUN STARTEN ▶' : '🔒 Chassis gesperrt';
+    show(q.giveup, !!run);
+    show(q.runinfo, !!run);
+    if (run) {
+      q.runinfo.innerHTML = `<b>Run läuft:</b> Akt ${run.act} · ${run.biomeIcon} ${esc(run.biomeName)} · 🔧 ${fmt(Math.ceil(run.durability))}/${fmt(run.durabilityMax)} · 🔩 ${fmt(run.bolts)}`
+        + '<small>Die Ausrüstung des Runs ist ab dem Start fest – Änderungen gelten ab dem nächsten Run.</small>';
+    }
 
     // Werte (aktuelle Auswahl; beim Ansehen eines gesperrten Chassis dessen Werte als Vorschau)
     const cur = buildLoadout(save);

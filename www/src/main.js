@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLDS, worldById } from './data/worlds.js';
+import { BIOMES, biomeById } from './data/biomes.js';
 import { FX, CAMERA, CONTROLS, STAGE, PHYSICS, SAVE } from './data/balance.js';
 import { PARTS, abilityById, chassisById, chassisVisual } from './data/index.js';
 import { loadSave, writeSave, exportSave, importSave, clearSave, defaultSave, getLoadIssue, allowOverwrite, getBackup } from './save/save.js';
@@ -7,7 +7,11 @@ import { buildLoadout, partIds } from './garage/loadout.js';
 import * as garageLogic from './garage/garage.js';
 import { addPlaytime, markMilestone } from './garage/progression.js';
 import { Track } from './physics/track.js';
+import { generateStageSpec, medalFor } from './physics/trackGen.js';
 import { Stage, REST } from './stage/stage.js';
+import * as runLogic from './run/runState.js';
+import { mapNode, isStageType } from './map/mapGen.js';
+import { makeRng, hashSeed } from './core/rng.js';
 import { CameraRig } from './camera/cameraRig.js';
 import { Input } from './platform/input.js';
 import { createView } from './render/scene.js';
@@ -16,6 +20,8 @@ import { buildVehicle } from './render/vehicleModel.js';
 import { TrackView } from './render/trackView.js';
 import { Background } from './render/background.js';
 import { ObjectsView } from './render/objectsView.js';
+import { FeaturesView } from './render/featuresView.js';
+import { Rain } from './render/weather.js';
 import { Particles } from './render/particles.js';
 import { Origin } from './render/origin.js';
 import { Sfx } from './audio/sfx.js';
@@ -26,6 +32,8 @@ import { Results } from './ui/results.js';
 import { Menus } from './ui/menus.js';
 import { Popups } from './ui/popups.js';
 import { DevMenu } from './ui/devMenu.js';
+import { MapScreen } from './ui/map.js';
+import { RunScreens } from './ui/runScreens.js';
 import { confirmDialog, infoDialog } from './ui/dom.js';
 
 // ---------- Grundaufbau ----------
@@ -35,31 +43,46 @@ const uiRoot = document.getElementById('ui');
 const view = createView(canvas);
 const origin = new Origin();
 
-// Aktuelle Strecke/Welt (wird beim Wechsel komplett neu aufgebaut; Welten gibt es bis Phase 3)
-let world, pal, track, trackView, background;
-function setWorld(id) {
-  if (!save.worlds.unlocked.includes(id)) id = 'steppe';
-  world = worldById(id);
-  pal = world.palette;
-  save.worlds.current = world.id;
-  if (!save.worlds.records[world.id]) save.worlds.records[world.id] = { bestDist: 0, bestHeight: 0, runs: 0 };
+// Aktuelles Biom + Strecke (wird für jede Etappe neu aufgebaut; in Garage/Karte eine Vorschau des Bioms)
+let biome = null, pal = null, track = null, trackView = null, background = null, spec = null;
+const featuresView = new FeaturesView(view.scene);
+function setTrack(newSpec, b) {
+  const palChanged = !biome || biome.palette !== b.palette;
+  biome = b;
+  pal = b.palette;
+  spec = newSpec;
   if (trackView) trackView.dispose();
-  if (background) background.dispose();
   view.applyPalette(pal);
-  track = new Track(world);
-  trackView = new TrackView(view.scene, track, world);
-  background = new Background(view.scene, pal);
+  track = new Track(spec, biome);
+  trackView = new TrackView(view.scene, track, biome);
+  if (palChanged || !background) {
+    if (background) background.dispose();
+    background = new Background(view.scene, pal);
+  }
+  featuresView.clear();
 }
-const worldRec = () => save.worlds.records[world.id];
-setWorld(save.worlds.current);
+// Vorschau-Strecke eines Bioms (Garage, Karte)
+function setBiomeScene(id) {
+  const b = biomeById(id) || BIOMES[0];
+  if (biome === b && spec && spec.preview) return;
+  const sp = generateStageSpec({ biome: b, kind: 'stage', floor: 0, rng: makeRng(`vorschau:${b.id}`) });
+  sp.preview = true;
+  setTrack(sp, b);
+}
+setBiomeScene(save.run ? save.run.biome : BIOMES[0].id);
 
 const objectsView = new ObjectsView(view.scene);
 const particles = new Particles(view.scene, FX.maxParticles);
+const rain = new Rain(view.scene);
 const sling = new Slingshot(view.scene, track.heightAt(0), REST.y, pal);
-const flag = buildFlag();
-flag.visible = false;
-view.scene.add(flag);
-let flagX = 0, flagY = 0;
+// Ziel-Flaggen: Bronze (= Ziel), Silber, Gold
+const MF = FX.medalFlags;
+const flags = {};
+for (const m of ['bronze', 'silver', 'gold']) {
+  flags[m] = buildFlag(MF.colors[m]);
+  flags[m].visible = false;
+  view.scene.add(flags[m]);
+}
 
 // ---------- Fahrzeug-Modell (Chassis + sichtbare Teile) ----------
 let carModel = null;
@@ -102,12 +125,15 @@ const camRig = new CameraRig();
 const input = new Input(canvas);
 const sfx = new Sfx();
 
-let state = 'garage'; // 'garage' | 'stage' | 'results'
+// Zustände: 'garage' | 'map' | 'stage' | 'results' (Auswertung einer Etappe) | 'runEnd'
+let state = 'garage';
+let mode = 'run';          // Etappe gehört zum Run ('run') oder ist eine Testfahrt aus dem Dev-Menü ('test')
 let paused = false;
 let stage = null;
 let flyHintTimer = 0;
 let cam = null;
 let garageSpin = CAMERA.garage.startAngle;
+let flashLevel = 0, flashTimer = 3;
 
 // ---------- Oberfläche ----------
 const popups = new Popups(uiRoot);
@@ -115,15 +141,22 @@ const hud = new Hud(uiRoot, { onPause: () => pauseGame() });
 hud.abilityButtons.forEach((b, i) => input.bindButton(b, `ab${i}`));
 const garage = new GarageScreen(uiRoot, {
   onAction: (name, ...args) => garageAction(name, ...args),
-  onPreview: (ov) => vehicleFromSave(ov),
+  onPreview: (ov) => { if (!save.run) vehicleFromSave(ov); },
   onSettings: () => { sfx.click(); menus.openSettings(); },
-  onStart: () => { sfx.click(); startStage(); },
-  onWorld: (dir) => switchWorld(dir),
+  onStart: () => { sfx.click(); save.run ? openMap() : startRun(); },
+  onGiveUp: () => giveUpRun(),
   onDenied: (t) => { sfx.denied(); popups.show(t, 'info'); },
+});
+const mapScreen = new MapScreen(uiRoot, {
+  onNode: (id) => selectNode(id),
+  onGarage: () => { sfx.click(); openGarage(); },
+});
+const runScreens = new RunScreens(uiRoot, {
+  onTick: (kind, i) => { if (kind === 'medal') sfx.medal(i); else sfx.money(); },
 });
 const results = new Results(uiRoot, {
   onGarage: () => { sfx.click(); openGarage(); },
-  onAgain: () => { sfx.click(); startStage(); },
+  onAgain: () => { sfx.click(); startTestDrive(biome.id); },
   onTick: () => sfx.money(),
 });
 const menus = new Menus(uiRoot, {
@@ -159,11 +192,6 @@ const devMenu = new DevMenu(uiRoot, {
   onUnlockAll: () => { garageLogic.unlockAll(save); writeSave(save); refreshGarage(); },
   onResearch: () => { garageLogic.completeResearch(save); writeSave(save); refreshGarage(); },
   onGiftParts: () => { garageLogic.giftAllParts(save); writeSave(save); refreshGarage(); },
-  onUnlockWorlds: () => {
-    for (const w of WORLDS) if (!save.worlds.unlocked.includes(w.id)) save.worlds.unlocked.push(w.id);
-    writeSave(save);
-    refreshGarage();
-  },
   onEndStage: () => {
     menus.closeSettings();
     if (paused) resumeGame();
@@ -176,6 +204,11 @@ const devMenu = new DevMenu(uiRoot, {
     if (group === 'BASE_STATS' && stage) stage.recomputeStats();
     refreshGarage();
   },
+  onSkip: (medal) => devSkip(medal),
+  onToBoss: () => devToBoss(),
+  onNextAct: () => devNextAct(),
+  onSetDurability: (n) => devSetDurability(n),
+  onTestDrive: (id) => { menus.closeSettings(); startTestDrive(id); },
 });
 
 function applySettings() {
@@ -186,55 +219,23 @@ function applySettings() {
 
 function afterSaveChange() {
   applySettings();
-  setWorld(save.worlds.current);
   vehicleFromSave();
-  if (state === 'garage') openGarage();
+  if (state === 'garage' || state === 'map') openGarage();
   else refreshGarage();
 }
 
 function garageInfo() {
-  const i = WORLDS.findIndex((w) => w.id === world.id);
-  const next = WORLDS[i + 1];
-  const nextLocked = !!next && !save.worlds.unlocked.includes(next.id);
-  return {
-    worldName: world.name,
-    worldIndex: i,
-    worldCount: save.worlds.unlocked.length > 1 || nextLocked ? WORLDS.length : 1,
-    prevOk: i > 0,
-    nextOk: !!next,
-    nextLocked,
-    nextName: next ? next.name : '',
-    nextText: next ? unlockText(next) : '',
-    factor: world.scrapFactor || 1,
-  };
+  const run = save.run;
+  if (!run) return { run: null };
+  const b = biomeById(run.biome);
+  return { run: { act: run.act, biomeName: b.name, biomeIcon: b.icon, durability: run.durability, durabilityMax: runLogic.durabilityMax(run), bolts: run.bolts } };
 }
 
 function refreshGarage() {
   if (state === 'garage') garage.render(save, garageInfo());
+  if (state === 'map' && save.run) mapScreen.render(save.run);
 }
 
-// Weltauswahl in der Garage (dir = -1 / +1)
-function switchWorld(dir) {
-  const i = WORLDS.findIndex((w) => w.id === world.id);
-  const next = WORLDS[i + dir];
-  if (!next) return;
-  if (!save.worlds.unlocked.includes(next.id)) {
-    sfx.denied();
-    popups.show(`🔒 ${next.name}: ${unlockText(next)}`, 'info');
-    return;
-  }
-  sfx.click();
-  setWorld(next.id);
-  writeSave(save);
-  openGarage();
-}
-
-function unlockText(w) {
-  if (!w.unlock) return '';
-  const from = worldById(w.unlock.world);
-  const have = (save.worlds.records[from.id] || {}).bestDist || 0;
-  return `${fmtN(w.unlock.dist)}\u00a0m in „${from.name}“ (Rekord ${fmtN(have)}\u00a0m)`;
-}
 const fmtN = (n) => Math.round(n).toLocaleString('de-DE');
 
 // ---------- Garage-Aktionen ----------
@@ -318,6 +319,16 @@ function emitFx(kind, x, y, o = {}) {
     case 'sparkle':
       particles.emit(x, y, PFX.sparkle);
       break;
+    case 'shock':
+      particles.emit(x, y, PFX.shock);
+      break;
+    case 'medal':
+      particles.emit(x, y + 1, { ...PFX.confetti, colors: [MF.colors[o.medal] || '#ffd23f', '#ffffff', '#ff8a3d'] });
+      break;
+    case 'lightning':
+      flashLevel = Math.max(flashLevel, FX.flash.strike);
+      particles.emit(x, y + 0.5, PFX.strike);
+      break;
   }
 }
 
@@ -337,14 +348,15 @@ const hooks = {
   end: (r) => endStage(r),
 };
 
-// ---------- Spielablauf ----------
-function startStage() {
-  const loadout = buildLoadout(save);
-  if (!save.garage.ownedChassis.includes(loadout.chassis.id)) return;
-  garage.closePicker(true);
+// ---------- Etappe ----------
+// Gemeinsamer Start einer Etappe (Run oder Testfahrt)
+function beginStage(newSpec, loadout, { seed, durability, runMods } = {}) {
   setVehicle(loadout.chassis.id, partIds(loadout));
   carModel.rotation.y = 0;
-  stage = new Stage({ world, track, loadout, seed: (Math.random() * 2 ** 31) | 0, hooks });
+  setTrack(newSpec, biomeById(newSpec.biome));
+  stage = new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods });
+  featuresView.build(track, stage.objects);
+  rain.setActive(!!stage.weather.rain);
   state = 'stage';
   paused = false;
   input.reset();
@@ -354,61 +366,214 @@ function startStage() {
   popups.clear();
   garage.show(false);
   results.show(false);
-  menus.showPause(false);
+  mapScreen.show(false);
+  runScreens.hide();
+  menus.showPause(false, mode);
   hud.show(true, {
-    best: worldRec().bestDist,
     tutorial: save.tutorial.runs < CONTROLS.tutorialRuns,
     weather: stage.weather,
     abilities: stage.abilities.slots.map((s) => s.def),
+    goal: { target: stage.target, medals: stage.medals, medalList: stage.medalList },
   });
-  const bd = worldRec().bestDist;
-  flag.visible = bd > FX.flag.minDist;
-  flagX = bd;
-  flagY = track.heightAt(bd);
+  for (const m of ['bronze', 'silver', 'gold']) {
+    const x = stage.medalList.includes(m) ? stage.medals[m] : undefined;
+    flags[m].visible = x !== undefined;
+    flags[m].userData.x = x;
+    if (x !== undefined) flags[m].userData.y = track.refHeightAt(x);
+  }
   flyHintTimer = 0;
   platform.keepAwake(true);
 }
 
+// Testfahrt (Dev-Menü): Etappe (Standard: Etage 0) des Bioms mit der Garage-Ausrüstung, Schrott wie in Phase 2.
+// opts (Konsole/Rauchtest): { kind, floor, bossId, seed }
+function startTestDrive(biomeId, opts = {}) {
+  const loadout = buildLoadout(save);
+  if (!save.garage.ownedChassis.includes(loadout.chassis.id)) return;
+  const b = biomeById(biomeId) || BIOMES[0];
+  const seed = opts.seed ?? ((Math.random() * 2 ** 31) | 0);
+  const sp = generateStageSpec({ biome: b, kind: opts.kind || 'stage', floor: opts.floor ?? 0, bossId: opts.bossId || null, rng: makeRng(seed) });
+  mode = 'test';
+  garage.closePicker(true);
+  beginStage(sp, loadout, { seed });
+}
+
+// Etappe des aktuellen Run-Knotens starten (auch Neuversuch: gleiche Strecke, neuer Abschuss)
+function startRunStage() {
+  const run = save.run;
+  if (!run || !run.current) return;
+  const node = mapNode(run.map, run.current.node);
+  const sp = runLogic.stageSpecFor(run, node);
+  mode = 'run';
+  const lo = runLogic.runLoadout(run, save);
+  beginStage(sp, lo, { seed: hashSeed(`${run.seed}:${node.id}:${run.current.attempts}`), durability: run.durability, runMods: run.runMods });
+}
+
 function endStage(r) {
   const s = save.stats;
-  const wr = worldRec();
-  const newDist = r.dist > wr.bestDist && wr.runs > 0;
-  const newHeight = r.height > wr.bestHeight && wr.runs > 0;
-  save.meta.scrap += r.scrap;
-  s.totalScrap += r.scrap;
-  s.totalBolts += r.bolts;
-  s.testDrives++;
-  wr.runs++;
-  wr.bestDist = Math.max(wr.bestDist, r.dist);
-  wr.bestHeight = Math.max(wr.bestHeight, r.height);
   s.bestDist = Math.max(s.bestDist, r.dist);
   s.bestHeight = Math.max(s.bestHeight, r.height);
   s.bestTricks = Math.max(s.bestTricks, r.tricks);
-  markMilestone(save, 'firstTestDrive');
-  // Neue Strecken freischalten? (Welten bis Phase 3)
-  const unlockedNow = [];
-  for (const w of WORLDS) {
-    if (save.worlds.unlocked.includes(w.id) || !w.unlock) continue;
-    if (((save.worlds.records[w.unlock.world] || {}).bestDist || 0) >= w.unlock.dist) {
-      save.worlds.unlocked.push(w.id);
-      unlockedNow.push(w);
-    }
-  }
   save.tutorial.runs++;
-  writeSave(save);
   state = 'results';
   input.captureKeys = false;
   platform.keepAwake(false);
-  const canUpgrade = PARTS.some((p) => {
-    const st = garageLogic.partState(save, p);
-    return (st.equipped && st.canUpgrade) || st.canBuy;
-  });
-  setTimeout(() => {
-    if (state !== 'results') return;
+  if (mode === 'test') {
+    save.meta.scrap += r.testDrive.total;
+    s.totalScrap += r.testDrive.total;
+    s.testDrives++;
+    markMilestone(save, 'firstTestDrive');
+    writeSave(save);
+    const canUpgrade = PARTS.some((p) => {
+      const st = garageLogic.partState(save, p);
+      return (st.equipped && st.canUpgrade) || st.canBuy;
+    });
+    later(() => { hud.show(false); results.present(r, { canUpgrade }); });
+    return;
+  }
+  showRunResult(r);
+}
+
+// Ergebnis in den Run übernehmen und anzeigen
+function showRunResult(r) {
+  const run = save.run;
+  if (!run) { openGarage(); return; }
+  state = 'results';
+  const o = runLogic.applyStageResult(run, r, save);
+  writeSave(save);
+  later(() => {
     hud.show(false);
-    results.present(r, { newDist, newHeight, canUpgrade, unlocked: unlockedNow });
-    if (newDist || newHeight || unlockedNow.length) { sfx.record(); platform.haptic('success'); }
-  }, FX.resultDelay * 1000);
+    if (o.cleared) { sfx.record(); platform.haptic('success'); }
+    runScreens.stageResult(r, o, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
+      onNext: () => {
+        sfx.click();
+        if (o.won) finishRun();
+        else if (o.nextAct) {
+          runScreens.actTransition({ act: run.act, biome: run.biome, prevBiome: r.biome }, { onNext: () => { sfx.click(); openMap(); } });
+        } else openMap();
+      },
+      onRetry: () => { sfx.click(); startRunStage(); },
+      onMap: () => { sfx.click(); openMap(); },
+      onEnd: () => { sfx.click(); finishRun(); },
+    });
+  });
+}
+
+function later(fn) {
+  setTimeout(() => { if (state === 'results') fn(); }, FX.resultDelay * 1000);
+}
+
+// ---------- Run ----------
+function startRun() {
+  const lo = buildLoadout(save);
+  if (!save.garage.ownedChassis.includes(lo.chassis.id)) return;
+  save.run = runLogic.newRun(save);
+  markMilestone(save, 'firstRunStart');
+  writeSave(save);
+  openMap();
+}
+
+function openMap() {
+  const run = save.run;
+  if (!run) { openGarage(); return; }
+  if (run.over) { finishRun(); return; }
+  state = 'map';
+  stage = null;
+  paused = false;
+  input.captureKeys = false;
+  garage.closePicker(true);
+  garage.show(false);
+  results.show(false);
+  hud.show(false);
+  runScreens.hide();
+  menus.showPause(false);
+  hideFlags();
+  rain.setActive(false);
+  setBiomeScene(run.biome);
+  const lo = runLogic.runLoadout(run, save);
+  setVehicle(lo.chassis.id, partIds(lo));
+  mapScreen.render(run);
+  mapScreen.show(true);
+  particles.clear();
+  popups.clear();
+  const G = CAMERA.garage;
+  camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
+}
+
+// Knoten auf der Karte gewählt
+function selectNode(id) {
+  const run = save.run;
+  if (!run) return;
+  const node = mapNode(run.map, id);
+  if (!node) return;
+  sfx.click();
+  if (isStageType(node.type)) {
+    // Intro (Knoten wird erst mit LOS betreten)
+    const sp = runLogic.stageSpecFor(run, node);
+    runScreens.intro({ spec: sp, node, attempts: run.current ? run.current.attempts : 0, durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
+      onGo: () => {
+        const e = runLogic.enterNode(run, id);
+        if (!e.ok) { popups.show('Dieser Knoten ist gerade nicht erreichbar', 'info'); return; }
+        writeSave(save);
+        sfx.launch(0.4);
+        startRunStage();
+      },
+      onBack: () => { sfx.click(); runScreens.hide(); },
+    });
+    return;
+  }
+  const e = runLogic.enterNode(run, id);
+  if (!e.ok) return;
+  writeSave(save);
+  if (e.kind === 'station') {
+    runScreens.station(e.options, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
+      onChoose: (choice) => {
+        const r = runLogic.chooseStation(run, choice);
+        if (!r.ok) return;
+        sfx.buy();
+        platform.haptic('success');
+        writeSave(save);
+        popups.show(choice === 'repair' ? `Repariert +${fmtN(r.healed)} 🔧` : choice === 'fuel' ? 'Tank vergrößert ⛽' : 'Kühler gespült ❄', 'good');
+        openMap();
+      },
+    });
+  } else {
+    runScreens.placeholder(e.node.type, e.reward, {
+      onOk: () => {
+        runLogic.visitPlaceholder(run);
+        writeSave(save);
+        sfx.click();
+        openMap();
+      },
+    });
+  }
+}
+
+// Run beenden → Auszahlung → Run-Ende-Bildschirm
+function finishRun() {
+  if (!save.run) { openGarage(); return; }
+  const res = runLogic.endRun(save, save.run);
+  writeSave(save);
+  state = 'runEnd';
+  stage = null;
+  paused = false;
+  input.captureKeys = false;
+  platform.keepAwake(false);
+  hud.show(false);
+  mapScreen.show(false);
+  results.show(false);
+  menus.showPause(false);
+  if (res.won) sfx.record(); else sfx.crash();
+  runScreens.runEnd(res, { onGarage: () => { sfx.click(); openGarage(); } });
+}
+
+async function giveUpRun() {
+  if (!save.run) return;
+  const yes = await confirmDialog(uiRoot, 'Run wirklich aufgeben? Gesammelter Schrott und Blaupausen werden trotzdem ausgezahlt.', 'Aufgeben');
+  if (!yes || !save.run) return;
+  if (stage) { stage.phase = 'over'; stage = null; }
+  runLogic.giveUp(save.run);
+  finishRun();
 }
 
 function openGarage() {
@@ -418,7 +583,12 @@ function openGarage() {
   input.captureKeys = false;
   results.show(false);
   hud.show(false);
+  mapScreen.show(false);
+  runScreens.hide();
   menus.showPause(false);
+  hideFlags();
+  rain.setActive(false);
+  setBiomeScene(save.run ? save.run.biome : BIOMES[0].id);
   vehicleFromSave();
   if (carModel.userData.setScrap) carModel.userData.setScrap(0);
   garage.viewId = save.garage.chassis;
@@ -430,12 +600,14 @@ function openGarage() {
   camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
 }
 
+function hideFlags() { for (const m in flags) flags[m].visible = false; }
+
 function pauseGame() {
   if (state !== 'stage' || paused) return;
   paused = true;
   input.captureKeys = false;
   input.reset();
-  menus.showPause(true);
+  menus.showPause(true, mode);
   sfx.loop({ active: false });
 }
 
@@ -447,11 +619,77 @@ function resumeGame() {
   input.captureKeys = state === 'stage';
 }
 
+// Pause → „Run aufgeben“ bzw. „Testfahrt beenden“
 function quitStage() {
+  if (mode === 'run' && save.run) { giveUpRun(); return; }
   menus.showPause(false);
   paused = false;
   if (!stage || stage.phase === 'aim') { openGarage(); return; }
   stage.finish('stop');
+}
+
+// ---------- Dev-Menü: Run-Werkzeuge ----------
+// Etappe überspringen: läuft eine Run-Etappe, endet sie mit der gewünschten Distanz; auf der Karte wird der
+// erste erreichbare Knoten genommen (Tankstelle → Reparieren, Platzhalter → besucht).
+function devSkip(medal) {
+  const run = save.run;
+  if (!run) return 'Kein Run aktiv';
+  const distFor = (sp) => (medal === 'miss' ? Math.round(sp.target * 0.6) : sp.medals[medal] ?? sp.medals.gold);
+  if (state === 'stage' && stage && mode === 'run' && stage.phase !== 'over') {
+    menus.closeSettings();
+    if (paused) resumeGame();
+    if (stage.phase === 'aim') stage.launchNow(0.3);
+    stage.vehicle.maxX = distFor(stage.spec);
+    stage.finish('stop');
+    return `Etappe beendet (${medal})`;
+  }
+  if (state !== 'map' && state !== 'garage') return 'Nur auf der Karte oder in einer Etappe';
+  runScreens.hide();
+  const reach = runLogic.reachableNodes(run);
+  const node = reach.find((n) => isStageType(n.type)) || reach[0];
+  if (!node) return 'Kein Knoten erreichbar';
+  const e = runLogic.enterNode(run, node.id);
+  if (!e.ok) return `Knoten nicht betretbar (${e.reason})`;
+  if (e.kind === 'station') { runLogic.chooseStation(run, 'repair'); writeSave(save); openMap(); return 'Tankstelle: Reparieren'; }
+  if (e.kind === 'placeholder') { runLogic.visitPlaceholder(run); writeSave(save); openMap(); return `${node.type}: besucht`; }
+  const dist = distFor(e.spec);
+  const md = medalFor(dist, e.spec.medals);
+  const r = {
+    reason: 'stop', cleared: !!md, medal: md, dist, target: e.spec.target, medals: e.spec.medals, medalList: e.spec.medalList, kind: e.spec.kind,
+    height: 0, tricks: 0, bolts: 0, scrap: 0, blueprints: 0, crates: 0, damageTaken: 0, durability: run.durability,
+    durabilityMax: runLogic.durabilityMax(run), stunts: { flips: 0, loops: 0 }, time: 0, biome: e.spec.biome,
+  };
+  mapScreen.show(false);
+  garage.show(false);
+  showRunResult(r);
+  return `Etappe übersprungen (${md || 'verfehlt'})`;
+}
+
+function devToBoss() {
+  const run = save.run;
+  if (!run) return 'Kein Run aktiv';
+  runLogic.devJumpToBoss(run);
+  writeSave(save);
+  if (state === 'map') openMap();
+  return 'Position vor dem Boss';
+}
+
+function devNextAct() {
+  const run = save.run;
+  if (!run) return 'Kein Run aktiv';
+  if (!runLogic.devNextAct(run)) return 'Schon im letzten Akt';
+  writeSave(save);
+  if (state === 'map') openMap();
+  return `Akt ${run.act}: ${biomeById(run.biome).name}`;
+}
+
+function devSetDurability(n) {
+  const run = save.run;
+  if (!run || !isFinite(n)) return 'Kein Run aktiv';
+  runLogic.devSetDurability(run, n);
+  writeSave(save);
+  if (state === 'map') mapScreen.render(run);
+  return `Haltbarkeit = ${Math.round(run.durability)}`;
 }
 
 platform.onPauseResume(
@@ -468,7 +706,13 @@ platform.onBackButton(async () => {
   if (menus.settingsOpen) { menus.closeSettings(); return; }
   if (state === 'garage' && garage.pickerOpen) { garage.closePicker(); return; }
   if (state === 'stage') { paused ? resumeGame() : pauseGame(); return; }
-  if (state === 'results') { openGarage(); return; }
+  if (state === 'map' && runScreens.kind === 'intro') { runScreens.hide(); return; }
+  if (state === 'map') { openGarage(); return; }
+  if (state === 'results' || state === 'runEnd') {
+    const b = (runScreens.open && runScreens.card.querySelector('.btn-primary')) || (!results.el.classList.contains('hidden') && results.el.querySelector('[data-id=garage]'));
+    if (b) b.click();
+    return;
+  }
   if (exitAsked) return;
   exitAsked = true;
   const yes = await confirmDialog(uiRoot, 'Spiel beenden?', 'Beenden');
@@ -523,6 +767,7 @@ const carPos = { x: 0, y: 0, angle: 0, back: 2 };
 const camTarget = { x: 0, y: 0, vx: 0, vy: 0, groundY: 0, aspect: 1, fovDeg: CAMERA.fovDeg, alt: 0 };
 const frameView = { x: 0, y: 0, width: 0, k: 0, aspect: 1, fovDeg: CAMERA.fovDeg, car: null };
 const hudView = { tilt: 0, indicator: null };
+const flashRng = makeRng('blitz-aufleuchten');
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -557,7 +802,7 @@ function frame(now) {
   // Kamera-Logik (ohne three) → Floating Origin → THREE-Kamera
   const aspect = view.camera.aspect;
   if (!stage) {
-    // Garage: Fahrzeug groß in der Vorschau-Fläche (Querformat: links), dreht sich langsam
+    // Garage/Karte: Fahrzeug groß in der Vorschau-Fläche (Querformat: links), dreht sich langsam
     const G = CAMERA.garage;
     const portrait = aspect < 1;
     const fit = garageFit(aspect, portrait);
@@ -596,7 +841,7 @@ function frame(now) {
   view.camera.position.set(cam.x - ox + cam.shakeX, cam.y + cam.shakeY, cam.dist);
   view.camera.lookAt(cam.lookX - ox + cam.shakeX * lm, cam.lookY + cam.shakeY * lm, 0);
 
-  // Fahrzeug, Schleuder, Flagge (Render-Koordinaten = absolut - origin.x)
+  // Fahrzeug, Schleuder, Flaggen (Render-Koordinaten = absolut - origin.x)
   carModel.position.set(carPos.x - ox, carPos.y, 0);
   carModel.rotation.z = carPos.angle;
   carModel.rotation.y = stage ? 0 : garageSpin;
@@ -609,7 +854,10 @@ function frame(now) {
   sling.root.visible = !!stage;   // in der Garage steht das Fahrzeug frei (Schleuder würde die Vorschau verdecken)
   sling.setOrigin(ox);
   sling.update(Math.max(vdt, 0.001), carPos, attached);
-  flag.position.set(flagX - ox, flagY, FX.flag.z);
+  for (const m in flags) {
+    const f = flags[m];
+    if (f.visible) f.position.set(f.userData.x - ox, f.userData.y, MF.z);
+  }
 
   // Boost-Flamme, Antriebs-Rauch, Dampf bei Hitze und Staub
   if (v && playing && stage.phase === 'fly') {
@@ -629,18 +877,29 @@ function frame(now) {
     }
     if ((v.stall > 0 || v.heatFrac > ST.heatFrac) && Math.random() < ST.chance) particles.emit(v.x, v.y + ST.dy, ST);
     if (v.onGround && Math.abs(v.s) > GD.minSpeed && Math.random() < GD.chance) {
-      groundDustOpts.colors = pal.dirt;
+      groundDustOpts.colors = track.frictionAt(v.x) > 2 ? pal.mud : pal.dirt;
       particles.emit(v.x + GD.dx, v.y + GD.dy, groundDustOpts);
     }
   }
-  // Wind sichtbar machen: feine Sandkörner/Staub ziehen durchs Bild
-  if (playing && Math.abs(stage.env.wind) > WD.minWind && Math.random() < Math.abs(stage.env.wind) * WD.chancePerWind) {
+  // Wind sichtbar machen: feine Sandkörner/Staub ziehen durchs Bild (Windzonen: mehr und heller)
+  if (playing && Math.abs(stage.env.wind) > WD.minWind && Math.random() < Math.abs(stage.env.wind) * (stage.inWind ? FX.windStreak.chancePerWind : WD.chancePerWind)) {
     if (windOpts.pal !== pal) { windOpts.pal = pal; windOpts.colors = [pal.skyBottom, '#ffffff', pal.grass[0]]; }
     windOpts.vx = stage.env.wind * WD.windMul;
     windOpts.size = WD.sizeBase + cam.width * WD.sizePerWidth;
     particles.emit(cam.lookX + (Math.random() - 0.5) * cam.width * WD.spreadX, cam.lookY + (Math.random() - 0.5) * cam.height, windOpts);
   }
   particles.update(vdt, ox);
+
+  // Gewitter: zufälliges Aufleuchten im Hintergrund, Blitz-Einschläge (emitFx) leuchten stärker
+  if (pal.storm && state === 'stage' && !paused) {
+    flashTimer -= dt;
+    if (flashTimer <= 0) {
+      flashTimer = flashRng.range(FX.flash.every[0], FX.flash.every[1]);
+      flashLevel = Math.max(flashLevel, FX.flash.ambient * flashRng.range(0.5, 1));
+    }
+  }
+  flashLevel = Math.max(0, flashLevel - dt * FX.flash.decay * Math.max(0.2, flashLevel));
+  view.flash(flashLevel);
 
   // Flugkurven-Vorschau
   let nTraj = 0;
@@ -661,6 +920,8 @@ function frame(now) {
   trackView.update(cam.lookX, ox);
   background.update(cam.lookX, cam.lookY, ox);
   objectsView.update(stage ? stage.objects : null, cam.lookX, t, ox);
+  featuresView.update(stage ? stage.objects : null, t, ox);
+  rain.update(vdt, cam, stage ? stage.env.wind : 0, ox);
   view.followSun(carPos.x - ox, carPos.y);
   view.setFog(cam.dist);
 
@@ -707,17 +968,29 @@ async function reportLoadIssue() {
 window.__game = {
   get stage() { return stage; },
   get state() { return state; },
+  get mode() { return mode; },
   get paused() { return paused; },
   get save() { return save; },
+  get run() { return save.run; },
   get track() { return track; },
+  get biome() { return biome; },
   get origin() { return origin.x; },
   get camera() { return cam; },
   get model() { return carModel; },
   input,
   garage,
   devMenu,
-  startStage,
+  mapScreen,
+  runScreens,
+  startRun,
+  openMap,
   openGarage,
+  startTestDrive,
+  devSkip,
+  devToBoss,
+  devNextAct,
+  devSetDurability,
+  reachable: () => (save.run ? runLogic.reachableNodes(save.run).map((n) => ({ id: n.id, type: n.type, floor: n.floor })) : []),
   loadout: () => buildLoadout(save),
   abilityById,
   // Bildschirmposition des Autos in CSS-Pixeln (echte THREE-Projektion des gerenderten Bildes)

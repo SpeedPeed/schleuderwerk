@@ -1,0 +1,159 @@
+// Verzweigte Karte eines Akts (V2-DESIGN.md §4). Reine Logik ohne three.js und DOM, deterministisch per Seed.
+//
+// generateActMap(act, rng, opts) → {
+//   act, floors: [[node…] × MAP.floors], boss: node
+//   (node = { id, floor, index, type, x (0…1 für die Anzeige), next: [ids], prev: [ids], bossId? })
+// }  – reines JSON (wird im Run gespeichert); Zugriff per mapNode(map, id).
+// Regeln:
+//  - MAP.floors Etagen (0–5) mit 2–4 Knoten (Gewichte MAP.floorSizes), danach EIN Boss-Knoten (Etage 6).
+//  - Verbindungen nur zur nächsten Etage, kreuzungsfrei; jeder Knoten hat ≥ 1 Vorgänger (außer Etage 0) und
+//    ≥ 1 Nachfolger → alles erreichbar, jeder Weg endet beim Boss.
+//  - Etage 0 nur Etappen (forcedFloors), Etage 5 nur Tankstellen; Elite ab Etage 2, höchstens 2 je Akt;
+//    mindestens ein Schrotthändler auf Etage 2–4; Werkbank/Schwarzmarkt nur mit erledigter Forschung
+//    (requiresResearch); keine gleichen Sonderknoten (alles außer Etappe) direkt hintereinander.
+// opts: { research: [erledigte Forschungs-IDs], eliteWeightAdd, bossId }
+import { MAP } from '../data/balance.js';
+import { NODE_TYPES } from '../data/nodes.js';
+
+export const BOSS_FLOOR = MAP.floors;
+
+// Typen, die nicht direkt hintereinander vorkommen dürfen
+export const isSpecialType = (type) => type !== 'stage';
+
+// Knotenarten, die eine Etappe sind
+export const STAGE_TYPES = ['stage', 'elite', 'boss'];
+export const isStageType = (type) => STAGE_TYPES.includes(type);
+
+function forcedTypeFor(floor) {
+  for (const [type, def] of Object.entries(NODE_TYPES)) {
+    if (type === 'boss') continue;
+    if (def.forcedFloors && def.forcedFloors.includes(floor)) return type;
+  }
+  return null;
+}
+
+// Kreuzungsfreie Verbindungen zwischen zwei sortierten Etagen (a: n Knoten, b: m Knoten).
+// Treppe von (0,0) nach (n-1, m-1): jeder Knoten beider Etagen bekommt mindestens eine Kante.
+function connect(n, m, rng) {
+  const edges = [[0, 0]];
+  let i = 0, j = 0;
+  while (i < n - 1 || j < m - 1) {
+    const canI = i < n - 1, canJ = j < m - 1;
+    // Schritt so wählen, dass beide Seiten gleichmäßig vorankommen; manchmal beide zugleich
+    const fi = (i + 1) / n, fj = (j + 1) / m;
+    let step;
+    if (canI && canJ) step = rng.chance(MAP.extraEdgeChance) ? (fi < fj ? 'i' : 'j') : (Math.abs(fi - fj) < 0.2 ? 'ij' : fi < fj ? 'i' : 'j');
+    else step = canI ? 'i' : 'j';
+    if (step === 'i' || step === 'ij') i++;
+    if (step === 'j' || step === 'ij') j++;
+    edges.push([i, j]);
+  }
+  return edges;
+}
+
+// Darf `type` an Knoten `node` stehen? (Etage, Höchstzahl, Forschung, keine gleichen Sonderknoten benachbart)
+function allowed(type, node, ctx) {
+  const def = NODE_TYPES[type];
+  if (!def) return false;
+  if (def.requiresResearch && !ctx.research.includes(def.requiresResearch)) return false;
+  if (def.maxPerAct !== undefined && (ctx.count[type] || 0) >= def.maxPerAct) return false;
+  if (node.floor < (def.minFloor || 0)) return false;
+  if (isSpecialType(type)) {
+    for (const id of [...node.prev, ...node.next]) {
+      const o = ctx.nodes[id];
+      if (o && o.type === type) return false;
+    }
+  }
+  return true;
+}
+
+export function generateActMap(act, rng, opts = {}) {
+  const research = opts.research || [];
+  const floors = [];
+  const nodes = {};
+  // 1) Knoten je Etage
+  for (let f = 0; f < MAP.floors; f++) {
+    const n = rng.weighted(MAP.floorSizes);
+    const row = [];
+    for (let k = 0; k < n; k++) {
+      const id = `a${act}f${f}n${k}`;
+      const x = n === 1 ? 0.5 : 0.12 + (0.76 * k) / (n - 1) + rng.range(-0.04, 0.04);
+      const node = { id, floor: f, index: k, type: null, x, next: [], prev: [] };
+      row.push(node);
+      nodes[id] = node;
+    }
+    floors.push(row);
+  }
+  const boss = { id: `a${act}boss`, floor: BOSS_FLOOR, index: 0, type: 'boss', x: 0.5, next: [], prev: [], bossId: opts.bossId || null };
+  nodes[boss.id] = boss;
+
+  // 2) Verbindungen (kreuzungsfrei), letzte Etage → Boss
+  for (let f = 0; f < MAP.floors - 1; f++) {
+    const a = floors[f], b = floors[f + 1];
+    for (const [i, j] of connect(a.length, b.length, rng)) {
+      if (!a[i].next.includes(b[j].id)) {
+        a[i].next.push(b[j].id);
+        b[j].prev.push(a[i].id);
+      }
+    }
+  }
+  for (const n of floors[MAP.floors - 1]) {
+    n.next.push(boss.id);
+    boss.prev.push(n.id);
+  }
+
+  // 3) Typen: Pflicht-Etagen, garantierter Händler, dann der Rest nach Gewicht
+  const ctx = { research, count: {}, nodes };
+  const set = (node, type) => { node.type = type; ctx.count[type] = (ctx.count[type] || 0) + 1; };
+  for (const row of floors) {
+    const forced = forcedTypeFor(row[0].floor);
+    if (forced) for (const n of row) set(n, forced);
+  }
+  for (const [type, def] of Object.entries(NODE_TYPES)) {
+    if (!def.minPerAct || !def.guaranteeFloors) continue;
+    if (def.requiresResearch && !research.includes(def.requiresResearch)) continue;
+    const [lo, hi] = def.guaranteeFloors;
+    for (let k = 0; k < def.minPerAct; k++) {
+      const cands = [];
+      for (let f = lo; f <= hi; f++) for (const n of floors[f]) if (!n.type && allowed(type, n, ctx)) cands.push(n);
+      if (cands.length) set(rng.pick(cands), type);
+    }
+  }
+  for (const row of floors) {
+    for (const node of row) {
+      if (node.type) continue;
+      const weights = [];
+      for (const [type, def] of Object.entries(NODE_TYPES)) {
+        let w = def.weight || 0;
+        if (type === 'elite') w += opts.eliteWeightAdd || 0;
+        if (w > 0 && allowed(type, node, ctx)) weights.push([type, w]);
+      }
+      set(node, weights.length ? rng.weighted(weights) : 'stage');
+    }
+  }
+  return { act, floors, boss };
+}
+
+// Knoten per ID (Etagen + Boss)
+export function mapNode(map, id) {
+  if (!map || !id) return null;
+  if (map.boss && map.boss.id === id) return map.boss;
+  for (const row of map.floors) for (const n of row) if (n.id === id) return n;
+  return null;
+}
+
+// Alle Knoten einer Karte (Etagen + Boss)
+export function allNodes(map) {
+  return [...map.floors.flat(), map.boss];
+}
+
+// Von welchen Knoten aus ist `id` erreichbar? (Prüfung: jeder Knoten liegt auf einem Weg Etage 0 → Boss)
+export function reachableFromStart(map) {
+  const seen = new Set(map.floors[0].map((n) => n.id));
+  const queue = [...seen];
+  while (queue.length) {
+    const n = mapNode(map, queue.shift());
+    for (const id of n.next) if (!seen.has(id)) { seen.add(id); queue.push(id); }
+  }
+  return seen;
+}

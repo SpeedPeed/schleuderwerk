@@ -3,11 +3,10 @@
 // migrate() repariert falsch typisierte Felder (Standardwert statt Absturz); nicht ladbare Stände werden gesichert.
 import { SAVE_VERSION, GARAGE } from '../data/balance.js';
 import { sanitizeGarage } from '../garage/garage.js';
-import { WORLDS } from '../data/worlds.js';
+import { isValidRun } from '../run/runState.js';
 
 const KEY = 'schleuderwerk.save';
 export const BACKUP_KEY = 'schleuderwerk.save.bak';
-const WORLD_IDS = WORLDS.map((w) => w.id);
 
 export function defaultSave() {
   return {
@@ -26,9 +25,8 @@ export function defaultSave() {
     codex: { items: {}, sets: {} },
     cosmetics: { owned: [], paint: null },
     settings: { sound: true, vibration: true, shake: true, shadows: true },
-    stats: { testDrives: 0, runs: 0, bestDist: 0, bestHeight: 0, bestTricks: 0, totalScrap: 0, totalBolts: 0 },
-    // Übergang bis Phase 3 (dann Biome/Akte): gewählte Welt, freigeschaltete Welten, Rekorde je Welt
-    worlds: { current: 'steppe', unlocked: ['steppe'], records: { steppe: { bestDist: 0, bestHeight: 0, runs: 0 } } },
+    stats: { testDrives: 0, runs: 0, wins: 0, bestAct: 0, bestDist: 0, bestHeight: 0, bestTricks: 0, totalScrap: 0, totalBolts: 0 },
+    // laufender Run (run/runState.js) oder null – nach App-Neustart fortsetzbar
     run: null,
     tutorial: { runs: 0 },
     createdAt: Date.now(),
@@ -65,11 +63,8 @@ function fill(target, defaults) {
   return target;
 }
 
-// Rekord-Eintrag einer Welt (Zahlen ≥ 0)
-const record = (r) => ({ bestDist: n0(isObj(r) ? r.bestDist : 0), bestHeight: n0(isObj(r) ? r.bestHeight : 0), runs: n0(isObj(r) ? r.runs : 0) });
-
 // v2 → v3: altes Geld wird Startschrott (money / 40, höchstens 400), Einstellungen bleiben,
-// Rekorde/Statistik soweit sinnvoll, Welten (Übergang), Rest neu.
+// Rekorde/Statistik soweit sinnvoll (beste Weite/Höhe aller alten Welten), Rest neu.
 function migrateV2toV3(old) {
   const n = defaultSave();
   n.meta.scrap = Math.min(GARAGE.migrateScrapMax, Math.floor(n0(old.money) / GARAGE.migrateScrapDiv));
@@ -79,9 +74,13 @@ function migrateV2toV3(old) {
   n.stats.bestDist = n0(s.bestDist);
   n.stats.bestHeight = n0(s.bestHeight);
   n.stats.bestTricks = n0(s.bestTricks);
-  if (isObj(old.worlds)) n.worlds.records = { ...n.worlds.records, ...old.worlds };
-  if (Array.isArray(old.unlocked) && old.unlocked.length) n.worlds.unlocked = [...new Set(['steppe', ...old.unlocked])];
-  if (typeof old.world === 'string') n.worlds.current = old.world;
+  if (isObj(old.worlds)) {
+    for (const r of Object.values(old.worlds)) {
+      if (!isObj(r)) continue;
+      n.stats.bestDist = Math.max(n.stats.bestDist, n0(r.bestDist));
+      n.stats.bestHeight = Math.max(n.stats.bestHeight, n0(r.bestHeight));
+    }
+  }
   if (isObj(old.tutorial)) n.tutorial = { ...n.tutorial, ...old.tutorial };
   if (old.createdAt) n.createdAt = old.createdAt;
   return n;
@@ -113,14 +112,15 @@ export function migrate(data) {
   data.research.done = [...new Set(data.research.done.filter((id) => typeof id === 'string'))];
   data.cosmetics.owned = data.cosmetics.owned.filter((id) => typeof id === 'string');
   if (typeof data.cosmetics.paint !== 'string') data.cosmetics.paint = null;
-  if (!isObj(data.run)) data.run = null;
-  // Welten (Übergang bis Phase 3): nur bekannte IDs, Rekorde als Objekte mit Zahlen
-  const w = data.worlds;
-  w.unlocked = [...new Set(['steppe', ...w.unlocked.filter((id) => WORLD_IDS.includes(id))])];
-  if (!w.unlocked.includes(w.current)) w.current = 'steppe';
-  const records = {};
-  for (const id of WORLD_IDS) if (id in w.records || w.unlocked.includes(id)) records[id] = record(w.records[id]);
-  w.records = records;
+  // Laufender Run: unbrauchbares/älteres Format wird verworfen (der Rest des Spielstands bleibt)
+  if (!isValidRun(data.run)) data.run = null;
+  // Welten-Rekorde gab es bis Phase 2 (seit Phase 3: Biome als Akte eines Runs)
+  if (isObj(data.worlds)) {
+    for (const r of Object.values(isObj(data.worlds.records) ? data.worlds.records : {})) {
+      if (isObj(r)) data.stats.bestDist = Math.max(data.stats.bestDist, n0(r.bestDist));
+    }
+  }
+  delete data.worlds;
   sanitizeGarage(data);
   return data;
 }

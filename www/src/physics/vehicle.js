@@ -1,7 +1,7 @@
-import { PHYSICS as P, KOMBO, RESOURCES as R, RULES, ITEMS } from '../data/balance.js';
+import { PHYSICS as P, KOMBO, RESOURCES as R, RULES, ITEMS, FEATURES } from '../data/balance.js';
 import { wrapAngle, clamp, DEG, TAU } from '../core/math.js';
 
-const NO_ENV = { wind: 0, lift: () => 0, heat: 0 };
+const NO_ENV = { wind: 0, lift: () => 0, heat: 0, ax: 0, ay: 0 };
 const NO_RULES = {};
 
 // Weiche Tempo-Grenze: Schubwirkung (Boost, Antrieb, Ring-Tempo, Effekte) wird mit diesem Faktor skaliert.
@@ -28,6 +28,9 @@ export function countFlips(rotAccum) {
 // Regel-Schalter (rules), die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A):
 //   noOverheat (Kühlschrank), heatIsResource (Waschmaschine), lowGrip (Raketenschlitten),
 //   Fähigkeiten-Regeln boostHold (Boost), parachute (Fallschirm), hardStop (Notbremse).
+// Streckenbausteine (Phase 3): Oberflächen-Reibung (track.frictionAt: Schlamm/Sand), Looping (geskriptet, stepLoop),
+// Schluchtsturz (Ereignis 'fall', sobald das Fahrzeug FEATURES.gap.fallDepth unter der Kante ist),
+// Zusatzbeschleunigung env.ax/ay (Magnetkran).
 export class Vehicle {
   constructor(stats, gravity, rules = NO_RULES) {
     this.stats = stats;
@@ -79,6 +82,10 @@ export class Vehicle {
       maxX: x,
       wheelSpin: 0,
       substeps: 1,
+      // Streckenbausteine
+      loop: null,            // laufender Looping { lx, cx, cy, r, phi, v, dir }
+      loops: 0,              // vollständig durchfahrene Loopings
+      fell: false,           // Schluchtsturz gemeldet
     });
   }
 
@@ -125,12 +132,24 @@ export class Vehicle {
     this.substeps = n;
     for (let i = 0; i < n; i++) {
       const x0 = this.x, y0 = this.y;
-      if (this.onGround) this.stepGround(h, track, ev, env);
+      if (this.loop) this.stepLoop(h, track, ev);
+      else if (this.onGround) this.stepGround(h, track, ev, env);
       else this.stepAir(h, ctl, track, ev, env);
       this.limitSpeed();
       if (collider) collider.collide(this, x0, y0, h, ev);
     }
     if (this.x > this.maxX) this.maxX = this.x;
+    this.checkFall(track, ev);
+  }
+
+  // Schluchtsturz: mehr als FEATURES.gap.fallDepth unter der Kante → Ereignis 'fall' (einmal)
+  checkFall(track, ev) {
+    if (this.fell || !track.gapAt) return;
+    const g = track.gapAt(this.x);
+    if (g && this.y < g.yr - FEATURES.gap.fallDepth) {
+      this.fell = true;
+      ev.push({ type: 'fall', x: this.x, y: this.y, gap: g });
+    }
   }
 
   // Treibstoff, Hitze, Überhitzung, Boost- und Antriebs-Entscheidung (1× pro Physik-Schritt)
@@ -174,7 +193,7 @@ export class Vehicle {
     }
 
     // Antrieb: am Boden automatisch, solange Treibstoff da ist (oder der Antrieb keinen braucht)
-    this.driving = this.onGround && st.driveAccel > 0 && this.stall <= 0 && this.drivePause <= 0 && this.brake <= 0
+    this.driving = (this.onGround || !!this.loop) && st.driveAccel > 0 && this.stall <= 0 && this.drivePause <= 0 && this.brake <= 0
       && (this.fuel > 0 || st.driveFuel <= 0);
     if (this.driving) {
       fuelUse += st.driveFuel * dt;
@@ -244,7 +263,8 @@ export class Vehicle {
     const rvx = this.vx - env.wind;
     const rsp = Math.hypot(rvx, this.vy);
     let ax = -k * rsp * rvx;
-    let ay = -k * rsp * this.vy - this.g + env.lift(this.x, this.y - P.rideHeight - track.heightAt(this.x));
+    let ay = -k * rsp * this.vy - this.g + env.lift(this.x, this.y - P.rideHeight - track.heightAt(this.x)) + (env.ay || 0);
+    ax += env.ax || 0;
     if (Math.abs(aoa) < Math.PI / 2) {
       const L = Math.min(this.g * P.maxLiftG, (st.lift * sp * sp * Math.sin(2 * aoa)) / m);
       ax += L * (-this.vy / sp);
@@ -359,12 +379,16 @@ export class Vehicle {
     const m = st.mass;
     const lowGrip = !!this.rules.lowGrip;
     const LG = RULES.lowGrip;
-    const g0 = Math.atan(track.slopeAt(this.x));
+    // Neigung des Abschnitts, auf dem die Kiste gerade fährt (steht sie genau auf einem Stützpunkt, zählt der
+    // Abschnitt, von dem sie kommt – sonst „klebt“ sie an einer Schluchtkante und fährt die Wand hinunter)
+    const g0 = Math.atan(track.slopeAt(this.x - (this.s >= 0 ? 1e-4 : -1e-4)));
     let s = this.s;
     if (this.boosting) s += (st.boostThrust / m) * thrustFactor(Math.max(0, s), this.softCap) * dt;
     if (this.driving) s += this.driveAccelNet(lowGrip) * thrustFactor(Math.max(0, s), this.softCap) * dt;
     s -= this.g * Math.sin(g0) * dt;
-    const f = st.rollFriction * (lowGrip ? LG.frictionMul : 1) * Math.cos(g0) * dt;
+    if (env.ax || env.ay) s += ((env.ax || 0) * Math.cos(g0) + (env.ay || 0) * Math.sin(g0)) * dt;
+    const surf = track.frictionAt ? track.frictionAt(this.x) : 1;
+    const f = st.rollFriction * surf * (lowGrip ? LG.frictionMul : 1) * Math.cos(g0) * dt;
     s = Math.abs(s) <= f ? 0 : s - Math.sign(s) * f;
     const rs = s - env.wind * Math.cos(g0);
     s -= (st.drag / m) * rs * Math.abs(rs) * dt;
@@ -384,11 +408,23 @@ export class Vehicle {
     const gy = track.heightAt(nx) + P.rideHeight;
     this.wheelSpin += (s / P.wheelRadius) * dt;
 
+    // Looping-Einfahrt überfahren (nur vorwärts am Boden) → geskriptete Kreisfahrt
+    if (s > 0 && track.loopBetween) {
+      const l = track.loopBetween(this.x, nx);
+      if (l) {
+        if (s >= FEATURES.loop.minEnter) { this.enterLoop(l, s); return; }
+        this.s = -s * 0.5;   // zu langsam: prallt an der Auffahrt ab
+        return;
+      }
+    }
+
     // Abheben über Kuppen und Rampen (Schwelle passend zur Teilschritt-Länge)
     const minTake = P.takeoffMinSpeed * (lowGrip ? LG.takeoffMul : 1);
-    if (ny > gy + P.takeoffClearance * (dt / P.dt) && Math.abs(s) > minTake) {
+    // … auch an scharfen Kanten (Rampen-/Schluchtkante: Neigung fällt um mehr als takeoffKink ab)
+    const kink = s > 0 && g0 - Math.atan(track.slopeAt(nx + 1e-4)) > P.takeoffKink && ny > gy - 0.05;
+    if ((ny > gy + P.takeoffClearance * (dt / P.dt) || kink) && Math.abs(s) > minTake) {
       this.onGround = false;
-      this.x = nx; this.y = ny;
+      this.x = nx; this.y = Math.max(ny, gy);
       this.vx = vx; this.vy = vy;
       this.angle = g0;
       this.w = 0;
@@ -400,6 +436,76 @@ export class Vehicle {
     this.y = gy;
     this.vx = vx; this.vy = vy;
     this.angle = Math.atan(track.slopeAt(nx));
+  }
+
+  // ---------- Looping (geskriptet) ----------
+  // Einfahrt am Fuß des Rings (lx); das Fahrzeug folgt dem Kreis (Mittelpunkt cx/cy, Radius r) mit Energieerhaltung,
+  // Antrieb/Boost schieben, Reibung bremst. Bei zu wenig Tempo rollt es im unteren Halbkreis zurück bzw. löst sich
+  // im oberen Halbkreis (Normalkraft < 0) und fällt frei. Ereignis 'loop' { done: true } bei vollständiger Runde.
+  enterLoop(l, speed) {
+    const r = l.r;
+    this.loop = { lx: l.lx, cx: l.lx, cy: l.yr + P.rideHeight + r, r, phi: -Math.PI / 2, v: speed, dir: 1, ground: l.yr + P.rideHeight };
+    this.onGround = false;
+    this.x = l.lx;
+    this.y = this.loop.ground;
+    this.angle = 0;
+    this.w = 0;
+    this.ev.push({ type: 'loopEnter', x: this.x, y: this.y, speed });
+  }
+
+  stepLoop(dt, track, ev) {
+    const L = this.loop;
+    const st = this.stats;
+    const g = this.g;
+    // Schub (Antrieb/Boost) nur vorwärts; rollt die Kiste zurück, lässt der Fahrer es laufen
+    let thrust = 0;
+    if (L.dir > 0) {
+      if (this.driving) thrust += this.driveAccelNet() * thrustFactor(L.v, this.softCap);
+      if (this.boosting) thrust += (st.boostThrust / st.mass) * thrustFactor(L.v, this.softCap);
+    }
+    L.v += (-g * Math.cos(L.phi) * L.dir + thrust - FEATURES.loop.frictionDecel) * dt;
+    if (L.v <= 0) { L.dir = -L.dir; L.v = -L.v; }
+    L.phi += (L.dir * L.v * dt) / L.r;
+    const tx = -Math.sin(L.phi) * L.dir, ty = Math.cos(L.phi) * L.dir;
+    this.x = L.cx + L.r * Math.cos(L.phi);
+    this.y = L.cy + L.r * Math.sin(L.phi);
+    this.angle = L.phi + Math.PI / 2;
+    this.vx = tx * L.v;
+    this.vy = ty * L.v;
+    this.wheelSpin += (L.dir * L.v / P.wheelRadius) * dt;
+    // oben gelöst? (Normalkraft v²/r − g·sin φ < 0) → freier Fall
+    if (Math.sin(L.phi) > 0 && (L.v * L.v) / L.r < g * Math.sin(L.phi)) {
+      this.loop = null;
+      this.onGround = false;
+      this.startAir();
+      ev.push({ type: 'loop', done: false, x: this.x, y: this.y });
+      return;
+    }
+    // ganz herum → weiter am Boden
+    if (L.dir > 0 && L.phi >= Math.PI * 1.5) {
+      this.exitLoop(track, L.lx + 0.01, L.v);
+      this.loops++;
+      ev.push({ type: 'loop', done: true, x: this.x, y: this.y });
+      return;
+    }
+    // zurückgerollt → rückwärts aus der Einfahrt
+    if (L.dir < 0 && (L.phi <= -Math.PI / 2 || (L.v < FEATURES.loop.minEnter && L.phi < -Math.PI / 2 + 0.3))) {
+      this.exitLoop(track, L.lx - 0.01, -L.v);
+      ev.push({ type: 'loop', done: false, back: true, x: this.x, y: this.y });
+    }
+  }
+
+  exitLoop(track, x, s) {
+    this.loop = null;
+    this.onGround = true;
+    this.x = x;
+    this.y = track.heightAt(x) + P.rideHeight;
+    const g0 = Math.atan(track.slopeAt(x));
+    this.angle = g0;
+    this.s = s;
+    this.vx = s * Math.cos(g0);
+    this.vy = s * Math.sin(g0);
+    this.w = 0;
   }
 
   // Beschleunigung des Antriebs am Boden (m/s², vor der weichen Tempo-Grenze): driveAccel / mass^driveMassExp.
@@ -459,7 +565,8 @@ export class Vehicle {
 
   // Hindernis getroffen: Tempo verlieren (keep = Anteil, der bleibt)
   hitSlow(keep = P.hitSpeedKeep) {
-    if (this.onGround) this.s *= keep;
+    if (this.loop) this.loop.v *= keep;
+    else if (this.onGround) this.s *= keep;
     else { this.vx *= keep; this.vy = this.vy * keep + P.hitBounceUp; }
   }
 
@@ -495,7 +602,8 @@ export class Vehicle {
   thrust(dv) {
     if (!dv) return;
     dv *= thrustFactor(this.speed, this.softCap);
-    if (this.onGround) this.s += dv;
+    if (this.loop) this.loop.v = Math.max(0, this.loop.v + dv * this.loop.dir);
+    else if (this.onGround) this.s += dv;
     else {
       this.vx += dv * Math.cos(this.angle);
       this.vy += dv * Math.sin(this.angle);
@@ -505,7 +613,7 @@ export class Vehicle {
 
   // Impuls nach oben: am Boden abheben, in der Luft Doppelsprung (Fallen wird aufgehoben)
   jump(dv) {
-    if (!(dv > 0)) return;
+    if (!(dv > 0) || this.loop) return;
     if (this.onGround) {
       const g0 = this.angle;
       this.vx = this.s * Math.cos(g0);
@@ -526,7 +634,8 @@ export class Vehicle {
   // Tempo-Schub entlang der Bewegung (z. B. Boost-Ring) – unterliegt der weichen Tempo-Grenze
   addSpeed(dv) {
     dv *= thrustFactor(this.speed, this.softCap);
-    if (this.onGround) {
+    if (this.loop) this.loop.v += dv;
+    else if (this.onGround) {
       this.s += dv * Math.sign(this.s || 1);
     } else {
       const sp = Math.hypot(this.vx, this.vy) || 1;

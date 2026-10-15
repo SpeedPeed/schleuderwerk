@@ -148,13 +148,14 @@ export class Slingshot {
   }
 }
 
-// ---------- Rekord-Flagge ----------
-export function buildFlag() {
+// ---------- Ziel-/Medaillen-Flagge (Farbe: Bronze, Silber, Gold) ----------
+export function buildFlag(color = '#e8313d', stripe = '#ffffff') {
   const g = merge([
-    part('cyl6', '#e8e8e8', { y: 3, sx: 0.12, sz: 0.12, sy: 6 }),
-    part('box', '#e8313d', { x: 1.0, y: 5.3, sx: 2.0, sy: 1.2, sz: 0.08 }),
-    part('box', '#ffffff', { x: 0.6, y: 5.3, sx: 0.4, sy: 1.22, sz: 0.1 }),
-    part('box', '#ffffff', { x: 1.4, y: 5.3, sx: 0.4, sy: 1.22, sz: 0.1 }),
+    part('cyl6', '#e8e8e8', { y: 3.5, sx: 0.14, sz: 0.14, sy: 7 }),
+    part('box', color, { x: 1.2, y: 6.2, sx: 2.4, sy: 1.4, sz: 0.08 }),
+    part('box', stripe, { x: 0.7, y: 6.2, sx: 0.4, sy: 1.42, sz: 0.1 }),
+    part('box', stripe, { x: 1.7, y: 6.2, sx: 0.4, sy: 1.42, sz: 0.1 }),
+    part('ico', color, { y: 7.1, s: 0.3 }),
     part('cyl6', '#555555', { y: 0.15, sx: 0.5, sz: 0.5, sy: 0.3 }),
   ]);
   const m = new THREE.Mesh(g, flatMat);

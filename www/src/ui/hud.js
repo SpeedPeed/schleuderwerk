@@ -24,6 +24,12 @@ export class Hud {
         <span data-id="wind" class="hud-wind"></span>
         <span data-id="best">🏁 0 m</span>
       </div>
+      <div class="goal hidden" data-id="goal">
+        <div class="goal-track"><div class="goal-fill" data-id="gfill"></div>
+          <i class="gm gm-bronze" data-id="gm_bronze"></i><i class="gm gm-silver" data-id="gm_silver"></i><i class="gm gm-gold" data-id="gm_gold"></i>
+          <b class="goal-car" data-id="gcar"></b>
+        </div>
+      </div>
       <div class="combo hidden" data-id="combo"><div class="combo-mult" data-id="mult">×1,0</div><div class="combo-pts" data-id="pts">0</div></div>
       <div class="ground-ind hidden" data-id="ground">Boden ↓ 0 m</div>
       <div class="res-bars" data-id="bars">
@@ -60,11 +66,24 @@ export class Hud {
     fn(value);
   }
 
-  // abilities: Fähigkeits-Definitionen in Knopf-Reihenfolge
-  show(on, { best = 0, tutorial = false, weather = null, abilities = [] } = {}) {
+  // abilities: Fähigkeits-Definitionen in Knopf-Reihenfolge.
+  // goal: { target, medals: {bronze, silver?, gold}, medalList } → Zielbalken mit Medaillen-Marken
+  show(on, { best = 0, tutorial = false, weather = null, abilities = [], goal = null } = {}) {
     show(this.el, on);
     this.last = {};
-    this.q.best.textContent = `🏁 ${fmt(best)} m`;
+    this.goal = goal;
+    this.q.best.textContent = goal ? `🏁 Ziel ${fmt(goal.target)} m` : `🏁 ${fmt(best)} m`;
+    show(this.q.goal, !!goal);
+    if (goal) {
+      this.goalMax = goal.medals.gold * 1.08;
+      for (const m of ['bronze', 'silver', 'gold']) {
+        const e = this.q[`gm_${m}`];
+        const has = goal.medalList.includes(m) && goal.medals[m] !== undefined;
+        show(e, has);
+        e.classList.remove('got');
+        if (has) { e.style.left = `${(goal.medals[m] / this.goalMax) * 100}%`; e.title = `${fmt(goal.medals[m])} m`; }
+      }
+    }
     this.weather = weather;
     const calm = !weather || (weather.wind[0] === 0 && weather.wind[1] === 0 && !weather.gust);
     show(this.q.weather, !calm);
@@ -127,6 +146,13 @@ export class Hud {
     if (groundOn) this.set('groundText', ind.text, (t) => { q.ground.textContent = t; });
 
     this.set('dist', Math.max(0, Math.round(v.x)), (d) => { q.dist.textContent = fmt(d); });
+    if (this.goal) {
+      const f = Math.max(0, Math.min(1, v.maxX / this.goalMax));
+      this.set('gfill', Math.round(f * 400), (p) => { q.gfill.style.width = `${p / 4}%`; q.gcar.style.left = `${p / 4}%`; });
+      for (const m of this.goal.medalList) {
+        this.set(`gm_${m}`, v.maxX >= this.goal.medals[m], (got) => q[`gm_${m}`].classList.toggle('got', got));
+      }
+    }
     this.set('bolts', Math.floor(stage.bolts), (c) => { q.bolts.textContent = fmt(c); q.bolts.parentElement.classList.remove('bump'); void q.bolts.offsetWidth; q.bolts.parentElement.classList.add('bump'); });
     this.set('alt', Math.max(0, Math.round(stage.altitude)), (a) => { q.alt.textContent = `↑ ${fmt(a)} m`; });
     if (this.weather) {

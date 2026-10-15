@@ -1,9 +1,10 @@
-// Spielstand v3: Standard-Schema, Migration v2 → v3, Export/Import-Rundlauf, alte SW2-Texte.
+// Spielstand v3: Standard-Schema, Migration v2 → v3, Export/Import-Rundlauf, alte SW2-Texte, laufender Run.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SAVE_VERSION, GARAGE } from '../www/src/data/balance.js';
 import { defaultSave, migrate, exportSave, importSave, SaveError } from '../www/src/save/save.js';
 import { markMilestone, addPlaytime } from '../www/src/garage/progression.js';
+import { newRun, reachableNodes, enterNode } from '../www/src/run/runState.js';
 
 const b64 = (obj) => btoa(unescape(encodeURIComponent(JSON.stringify(obj))));
 
@@ -40,7 +41,7 @@ test('Standard-Spielstand hat das Schema v3', () => {
   assert.deepEqual(m.meta, s.meta);
 });
 
-test('Migration v2 → v3: Geld / 40 als Schrott, Einstellungen und Rekorde bleiben', () => {
+test('Migration v2 → v3: Geld / 40 als Schrott, Einstellungen und Rekorde bleiben (Welten entfallen seit Phase 3)', () => {
   const s = migrate(V2());
   assert.equal(s.version, 3);
   assert.equal(s.meta.scrap, 250);
@@ -51,9 +52,8 @@ test('Migration v2 → v3: Geld / 40 als Schrott, Einstellungen und Rekorde blei
   assert.equal(s.stats.bestHeight, 210);
   assert.equal(s.stats.bestTricks, 880);
   assert.equal(s.stats.testDrives, 23);
-  assert.deepEqual(s.worlds.unlocked, ['steppe', 'desert']);
-  assert.equal(s.worlds.current, 'desert');
-  assert.equal(s.worlds.records.desert.bestDist, 900);
+  assert.ok(!('worlds' in s), 'Welten gibt es seit Phase 3 nicht mehr (Biome sind Akte eines Runs)');
+  assert.equal(s.run, null);
   assert.equal(s.tutorial.runs, 23);
   assert.equal(s.createdAt, 1700000000000);
   assert.deepEqual(s.garage.parts, GARAGE.starterParts, 'Garage startet neu');
@@ -66,7 +66,7 @@ test('Migration: Startschrott höchstens 400, kaputtes Geld = 0, uralte Stände 
   const v1 = migrate({ money: 800, upgrades: {}, stats: { runs: 2, bestDist: 300, bestHeight: 20 }, settings: { sound: true } });
   assert.equal(v1.version, 3);
   assert.equal(v1.meta.scrap, 20);
-  assert.equal(v1.worlds.records.steppe.bestDist, 300);
+  assert.equal(v1.stats.bestDist, 300);
   assert.throws(() => migrate({ version: 99 }), /neueren/);
   assert.throws(() => migrate(null), /gültig/);
 });
@@ -136,19 +136,15 @@ test('Migration repariert falsch typisierte Felder statt abzustürzen (beschädi
     assert.equal(typeof s.meta.scrap, 'number');
     assert.ok(Array.isArray(s.garage.ownedChassis) && s.garage.ownedChassis.includes(GARAGE.starterChassis));
     assert.ok(Array.isArray(s.garage.ownedParts));
-    for (const r of Object.values(s.worlds.records)) for (const k of ['bestDist', 'bestHeight', 'runs']) assert.ok(Number.isFinite(r[k]), k);
-    assert.ok(s.worlds.unlocked.every((id) => typeof id === 'string'));
-    assert.ok(s.worlds.unlocked.includes(s.worlds.current));
+    assert.ok(!('worlds' in s));
     for (const k of Object.keys(s.stats)) assert.ok(Number.isFinite(s.stats[k]), `stats.${k}`);
     assert.equal(typeof s.settings.sound, 'boolean');
     assert.equal(typeof s.tutorial.runs, 'number');
-    assert.ok(s.run === null || typeof s.run === 'object');
-    // danach spielbar: Rekorde lassen sich hochzählen
-    for (const r of Object.values(s.worlds.records)) { r.runs++; assert.ok(Number.isFinite(r.runs)); }
+    assert.equal(s.run, null, 'unbrauchbarer Run wird verworfen');
   }
-  const w = migrate({ version: 3, worlds: { records: { steppe: {}, desert: 'x' }, unlocked: ['steppe', 'desert', 'mond'] } });
-  assert.deepEqual(w.worlds.unlocked, ['steppe', 'desert']);
-  assert.deepEqual(w.worlds.records.desert, { bestDist: 0, bestHeight: 0, runs: 0 });
+  const w = migrate({ version: 3, stats: { bestDist: 100 }, worlds: { records: { steppe: { bestDist: 700 }, desert: 'x' }, unlocked: ['steppe', 'desert', 'mond'] } });
+  assert.ok(!('worlds' in w));
+  assert.equal(w.stats.bestDist, 700, 'Bestweite aus den alten Welt-Rekorden');
   assert.equal(migrate({ version: 3, meta: { milestones: { a: 'x', b: 12 } } }).meta.milestones.b, 12);
   assert.ok(!('a' in migrate({ version: 3, meta: { milestones: { a: 'x' } } }).meta.milestones));
 });
@@ -164,4 +160,20 @@ test('Migration: unlesbare Versionsnummer gilt als alter Stand (Geld wird zu Sch
   }
   // Import: technische Fehler erscheinen nie roh
   assert.throws(() => importSave(`SW3:${b64({ version: 4 })}`), /neueren/);
+});
+
+test('Laufender Run übersteht Speichern/Laden (JSON, Export/Import); fremdes Run-Format wird verworfen', () => {
+  const s = defaultSave();
+  s.run = newRun(s, { seed: 77 });
+  const first = reachableNodes(s.run)[0];
+  enterNode(s.run, first.id);
+  const back = migrate(JSON.parse(JSON.stringify(s)));
+  assert.ok(back.run, 'Run bleibt erhalten');
+  assert.deepEqual(back.run, s.run);
+  assert.equal(back.run.current.node, first.id);
+  assert.deepEqual(reachableNodes(back.run).map((n) => n.id), [first.id], 'derselbe Knoten läuft weiter');
+  const imp = importSave(exportSave(s));
+  assert.deepEqual(imp.run, s.run);
+  assert.equal(migrate({ version: 3, run: { v: 0, act: 1 } }).run, null);
+  assert.equal(migrate({ version: 3, run: { ...s.run, map: 'x' } }).run, null);
 });

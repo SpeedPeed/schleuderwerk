@@ -95,7 +95,11 @@ export class Menus {
 
   say(t) { this.msg.textContent = t; }
 
-  showPause(on) { show(this.pause, on); }
+  // mode 'run': „Run aufgeben“, sonst (Testfahrt im Dev-Menü) „Testfahrt beenden“
+  showPause(on, mode = null) {
+    if (mode) this.pause.querySelector('[data-a=quit]').textContent = mode === 'run' ? '🏳 Run aufgeben' : '⏹ Testfahrt beenden';
+    show(this.pause, on);
+  }
 
   openSettings() {
     const st = this.h.getSettings();

@@ -1,7 +1,9 @@
-import { PHYSICS as P, LAUNCH, KOMBO, FX, STAGE, CONTROLS, SPAWN, RESOURCES as R, RULES, ITEMS } from '../data/balance.js';
+import { PHYSICS as P, LAUNCH, KOMBO, FX, STAGE, CONTROLS, SPAWN, RESOURCES as R, RULES, ITEMS, FEATURES, PICKUPS, TESTDRIVE } from '../data/balance.js';
 import { Vehicle } from '../physics/vehicle.js';
 import { Objects } from '../physics/objects.js';
-import { PLATEAU_H } from '../physics/track.js';
+import { Track, PLATEAU_H } from '../physics/track.js';
+import { generateStageSpec, medalFor } from '../physics/trackGen.js';
+import { BIOMES } from '../data/biomes.js';
 import { makeRng } from '../core/rng.js';
 import { DEG } from '../core/math.js';
 import { Launch } from './launch.js';
@@ -36,45 +38,70 @@ const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, 
 //
 // Regeln, die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A): collectScrapMass (Kollision, Pickups),
 // heatToThrust (Fähigkeit Schleudergang).
+//
+// Phase 3: Die Strecke kommt aus einer StageSpec (physics/trackGen.js) mit Zielmarke und Medaillen
+// (spec.medals: bronze = Ziel, silver, gold). Endgründe: 'stop' (steht), 'wreck' (Haltbarkeit 0), 'fall'
+// (Schluchtsturz, + FEATURES.gap.fallDamage), 'time' (STAGE.maxTime). Ergebnis nach ARCHITEKTUR.md §7.
 export class Stage {
-  // loadout: Ergebnis von garage/loadout.js buildLoadout(save); alternativ nur `stats` (fertige Werte, Tests).
-  // durability: Start-Haltbarkeit (Run, ab Phase 3); sonst voll.
-  constructor({ world, track, loadout = null, stats = null, seed = 1, hooks = {}, durability }) {
-    this.world = world;
-    this.track = track;
-    this.hooks = { ...NO_HOOKS, ...hooks };
+  // biome (alt: world): Biom aus data/biomes.js. spec: StageSpec (sonst einfache Etappe Etage 0 des Bioms).
+  // track: fertige Strecke (sonst aus spec). loadout: garage/loadout.js buildLoadout; alternativ nur `stats` (Tests).
+  // durability: Start-Haltbarkeit (aus dem Run); sonst voll. runMods: { fuelMaxAdd, coolMul, durabilityMaxAdd } (Run).
+  constructor({ biome, world, spec = null, track = null, loadout = null, stats = null, seed = 1, hooks = {}, durability, runMods = {} }) {
     this.rng = makeRng(seed >>> 0);
+    this.biome = biome || world || (track && track.biome) || BIOMES[0];
+    this.world = this.biome;   // alter Name (Phase 1–2)
+    this.spec = spec || (track && track.spec) || generateStageSpec({ biome: this.biome, kind: 'stage', floor: 0, rng: this.rng.fork('spec') });
+    this.track = track || new Track(this.spec, this.biome);
+    this.hooks = { ...NO_HOOKS, ...hooks };
+    const bio = this.biome;
 
     // Ausrüstung und Werte: Garage-Werte + Welt-Physik + zeitweise Modifikatoren (Buffs, Stapel)
     const lo = loadout || { stats: stats || baseStats(), rules: {}, abilities: ['boost'], sources: [], statInput: null };
     this.loadout = lo;
     this.rules = lo.rules || {};
     this.statInput = lo.statInput || { base: lo.stats };
-    this.worldMods = { stats: { rollFriction: { xmul: world.physics?.rollFriction ?? 1 } } };
-    this.runMods = { stats: { durabilityMax: { add: 0 }, fuelMax: { add: 0 } } };
+    this.worldMods = { stats: { rollFriction: { xmul: bio.physics?.rollFriction ?? 1 }, landTolDeg: { add: bio.physics?.landTolAdd || 0 } } };
+    this.runMods = { stats: {
+      durabilityMax: { add: runMods.durabilityMaxAdd || 0 },
+      fuelMax: { add: runMods.fuelMaxAdd || 0 },
+      coolRate: { mul: runMods.coolMul || 0 },
+    } };
     this.mods = new ModState();
     this.stats = this.computeStats();
 
     this.ev = [];
-    this.vehicle = new Vehicle(this.stats, world.gravity, this.rules);
+    this.vehicle = new Vehicle(this.stats, bio.gravity, this.rules);
     this.vehicle.reset(REST.x, REST.y, REST.angle);
     this.vehicle.ev = this.ev;
     if (durability !== undefined) this.vehicle.durability = Math.max(0, Math.min(durability, this.stats.durabilityMax));
     this.startDurability = this.vehicle.durability;
 
     const scrapPickups = this.rules.collectScrapMass ? RULES.collectScrapMass.pickups : 0;
-    this.objects = new Objects(world, track, this.rng.fork('objects').seed, { scrapPickups });
+    this.objects = new Objects(bio, this.track, this.rng.fork('objects').seed, { scrapPickups, spec: this.spec });
     this.objects.spawnUntil(SPAWN.initialAhead);
 
-    // Wetter für diese Etappe auswürfeln
-    const wr = this.rng.fork('weather');
-    const wx = wr.weighted(world.weather || [STAGE.defaultWeather]);
-    this.weather = { ...wx, base: wr.range(wx.wind[0], wx.wind[1]), gust: wx.gust || 0, phase: wr.next() * STAGE.gust.phaseRange };
+    // Wetter steht in der StageSpec (deterministisch, im Etappen-Intro sichtbar)
+    const wx = this.spec.weather || { ...STAGE.defaultWeather, base: 0, phase: 0 };
+    this.weather = { ...wx, gust: wx.gust || 0, base: wx.base ?? 0, phase: wx.phase ?? 0 };
+    this.ambientHeat = bio.physics?.ambientHeat || 0;
     this.env = {
       wind: this.weather.base,
       lift: (x, alt) => this.objects.thermalAt(x, alt),
-      heat: world.physics?.ambientHeat || 0,
+      heat: this.ambientHeat,
+      ax: 0,
+      ay: 0,
     };
+
+    // Ziel und Medaillen
+    this.kind = this.spec.kind || 'stage';
+    this.target = this.spec.target;
+    this.medals = this.spec.medals;
+    this.medalList = this.spec.medalList || ['bronze', 'silver', 'gold'];
+    this.medal = null;            // bisher erreichte Medaille
+    this.fallTimer = -1;
+    this.fell = false;
+    this.inWind = false;
+    this.inHeat = false;
 
     this.abilities = new AbilityBar(lo.abilities || []);
     this.queue = new EventQueue();
@@ -94,6 +121,11 @@ export class Stage {
     this.boltStreakTimer = 0;
     this.scrapPickups = 0;
     this.scrapBonus = 0;
+    this.scrap = 0;               // Meta-Schrott aus Pickups
+    this.blueprints = 0;
+    this.crates = 0;
+    this.pickupCounts = { fuel: 0, cool: 0, repair: 0, scrap: 0, crate: 0, blueprint: 0 };
+    this.shocks = 0;
     this.maxAlt = 0;
     this.altMarks = 0;
     this.lastMilestone = 0;
@@ -106,7 +138,7 @@ export class Stage {
     this.perfectLaunch = false;
     this.inThermal = false;
     this.chuteOpen = false;
-    this.stunts = { flips: 0, perfectLandings: 0, cleanLandings: 0, crashes: 0, nearMisses: 0, maxAirTime: 0, rings: 0 };
+    this.stunts = { flips: 0, perfectLandings: 0, cleanLandings: 0, crashes: 0, nearMisses: 0, maxAirTime: 0, rings: 0, loops: 0 };
     this.emit('stageStart', {});
   }
 
@@ -274,7 +306,7 @@ export class Stage {
         const rvx = vx - this.env.wind;
         const v = Math.hypot(rvx, vy);
         vx += -k * v * rvx * h;
-        vy += (-k * v * vy - this.world.gravity) * h;
+        vy += (-k * v * vy - this.biome.gravity) * h;
         x += vx * h;
         y += vy * h;
       }
@@ -366,17 +398,16 @@ export class Stage {
 
     const v = this.vehicle;
     const ev = this.ev;
-    const G = STAGE.gust;
     while (this.acc >= P.dt) {
       this.acc -= P.dt;
       this.abilities.update(P.dt, this);
       ctl.boost = this.abilities.boostHeld;
       this.mods.update(P.dt);
       if (this.mods.dirty) this.recomputeStats();
+      this.updateEnv();
       v.step(P.dt, ctl, this.track, ev, this.env, this.objects);
       this.time += P.dt;
-      const w = this.weather;
-      this.env.wind = w.base + (w.gust ? w.gust * Math.sin(this.time * G.freqA + w.phase) * Math.sin(this.time * G.freqB + w.phase * G.phaseB) : 0);
+      this.objects.update(P.dt, v, ev);
       this.afterStep(P.dt);
       for (const e of ev) this.handle(e);
       ev.length = 0;
@@ -387,9 +418,38 @@ export class Stage {
     this.objects.spawnUntil(v.x + SPAWN.ahead);
   }
 
+  // Umgebung an der Fahrzeug-Position: Wetter-Wind (+ Böen) + Windzone, Biom-Hitze + Hitzefeld, Magnetkran
+  updateEnv() {
+    const v = this.vehicle;
+    const w = this.weather;
+    const G = STAGE.gust;
+    const o = this.objects;
+    this.env.wind = w.base + (w.gust ? w.gust * Math.sin(this.time * G.freqA + w.phase) * Math.sin(this.time * G.freqB + w.phase * G.phaseB) : 0) + o.windAt(v.x);
+    const zoneHeat = o.heatAt(v.x);
+    this.env.heat = this.ambientHeat + zoneHeat;
+    o.magnetPull(v.x, v.y, this.env);
+    const inWind = o.windAt(v.x) !== 0;
+    if (inWind && !this.inWind) this.hooks.popup(o.windAt(v.x) > 0 ? 'RÜCKENWIND →' : '← GEGENWIND', 'info');
+    this.inWind = inWind;
+    const inHeat = zoneHeat > 0;
+    if (inHeat && !this.inHeat) this.hooks.popup('HITZEFELD 🔥', 'info');
+    this.inHeat = inHeat;
+  }
+
   afterStep(dt) {
     const v = this.vehicle;
     const alt = this.altitude;
+    // Medaillen-Marken überfahren
+    const md = medalFor(v.maxX, this.medals);
+    if (md && md !== this.medal) {
+      this.medal = md;
+      const first = this.medalList.indexOf(md) === 0;
+      const names = { bronze: 'BRONZE', silver: 'SILBER', gold: 'GOLD' };
+      this.hooks.popup(first ? `ZIEL ERREICHT! ${MEDAL_ICON[md]}` : `${names[md]}! ${MEDAL_ICON[md]}`, 'big');
+      this.hooks.sfx('medal', this.medalList.indexOf(md));
+      this.hooks.fx('medal', v.x, v.y, { medal: md });
+      this.hooks.haptic('success');
+    }
     if (alt > this.maxAlt) this.maxAlt = alt;
     if (!v.onGround && v.airTime > this.stunts.maxAirTime) this.stunts.maxAirTime = v.airTime;
     // Fallschirm zu (gekappt, gelandet, abgelaufen) → sein Auftriebs-Buff endet mit ihm
@@ -421,7 +481,12 @@ export class Stage {
       if (this.wreckTimer < 0) this.finish('wreck');
       return;
     }
-    if (v.onGround && Math.abs(v.s) < STAGE.stopSpeed) {
+    if (this.fallTimer >= 0) {
+      this.fallTimer -= dt;
+      if (this.fallTimer < 0) this.finish('fall');
+      return;
+    }
+    if (v.onGround && !v.loop && Math.abs(v.s) < STAGE.stopSpeed) {
       this.stopTimer += dt;
       if (this.stopTimer > STAGE.stopTime) this.finish('stop');
     } else this.stopTimer = 0;
@@ -454,8 +519,33 @@ export class Stage {
         this.emit('pickup', { kind: 'bolt', value: e.v, x: e.x, y: e.y });
         return;
       }
-      case 'scrapPickup':
-        this.collectScrap(e.x, e.y);
+      case 'pickup':
+        this.onPickup(e);
+        return;
+      case 'fall':
+        this.onFall(e);
+        return;
+      case 'shock':
+        this.onShock(e);
+        return;
+      case 'lightningWarn':
+        h.sfx('warn');
+        return;
+      case 'lightning':
+        h.fx('lightning', e.x, e.y);
+        h.sfx('zap');
+        h.shake(FX.shake.lightning);
+        return;
+      case 'loopEnter':
+        h.sfx('whoosh');
+        return;
+      case 'loop':
+        if (e.done) {
+          this.stunts.loops++;
+          this.trick('loop', 'LOOPING!', 1, 'big');
+          h.sfx('perfect');
+          h.haptic('success');
+        } else h.popup('Zu langsam für den Looping!', 'bad');
         return;
       case 'ring': {
         v.addSpeed(STAGE.ringSpeed);
@@ -513,13 +603,60 @@ export class Stage {
     if (isEvent(e.type)) this.emit(e.type, e);
   }
 
-  // Schrott-Pickup (Regel collectScrapMass)
-  collectScrap(x, y) {
+  // Schrott eingesammelt (Pickup oder Regel collectScrapMass): Meta-Schrott + Ladung der Mülltonne
+  collectScrap(x, y, value = 1) {
     this.scrapPickups++;
+    this.scrap += value * (this.stats.scrapGain ?? 1);
+    this.pickupCounts.scrap++;
     this.hooks.fx('scrap', x, y);
     this.hooks.sfx('bolt', 1);
-    this.hooks.popup('Schrott eingesackt', 'good');
+    this.hooks.popup(`Schrott +${Math.round(value)} ⚙`, 'good');
     this.emit('pickup', { kind: 'scrap', x, y });
+  }
+
+  // Pickups: ⛽ Kanister, ❄ Kühlpack, 🔧 Reparaturset, ⚙ Schrott, 📦 Item-Kiste (Phase 4), 📘 Blaupause (Elite)
+  onPickup(e) {
+    const h = this.hooks;
+    const v = this.vehicle;
+    if (e.kind === 'scrap') { this.collectScrap(e.x, e.y, e.value || PICKUPS.scrap); return; }
+    this.pickupCounts[e.kind] = (this.pickupCounts[e.kind] || 0) + 1;
+    switch (e.kind) {
+      case 'fuel': v.addFuel(PICKUPS.fuel); h.popup(`KANISTER +${PICKUPS.fuel} ⛽`, 'good'); break;
+      case 'cool': v.cool(PICKUPS.cool); h.popup('KÜHLPACK ❄', 'good'); break;
+      case 'repair': v.heal(PICKUPS.repair, this.ev); h.popup(`REPARATURSET +${PICKUPS.repair} 🔧`, 'good'); break;
+      case 'crate': this.crates++; h.popup('ITEM-KISTE 📦', 'big'); break;
+      case 'blueprint': this.blueprints++; h.popup('BLAUPAUSE! 📘', 'big'); break;
+      default: break;
+    }
+    h.sfx('ring');
+    h.fx('sparkle', e.x, e.y);
+    h.haptic('light');
+    this.emit('pickup', { kind: e.kind, x: e.x, y: e.y });
+  }
+
+  // Schluchtsturz: + Schaden, Etappe endet kurz danach
+  onFall() {
+    if (this.fell) return;
+    this.fell = true;
+    const h = this.hooks;
+    this.loseChain();
+    this.vehicle.damage(FEATURES.gap.fallDamage, 'fall', this.ev, { pierce: true });
+    h.popup('ABGESTÜRZT!', 'bad');
+    h.sfx('crash', 1);
+    h.haptic('heavy');
+    this.fallTimer = STAGE.fallDelay;
+  }
+
+  // Blitz eingeschlagen (Blitzzone): Ereignis shock + Schaden
+  onShock(e) {
+    const h = this.hooks;
+    this.shocks++;
+    this.emit('shock', { source: e.source || 'lightning' });
+    this.vehicle.damage(FEATURES.lightning.damage, 'lightning', this.ev);
+    this.vehicle.hitSlow(FEATURES.lightning.speedKeep);
+    h.popup('⚡ STROMSCHLAG!', 'bad');
+    h.fx('shock', this.vehicle.x, this.vehicle.y);
+    h.haptic('heavy');
   }
 
   onHit(e) {
@@ -529,12 +666,14 @@ export class Stage {
     // Regel collectScrapMass (Mülltonne): Schrottberge schaden weniger, bremsen weniger und geben Schrott
     const scrapMass = !!this.rules.collectScrapMass && o.type === 'scrap';
     const C = RULES.collectScrapMass;
-    v.hitSlow(scrapMass ? (P.hitSpeedKeep + 1) / 2 : P.hitSpeedKeep);
-    const dmg = v.damage(R.obstacleDamage * (scrapMass ? C.damageMul : 1), 'obstacle', this.ev);
+    const crusher = o.type === 'crusher';
+    v.hitSlow(crusher ? FEATURES.crusher.speedKeep : scrapMass ? (P.hitSpeedKeep + 1) / 2 : P.hitSpeedKeep);
+    const base = crusher ? FEATURES.crusher.damage : R.obstacleDamage;
+    const dmg = v.damage(base * (scrapMass ? C.damageMul : 1), 'obstacle', this.ev);
     this.emit('collision', { kind: o.type, damage: dmg, x: e.x, y: e.y });
-    if (scrapMass) this.collectScrap(e.x, e.y);
+    if (scrapMass) this.collectScrap(e.x, e.y, TESTDRIVE.scrapPickupValue);
     this.loseChain();
-    if (dmg > 0) h.popup('Autsch!', 'bad');
+    if (dmg > 0) h.popup(crusher ? 'GEPRESST!' : 'Autsch!', 'bad');
     h.sfx('crash', 1);
     h.fx('smash', e.x, e.y, { type: o.type });
     h.shake(FX.shake.hit);
@@ -589,38 +728,52 @@ export class Stage {
     if (e.impact > FX.landHapticImpact) h.haptic('light');
   }
 
+  // Etappe beenden. Ergebnis nach ARCHITEKTUR.md §7 (+ Zusatzangaben für Auswertung und Run)
   finish(reason) {
     if (this.phase === 'over') return;
     this.bankChain(true);
     this.phase = 'over';
     this.abilities.release();
     const v = this.vehicle;
+    if (v.durability <= 0) reason = 'wreck';
     const dist = Math.max(0, Math.round(v.maxX));
     const height = Math.max(0, Math.round(this.maxAlt));
-    this.emit('stageEnd', { medal: null, dist });
+    const medal = reason === 'wreck' ? null : medalFor(dist, this.medals);
+    this.emit('stageEnd', { medal, dist });
     this.flushEvents();
     const r = {
       reason,
-      cleared: reason !== 'wreck',
-      medal: null,
+      cleared: !!medal,
+      medal,
       dist,
+      target: this.target,
+      medals: { ...this.medals },
+      medalList: [...this.medalList],
+      kind: this.kind,
       height,
       tricks: this.tricks,
       bolts: Math.floor(this.bolts),
+      scrap: Math.round(this.scrap + this.scrapBonus),
+      blueprints: this.blueprints,
+      crates: this.crates,
+      pickups: { ...this.pickupCounts },
       scrapPickups: this.scrapPickups,
       scrapBonus: this.scrapBonus,
+      shocks: this.shocks,
       damageTaken: Math.round(v.damageTaken),
-      durability: Math.max(0, Math.round(v.durability)),
+      durability: Math.max(0, Math.round(v.durability * 10) / 10),
       durabilityMax: Math.round(this.stats.durabilityMax),
       fuelLeft: Math.round(v.fuel),
       stunts: { ...this.stunts },
       time: this.time,
-      world: this.world.id,
+      biome: this.biome.id,
+      world: this.biome.id,
     };
-    const reward = testDriveReward(r, this.stats, this.world);
-    r.parts = reward.parts;
-    r.factor = reward.factor;
-    r.scrap = reward.total;
+    // Testfahrt (Dev-Menü): Schrott wie in Phase 2
+    const reward = testDriveReward(r, this.stats, this.biome);
+    r.testDrive = reward;
     this.hooks.end(r);
   }
 }
+
+const MEDAL_ICON = { bronze: '🥉', silver: '🥈', gold: '🥇' };

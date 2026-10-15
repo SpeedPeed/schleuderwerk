@@ -43,8 +43,8 @@
 
 ## 2. Ordnerstruktur (`www/src/`)
 
-Plan für alle Phasen; Dateien, die es noch nicht gibt, kommen mit ihrer Phase. **Ist-Stand nach Phase 2** (zusätzlich bzw. abweichend vom Plan):
-`data/worlds.js` (Welten bis Phase 3, dann `biomes.js`), `platform/input.js` (Touch/Tastatur), `ui/garage.js`, `ui/results.js`, `ui/menus.js` (Pause/Einstellungen), `ui/popups.js`, `ui/statLabels.js` (Stat-/Tag-Anzeige), `ui/hud.js`, `ui/devMenu.js`, `ui/dom.js` statt `ui/screens/*.js`; `items/events.js`, `items/eventQueue.js`, `items/modState.js` (Vorstufen der Trigger-Engine); noch nicht vorhanden: `core/bus.js`, `data/tags.js`/`items.js`/`biomes.js`/…, `run/`, `map/`, `shops/`, `garage/research.js`, `items/triggerEngine.js`/`inventory.js`/`conditions.js`, `tools/sim/` (Bot-Simulation bisher nur in `tests/balance.test.mjs`).
+Plan für alle Phasen; Dateien, die es noch nicht gibt, kommen mit ihrer Phase. **Ist-Stand nach Phase 3** (zusätzlich bzw. abweichend vom Plan):
+`platform/input.js` (Touch/Tastatur), `ui/garage.js`, `ui/map.js` (Karte), `ui/runScreens.js` (Intro, Ergebnis, Tankstelle, Platzhalter, Akt-Übergang, Run-Ende), `ui/results.js` (Dev-Testfahrt), `ui/menus.js`, `ui/popups.js`, `ui/statLabels.js`, `ui/hud.js`, `ui/devMenu.js`, `ui/dom.js` statt `ui/screens/*.js`; `render/featuresView.js` (Streckenbausteine), `render/weather.js` (Regen); `items/events.js`, `items/eventQueue.js`, `items/modState.js` (Vorstufen der Trigger-Engine); `tools/sim/bot.mjs` + `tools/sim/calibrate.mjs` (Balance-Simulator, Ergebnis `docs/BALANCE.md`). Noch nicht vorhanden: `core/bus.js`, `data/tags.js`/`items.js`/`textEvents.js`/`research.js`/`ascension.js`/`cosmetics.js`, `shops/`, `garage/research.js`, `items/triggerEngine.js`/`inventory.js`/`conditions.js`.
 
 ```
 main.js                 Start, Bildschirm-Zustandsmaschine, Hauptschleife
@@ -68,7 +68,7 @@ data/
   cosmetics.js          Lackierungen (Endgame-Senke)
 physics/
   track.js              Strecke einer Etappe: Höhenlinie + Features (aus StageSpec)
-  trackGen.js           generateStageSpec(biome, kind, floor, act, ascension, rng)
+  trackGen.js           generateStageSpec({ biome, kind, floor, act, rng, bossId, mods }) → StageSpec
   vehicle.js            Fahrzeug-Physik (Punktmodell, Luft/Boden, Hitze, Treibstoff, Haltbarkeit)
   objects.js            Pickups, Hindernisse, Zonen – „swept“ Kollision
 items/
@@ -111,7 +111,7 @@ save/save.js            Schema v3, Migrationen, Export/Import
 platform/platform.js
 ```
 
-Tests: `tests/*.test.mjs` (`node --test tests/` lädt `tests/index.js`), Lade-Hooks für three.js-Tests in `tests/support/`, Balance-Simulator: `tools/sim/` (geplant).
+Tests: `tests/*.test.mjs` (`node --test tests/` lädt `tests/index.js`), Lade-Hooks für three.js-Tests in `tests/support/`, Balance-Simulator: `tools/sim/`.
 
 ## 3. Koordinaten & Einheiten
 Meter, Sekunden, Radiant. `x` = Strecke (vorwärts +), `y` = Höhe (oben +), `angle` 0 = Nase nach +x, **positiv = gegen den Uhrzeigersinn = Nase hoch**. Kamera schaut von +z. Render-Positionen: `x - origin.x` (Floating Origin, siehe §9).
@@ -225,10 +225,24 @@ Format-Anpassungen an den Inhaltsdaten (fehlende Felder, Startteile, Forschungs-
 
 ### 4.9 Biome (`data/biomes.js`)
 ```js
-{ id: 'schrottplatz', act: 1, name, palette: {…}, gravity, physics: { rollFriction, ambientHeat, … },
-  weather: [ … ], features: { hills, ramps, gaps, mud, loops, scrapPiles, crushers, wind, thermals, lightning },
-  pickups: { … }, targets: { stage: [m je Etage], eliteMult, boss: m }, bosses: [ { id, name, desc, spec } ] }
+{ id: 'schrottplatz', act: 1, name, icon, desc, gravity, palette: {…, gapWall, gapFloor, mud, sand, storm?},
+  physics: { rollFriction, ambientHeat, landTolAdd }, tagBoost: { feuer: 0.25 },
+  terrain: { hills: [[A, L]…], ampGrowth, rampEvery, rampHeight, rampAngleDeg },
+  weather: [ { name, icon, weight, wind: [min, max], gust?, rain? } ],
+  features: { weights: { typ: w }, minFloor: { typ: etage }, count: [grund, je Etage], params: { typ: {…} } },
+  spawn: { gap, weights: { boltArc, boltGround, ring, obstacle, bigBolt, pickup }, obstacles },
+  pickups: { fuel, cool, repair, scrap, crate }, targets: { stage: [m je Etage 0–5], eliteMult, boss: m },
+  medals: { silver: 1.25, gold: 1.5 }, bosses: [ { id, name, icon, desc, sequence: [typ…], params, weather? } ], decor }
 ```
+Baustein-Parameter `[leicht, schwer]` werden nach der Schwierigkeit (Etage/5, Elite +0,25, Boss 1) gewählt; Standardwerte `FEATURE_DEFAULTS`, Anzeige `FEATURE_INFO`.
+
+### 4.9a StageSpec (`physics/trackGen.js`)
+```js
+{ v, biome, act, kind: 'stage'|'elite'|'boss', floor, bossId, bossName, seed, difficulty, target,
+  medals: { bronze, silver?, gold }, medalList, length, hazards: [typ…], weather: { name, icon, wind, gust, rain, base, phase },
+  blueprintX, features: [ { type, x0, x1, … } ] }
+```
+Bausteine (`x0…x1` = gesamter Platzbedarf, nie überlappend, ≥ `FEATURES.firstFree`): `hills {amp, humps}`, `ramp {rs, lip, h}`, `gap {rs, edge, far, width, h, depth}`, `mud/sand {friction}`, `loop {lx, r}`, `scrapPile {piles}`, `crusher {cx, w, period, open, phase}`, `wind {wind, gust}`, `thermal {x, w, strength, top}`, `heatZone {heat}`, `lightning {seed}`, `magnetZone {phase}`. Die Strecke ergänzt `yr` (Bezugshöhe eingeebneter Abschnitte).
 
 ### 4.10 Regel-Schalter (`rules`)
 `heatIsFuel` (Perpetuum Mobile), `noOverheat` (Kühlschrank), `heatIsResource` (Waschmaschine), `setBonusDouble` (Badewanne), `groundSpeedStacks` (Rasenmäher), `collectScrapMass` (Mülltonne), `healOnCleanLanding` (Sofa), `shopDiscount` (Einkaufswagen), `lowGrip` (Raketenschlitten), `firstHitBounces`, `fuelRegenOnFlip` … – jede Regel wird an **genau einer** Stelle im Code ausgewertet (Physik oder Engine) und ist in `ARCHITEKTUR.md` → Anhang A gelistet.
@@ -255,11 +269,12 @@ eng.statMods();                                // aktuelle zeitweise Modifikator
 - Boden: Tangential-Tempo `s`, Hangabtrieb, Rollreibung (Oberfläche: normal/Schlamm/Sand; masseunabhängig), Antrieb (`driveAccel / mass^PHYSICS.driveMassExp`, kostet Treibstoff + Hitze), Abheben über Kuppen. Die Darstellung legt das Modell am Boden auf die Bodenhöhen unter beiden Achsen (`main.js → groundPose`), die Physik rechnet mit einem Punkt.
 - Landung: Klassen `perfect/clean/bumpy/crash` wie bisher; **Aufprallschaden** aus Normalgeschwindigkeit über `impactThreshold`, reduziert durch `armor`. Schilde (`shield`) fangen erst Schaden ab `RESOURCES.shieldMinDamage` ab.
 - Hitze/Treibstoff/Haltbarkeit im Fahrzeugzustand; Ereignisse werden in ein Array geschrieben (keine Callbacks im Physikschritt).
-- Schlucht: unter `track.gapFloorY` → Ereignis `fall` → Etappe endet.
-- Looping: geskriptetes Kreis-Segment (bei genug Tempo durchfahren, sonst zurückrollen).
+- Schlucht: mehr als `FEATURES.gap.fallDepth` unter der Kante (`track.gapAt(x).yr`) → Rohereignis `fall` (einmal) → Etappe: + `FEATURES.gap.fallDamage` (durchschlagend), Ende `fall` nach `STAGE.fallDelay`.
+- Looping: geskriptete Kreisfahrt (`stepLoop`, Energieerhaltung, Antrieb/Boost vorwärts, Reibung): ganz herum → `loop {done:true}`, sonst Zurückrollen bzw. Ablösen oben (Normalkraft < 0) → freier Fall.
+- Oberflächen: `track.frictionAt(x)` (Schlamm ×4, Sand ×1,6) auf die Rollreibung; Magnetkran über `env.ax/ay`; an scharfen Kanten (`PHYSICS.takeoffKink`) hebt die Kiste ab.
 
 ## 7. Etappe (`stage/stage.js`)
-Zustände: `launch → fly → over`. `update(realDt, input)` mit Akkumulator. Ergebnis: `{ cleared, medal: null|'bronze'|'silver'|'gold', dist, target, bolts, scrap, blueprints, stunts: {...}, damageTaken, reason }`.
+Zustände: `aim → fly → over`. `new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods })`, `update(realDt, input)` mit Akkumulator. Je Physik-Schritt: Umgebung (Wetter + Windzone, Biom- + Feldhitze, Magnetzug) → Fahrzeug → `objects.update` (Pressen, Magnet, Blitze) → Rohereignisse. Ergebnis: `{ cleared, medal: null|'bronze'|'silver'|'gold', dist, target, medals, medalList, kind, bolts, scrap, blueprints, crates, pickups, stunts: {...}, damageTaken, durability, durabilityMax, reason: 'stop'|'wreck'|'fall'|'time', testDrive }` (`cleared` = mindestens Bronze und kein Totalschaden).
 
 ## 8. Run (`run/runState.js`)
 Reiner Zustand, serialisierbar (Run kann gespeichert und fortgesetzt werden):
@@ -268,18 +283,19 @@ Reiner Zustand, serialisierbar (Run kann gespeichert und fortgesetzt werden):
   bolts, inventory:[{itemId, tier, hybrid?}], reserve, runMods:{maxFuelAdd, coolMul, …}, counters, history, stats }
 ```
 Aktionen geben neue Teilzustände zurück bzw. mutieren kontrolliert; UI ruft nur Aktionen auf.
+Umgesetzt (Phase 3): `newRun(save)`, `reachableNodes`, `enterNode` (→ `stage`/`station`/`placeholder`), `stageSpecFor` (Seed aus Run-Seed + Akt + Knoten → Neuversuch = gleiche Strecke), `applyStageResult(run, result, save)` (Belohnungen über `run/rewards.js`, Abschleppen `RUN.towPenalty`, Boss → `setupAct` bzw. Sieg), `chooseStation`, `visitPlaceholder`, `giveUp`, `endRun(save, run)` (Meta-Auszahlung, Statistik, Meilensteine, `save.run = null`), Dev-Helfer. Zusätzliche Felder: `biome, bossIds, current: {node, type, attempts}, visited, path, durabilityBase, earned: {scrap, blueprints, cores, actScrap}, bossesBeaten, over: {won, reason, act}, research`. Die Run-Ausrüstung ist ab dem Start fest (`runLoadout`).
 
 ## 9. Kamera & Floating Origin
 - `camera/cameraRig.js`: Ziel-Breite `lerp(CAMERA.minWidth, CAMERA.maxWidth, f(speed, altitude))`, weich (`1-exp(-k·dt)`), Vorausschau in Bewegungsrichtung, danach **harte Klemmung**: Auto liegt immer im Sicherheitsrahmen (`CAMERA.safeMargin` vom Rand). Passt Auto + Boden nicht mehr ins Bild, hat das Auto Vorrang; `indicator` liefert `{show, side, text}` für den Rand-Pfeil („Boden ↓ 340 m“).
 - `render/origin.js`: Render-Ursprung springt in `ORIGIN.shiftEvery`-Schritten mit; alle Meshes werden relativ positioniert, Gelände-Chunks haben lokale Koordinaten.
 
 ## 10. Speichern (`save/save.js`)
-Schema **v3** (`SAVE_VERSION = 3`). `migrate()` ersetzt fehlende **und falsch typisierte** Felder durch Standardwerte; ein nicht ladbarer Stand wird als Rohtext unter `schleuderwerk.save.bak` gesichert, bei einem Stand aus einer neueren Version wird nicht gespeichert, bis die Person „Neu anfangen“ bestätigt. Schema: `{ version, meta: {scrap, blueprints, cores, totalPlaytime, milestones:{id: Spielzeit s}}, garage: {chassis, ownedChassis:[…], parts:{slot:partId}, ownedParts:[…], partLevels:{partId: level}, abilities:[ids]}, research: {done:[…]}, ascension: {unlocked, best}, codex: {items:{…}, sets:{…}}, cosmetics: {owned, paint}, settings, stats, worlds: {current, unlocked, records} (Übergang bis Phase 3), run: <laufender Run oder null>, tutorial }`. Migration v2 → v3: altes Geld → Startschrott (`money/40`, max. 400), Einstellungen, Rekorde und freigeschaltete Welten bleiben, Rest neu. Export `SW3:` + Base64; ältere `SW2:`-Texte laufen beim Import durch die Migration. Nach jeder Migration prüft `garage/garage.js → sanitizeGarage` die IDs gegen die aktuellen Inhaltsdaten.
+Schema **v3** (`SAVE_VERSION = 3`). `migrate()` ersetzt fehlende **und falsch typisierte** Felder durch Standardwerte; ein nicht ladbarer Stand wird als Rohtext unter `schleuderwerk.save.bak` gesichert, bei einem Stand aus einer neueren Version wird nicht gespeichert, bis die Person „Neu anfangen“ bestätigt. Schema: `{ version, meta: {scrap, blueprints, cores, totalPlaytime, milestones:{id: Spielzeit s}}, garage: {chassis, ownedChassis:[…], parts:{slot:partId}, ownedParts:[…], partLevels:{partId: level}, abilities:[ids]}, research: {done:[…]}, ascension: {unlocked, best}, codex: {items:{…}, sets:{…}}, cosmetics: {owned, paint}, settings, stats, run: <laufender Run oder null>, tutorial }` (das Übergangsfeld `worlds` aus Phase 1–2 entfällt seit Phase 3; Bestweiten landen in `stats.bestDist`, ein Run mit fremdem Format – `isValidRun` – wird verworfen). Migration v2 → v3: altes Geld → Startschrott (`money/40`, max. 400), Einstellungen und Rekorde (Bestweite/-höhe) bleiben, Rest neu. Export `SW3:` + Base64; ältere `SW2:`-Texte laufen beim Import durch die Migration. Nach jeder Migration prüft `garage/garage.js → sanitizeGarage` die IDs gegen die aktuellen Inhaltsdaten.
 
 ## 11. Tests & Qualitätssicherung
 - `node --test tests/` – Physik (kein Durchtunneln bei 150 m/s, Soft-Cap), Trigger-Engine (Kettentiefe, Limits), Karte (Erreichbarkeit, Regeln), Shops, Speichern/Migration.
 - `tools/smoke.mjs` – Playwright-Rauchtest (startet Spiel, spielt eine Etappe, prüft Konsole auf Fehler).
-- `tools/sim/` – Balance-Simulator (Bot spielt Etappen mit echter Physik; Ökonomie-Hochrechnung der Spielzeit-Meilensteine).
+- `tools/sim/` – Balance-Simulator: `bot.mjs` (Bot spielt Etappen mit echter Physik), `calibrate.mjs` (Zielmarken je Biom/Etage, `--apply`, Ergebnis `docs/BALANCE.md`); Ökonomie-Hochrechnung der Spielzeit-Meilensteine folgt in Phase 5/6.
 
 ## Anhang A – Regel-Schalter und ihre Auswertungsstelle
 Jede Regel wird an **genau einer** Stelle ausgewertet. Parameter stehen in `balance.RULES`, die Regeln selbst sammelt `items/statMods.js → collectRules` (Chassis, Teile; ab Phase 4 Items und Sets) und `garage/loadout.js` gibt sie an die Etappe (`stage.rules`, `vehicle.rules`).

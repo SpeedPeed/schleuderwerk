@@ -1,9 +1,9 @@
 import { el, fmt, show } from './dom.js';
 import { FX } from '../data/balance.js';
 
-const TITLES = { stop: 'Testfahrt beendet', wreck: 'Totalschaden!', time: 'Zeit abgelaufen' };
+const TITLES = { stop: 'Testfahrt beendet', wreck: 'Totalschaden!', time: 'Zeit abgelaufen', fall: 'Abgestürzt!' };
 
-// Auswertung nach der Testfahrt mit hochzählender Schrott-Belohnung.
+// Auswertung einer Testfahrt (Dev-Menü, ohne Run) mit hochzählender Schrott-Belohnung.
 export class Results {
   constructor(root, { onGarage, onAgain, onTick }) {
     this.el = el(`<div id="results" class="overlay hidden"><div class="card res-card">
@@ -27,14 +27,14 @@ export class Results {
 
   show(on) { show(this.el, on); }
 
-  // r: Etappen-Ergebnis (stage.finish), extra: { newDist, newHeight, canUpgrade, unlocked: [Welten] }
-  present(r, { newDist, newHeight, canUpgrade, unlocked = [] }) {
+  // r: Etappen-Ergebnis (stage.finish, r.testDrive = Schrott-Belohnung), extra: { newDist, newHeight, canUpgrade }
+  present(r, { newDist, newHeight, canUpgrade }) {
     const q = this.q;
     q.title.textContent = TITLES[r.reason] || TITLES.stop;
     q.badges.innerHTML = (newDist ? '<span class="badge">🏁 NEUER WEITEN-REKORD!</span>' : '')
       + (newHeight ? '<span class="badge">↑ NEUER HÖHEN-REKORD!</span>' : '')
-      + unlocked.map((w) => `<span class="badge badge-world">🗺️ NEUE STRECKE: ${w.name.toUpperCase()}!<small>Wechsle in der Garage mit ▶</small></span>`).join('');
-    const p = r.parts;
+      + (r.medal ? `<span class="badge">${{ bronze: '🥉', silver: '🥈', gold: '🥇' }[r.medal]} Ziel ${fmt(r.target)} m geschafft</span>` : '');
+    const p = r.testDrive.parts;
     const rows = [
       ['Distanz', `${fmt(r.dist)} m`, `+${fmt(p.dist)}`],
       ['Max. Höhe', `${fmt(r.height)} m`, `+${fmt(p.height)}`],
@@ -45,19 +45,20 @@ export class Results {
     rows.push(['Schaden', `−${fmt(r.damageTaken)} 🔧 (${fmt(r.durability)}/${fmt(r.durabilityMax)})`, '']);
     q.rows.innerHTML = rows.map(([a, b, c], i) =>
       `<div class="res-row" style="animation-delay:${i * 0.12}s"><span>${a}</span><span class="res-sub">${b}</span><b>${c}</b></div>`).join('')
-      + (r.factor !== 1 ? `<div class="res-row"><span>Bonus</span><span></span><b>×${String(Math.round(r.factor * 100) / 100).replace('.', ',')}</b></div>` : '');
-    q.garage.classList.toggle('glow', canUpgrade || unlocked.length > 0);
-    q.tip.textContent = unlocked.length ? 'Eine neue Strecke wartet in der Garage!' : canUpgrade ? 'Du kannst ein Teil verbessern!' : '';
+      + (r.testDrive.factor !== 1 ? `<div class="res-row"><span>Bonus</span><span></span><b>×${String(Math.round(r.testDrive.factor * 100) / 100).replace('.', ',')}</b></div>` : '');
+    q.garage.classList.toggle('glow', canUpgrade);
+    q.tip.textContent = canUpgrade ? 'Du kannst ein Teil verbessern!' : '';
+    const total = r.testDrive.total;
     this.show(true);
 
     // Gesamtsumme hochzählen
     const start = performance.now();
     const RC = FX.resultCount;
-    const dur = Math.min(RC.max, RC.base + r.scrap * RC.perScrap);
+    const dur = Math.min(RC.max, RC.base + total * RC.perScrap);
     const tick = (now) => {
       const k = Math.min(1, (now - start) / dur);
       const e = 1 - Math.pow(1 - k, 3);
-      q.total.textContent = fmt(r.scrap * e);
+      q.total.textContent = fmt(total * e);
       if (k < 1) { this.onTick && Math.random() < 0.5 && this.onTick(); requestAnimationFrame(tick); }
     };
     requestAnimationFrame(tick);

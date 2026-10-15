@@ -5,7 +5,7 @@ import { PHYSICS as P, BASE_STATS as B } from '../www/src/data/balance.js';
 import { Vehicle, thrustFactor, substepsFor, countFlips } from '../www/src/physics/vehicle.js';
 import { Objects, segmentBox, segmentDist2 } from '../www/src/physics/objects.js';
 import { Track } from '../www/src/physics/track.js';
-import { WORLDS } from '../www/src/data/worlds.js';
+import { BIOMES as WORLDS } from '../www/src/data/biomes.js';
 import { baseStats } from '../www/src/items/statMods.js';
 import { Stage } from '../www/src/stage/stage.js';
 import { TAU, DEG } from '../www/src/core/math.js';

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RENDER, CAMERA } from '../data/balance.js';
+import { RENDER, CAMERA, FX } from '../data/balance.js';
 
 // Renderer, Szene, Licht und Kamera.
 export function createView(canvas) {
@@ -34,12 +34,25 @@ export function createView(canvas) {
   window.addEventListener('resize', resize);
   resize();
 
+  const skyEl = document.getElementById('sky');
+  let flashK = -1;
   function applyPalette(p) {
     scene.fog.color.set(p.fog);
     hemi.color.set(p.hemiSky);
     hemi.groundColor.set(p.hemiGround);
     sun.color.set(p.sun);
-    document.getElementById('sky').style.background = `linear-gradient(to bottom, ${p.skyTop} 0%, ${p.skyBottom} 75%, ${p.fog} 100%)`;
+    skyEl.style.background = `linear-gradient(to bottom, ${p.skyTop} 0%, ${p.skyBottom} 75%, ${p.fog} 100%)`;
+    flash(0);
+  }
+
+  // Blitz-Aufleuchten: k = 0 … 1 (Licht und Himmel heller)
+  function flash(k) {
+    k = Math.max(0, Math.min(1, k));
+    if (Math.abs(k - flashK) < 0.01) return;
+    flashK = k;
+    hemi.intensity = RENDER.hemiIntensity * (1 + k * (FX.flash.hemiMul - 1));
+    sun.intensity = RENDER.sunIntensity * (1 + k * 0.5);
+    skyEl.style.filter = k > 0.01 ? `brightness(${1 + k * 1.4}) saturate(${1 - k * 0.5})` : '';
   }
 
   // Sonne und Schatten folgen dem Auto (Render-Koordinaten, also schon relativ zum Ursprung)
@@ -61,5 +74,5 @@ export function createView(canvas) {
     scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
   }
 
-  return { renderer, scene, camera, hemi, sun, resize, applyPalette, followSun, setFog, setShadows };
+  return { renderer, scene, camera, hemi, sun, resize, applyPalette, followSun, setFog, setShadows, flash };
 }

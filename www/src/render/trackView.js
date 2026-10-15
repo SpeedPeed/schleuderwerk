@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { T_STEP, T_START } from '../physics/track.js';
+import { T_STEP, T_START, SURF } from '../physics/track.js';
 import { hash1, noise1 } from '../core/rng.js';
 import { RENDER } from '../data/balance.js';
 import { part, merge, flatMat } from './models.js';
@@ -10,15 +10,18 @@ const ROWS = [-18, -10, -4, -1.6, 1.6, 4.5];
 const FRONT_Z = 4.5;
 const _c = new THREE.Color();
 
+const PAD_COLORS = ['#7d8088', '#6f7279'];      // Stahlplatten unter Looping und Presse
+
 // Erzeugt die sichtbare Landschaft stückweise aus der Höhenlinie.
 // Jedes Stück baut seine Geometrie mit LOKALEN x-Koordinaten (relativ zum Stück-Anfang)
 // und wird per mesh.position.x = Anfang - origin.x platziert (Floating Origin).
+// Oberflächen (track.surf): Rampe, Schlucht (dunkler Grund, Felswände), Schlamm, Sand, Stahlplatte.
 export class TrackView {
-  constructor(scene, track, world) {
+  constructor(scene, track, biome) {
     this.scene = scene;
     this.track = track;
-    this.pal = world.palette;
-    this.decorWeights = world.decor;
+    this.pal = biome.palette;
+    this.decorWeights = biome.decor;
     this.chunks = new Map();
   }
 
@@ -98,7 +101,11 @@ export class TrackView {
       const xa = T_START + i * T_STEP;       // absolut (für Höhen und Rauschen)
       const xb = xa + T_STEP;
       const la = xa - x0, lb = xb - x0;      // lokal (für die Geometrie)
+      const sa = t.surf[i], sb = t.surf[i + 1];
       const isRamp = t.ramp[i] && t.ramp[i + 1];
+      const gapA = sa === SURF.gap, gapB = sb === SURF.gap;
+      const wall = gapA !== gapB;            // Schlucht-Kante: steile Felswand
+      const surf = sa === sb ? sa : (sa === SURF.normal ? sb : sa);
       // Bodenfläche (Reihen von hinten nach vorne)
       for (let r = 0; r < ROWS.length - 1; r++) {
         const z0 = ROWS[r], z1 = ROWS[r + 1];
@@ -107,16 +114,24 @@ export class TrackView {
         const c = [lb, this.topY(xb, z1), z1];
         const d = [lb, this.topY(xb, z0), z0];
         let color = pick(pal.grass, i * 13 + r);
-        if (isRamp) color = z0 === -1.6 ? pal.ramp[i % 2] : pal.dirt[r % pal.dirt.length];
-        quad(a, b, c, d, color, 0.12);
+        const strip = z0 >= -4 && z1 <= FRONT_Z;   // Fahrspur und Vordergrund
+        if (wall) color = pick(pal.gapWall, i * 3 + r);
+        else if (gapA && gapB) color = r % 2 ? pal.gapFloor : pick(pal.gapWall, i + r);
+        else if (isRamp) color = z0 === -1.6 ? pal.ramp[i % 2] : pal.dirt[r % pal.dirt.length];
+        else if (surf === SURF.mud && strip) color = pick(pal.mud, i * 7 + r);
+        else if (surf === SURF.sand && strip) color = pick(pal.sand, i * 5 + r);
+        else if (surf === SURF.pad && z0 >= -1.6 && z1 <= 1.6) color = PAD_COLORS[i % 2];
+        quad(a, b, c, d, color, wall || gapA ? 0.06 : 0.12);
       }
       // Vorderkante (Erdschnitt)
       const ya = this.topY(xa, FRONT_Z), yb = this.topY(xb, FRONT_Z);
-      quad([la, ya, FRONT_Z], [la, ya - 0.9, FRONT_Z], [lb, yb - 0.9, FRONT_Z], [lb, yb, FRONT_Z], pal.grassEdge, 0.05);
+      const bottom = Math.min(-60, Math.min(ya, yb) - 12);
+      const edgeCol = gapA || gapB ? pick(pal.gapWall, i) : surf === SURF.mud ? pal.mud[0] : pal.grassEdge;
+      quad([la, ya, FRONT_Z], [la, ya - 0.9, FRONT_Z], [lb, yb - 0.9, FRONT_Z], [lb, yb, FRONT_Z], edgeCol, 0.05);
       quad([la, ya - 0.9, FRONT_Z], [la, ya - 5, FRONT_Z], [lb, yb - 5, FRONT_Z], [lb, yb - 0.9, FRONT_Z], pick(pal.dirt, i), 0.1);
-      quad([la, ya - 5, FRONT_Z], [la, -60, FRONT_Z], [lb, -60, FRONT_Z], [lb, yb - 5, FRONT_Z], pal.deepDirt, 0.06);
-      // Hügel im Hintergrund
-      const hb = (x) => t.heightAt(x) * 0.5 + 4 + noise1(x / 23) * 10 + noise1(x / 7.5) * 2.5;
+      quad([la, ya - 5, FRONT_Z], [la, bottom, FRONT_Z], [lb, bottom, FRONT_Z], [lb, yb - 5, FRONT_Z], pal.deepDirt, 0.06);
+      // Hügel im Hintergrund (ohne Schlucht-Einschnitt)
+      const hb = (x) => t.refHeightAt(x) * 0.5 + 4 + noise1(x / 23) * 10 + noise1(x / 7.5) * 2.5;
       const yba = this.topY(xa, -18), ybb = this.topY(xb, -18);
       quad([la, hb(xa), -42], [la, yba, -18], [lb, ybb, -18], [lb, hb(xb), -42], pick(pal.hills, i * 7), 0.1);
     }
@@ -140,6 +155,8 @@ export class TrackView {
       const x = T_START + i * T_STEP + 1;    // absolut
       const lx = x - x0;                      // lokal
       if (x < 12 && x > -12) continue; // Platz für die Schleuder
+      const sf = this.track.surf[i];
+      if (sf === SURF.gap || this.track.surf[i + 1] === SURF.gap) continue;   // nichts in die Schlucht stellen
       // Strommasten geben ein Gefühl für Tempo
       if (i % 15 === 0) {
         const y = this.topY(x, -7);

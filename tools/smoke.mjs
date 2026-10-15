@@ -1,9 +1,13 @@
 // Playwright-Rauchtest für Schleuderwerk.
 // Startet einen eigenen HTTP-Server für www/, öffnet das Spiel im Hochformat (412×915, Touch) und spielt:
 //   Garage → Dev-Menü (7× auf die Versionsnummer) → alles freischalten → alle 9 Chassis ansehen (Bildschirmfotos)
-//   → ein Teil kaufen, verbessern, ausrüsten → Fähigkeiten wählen → Testfahrt (Abschuss per Halten/Loslassen,
-//   Neigen, Boost-Knopf + 2. Fähigkeit gleichzeitig per Multi-Touch, Leertaste) → Auswertung → zurück in die Garage
-//   → Weitflug (Floating Origin, Boden-Pfeil, Testfahrt per Dev-Menü beenden) → Strecke 2 mit Multi-Touch.
+//   → ein Teil kaufen, verbessern, ausrüsten → Fähigkeiten wählen → RUN STARTEN → Karte Akt 1 → Etappen-Intro
+//   → echte Etappe im Schrottplatz (Abschuss per Halten/Loslassen, Neigen, Boost-Knopf + 2. Fähigkeit per Multi-Touch,
+//   Leertaste) → Auswertung mit Medaillen/Abschleppen → Karte → Dev „Etappe überspringen“ (Gold/verfehlt/Bronze),
+//   „Zum Boss“ → Boss → Akt-Übergang → Akt 2: echte Etappe in der Glutwüste → Dev „Nächster Akt“ → echte Etappe in
+//   der Gewittersteppe (Regen, Pause-Menü „Run aufgeben“) → Niederlage per Dev (Haltbarkeit 1, verfehlt) → Run-Ende
+//   mit Meta-Belohnung → Garage → neuer Run, Seite neu laden → RUN FORTSETZEN → Dev-Testfahrten über alle
+//   Boss-Strecken mit Bildschirmfotos jedes Streckenbausteins → Weitflug (Floating Origin, Boden-Pfeil).
 // Geprüft wird außerdem:
 //   - keine Konsolenfehler / pageerrors
 //   - das Fahrzeug liegt in JEDEM 100-ms-Sample im Bild (window.__game.carScreen())
@@ -75,14 +79,6 @@ async function main() {
   const shot = async (name) => { await page.screenshot({ path: `${SHOTS}/${name}.png` }); log('Screenshot', `${SHOTS}/${name}.png`); };
   const center = (b) => [b.x + b.width / 2, b.y + b.height / 2];
   const waitState = (st, timeout = 8000) => page.waitForFunction((s) => window.__game && window.__game.state === s, st, { timeout });
-  // Testfahrt über das Pause-Menü beenden (falls sie nicht gerade von selbst endet)
-  const quitStage = async () => {
-    if ((await g(() => window.__game.state)) !== 'stage') return;
-    try { await page.tap('#hud [data-id=pause]', { timeout: 3000 }); } catch (_) { return; }
-    await sleep(300);
-    if (await page.locator('#pause').isVisible()) await page.tap('#pause [data-a=quit]', { timeout: 5000 });
-  };
-
   // Abschuss: halten (optional hochziehen), im grünen Bereich loslassen (bis zu 4 Versuche)
   async function launchByTouch(id0, drag = true) {
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -109,6 +105,7 @@ async function main() {
     return false;
   }
 
+  let preSamples = [];
   try {
     await page.goto(base, { waitUntil: 'load' });
     await waitState('garage', 15000);
@@ -127,7 +124,8 @@ async function main() {
     const g0 = await g(() => ({ chassis: window.__game.save.garage.chassis, slots: document.querySelectorAll('#garage .slot-row').length, version: window.__game.save.version }));
     check(g0.chassis === 'seifenkiste' && g0.slots === 7 && g0.version === 3, `Garage: Seifenkiste, 7 Teile-Slots, Spielstand v${g0.version}`);
     const startBox = await page.locator('#garage [data-id=start]').boundingBox();
-    check(!!startBox && startBox.y + startBox.height <= H && startBox.y > H * 0.7, 'TESTFAHRT-Knopf unten sichtbar');
+    const startTxt = await page.locator('#garage [data-id=start]').textContent();
+    check(!!startBox && startBox.y + startBox.height <= H && startBox.y > H * 0.7 && /RUN STARTEN/.test(startTxt), `Start-Knopf unten sichtbar („${startTxt}“)`);
 
     // ---------- Dev-Menü: 7× auf die Versionsnummer in den Einstellungen ----------
     await page.tap('#garage [data-id=settings]');
@@ -212,26 +210,99 @@ async function main() {
     check(!(await g(() => window.__game.garage.pickerOpen)), 'Auswahl schließt nach dem Ausrüsten');
     await shot('05-garage-fertig');
 
-    // ---------- Testfahrt ----------
-    const scrapBefore = await g(() => window.__game.save.meta.scrap);
-    await page.tap('#garage [data-id=start]');
-    await page.waitForFunction(() => window.__game.state === 'stage' && window.__game.stage.phase === 'aim', null, { timeout: 5000 });
-    const hudAb = await g(() => ({ n: [...document.querySelectorAll('#hud .ability-btn')].filter((b) => !b.classList.contains('hidden')).length, ab: window.__game.stage.abilities.slots.map((s) => s.def.id) }));
-    check(hudAb.ab.join() === 'boost,gyrokick', `Testfahrt mit Fähigkeiten ${hudAb.ab.join(', ')}`);
-    await sleep(300);
-    check(await launchByTouch(1), 'Abschuss per Halten/Loslassen');
-    await sleep(400);
-    check((await page.locator('#hud .ability-btn:not(.hidden)').count()) === 2, '2 Fähigkeits-Knöpfe sichtbar');
-    await shot('21-flug');
-
-    // Neigen: linke Hälfte = Nase hoch, rechte = Nase runter, beide = 0
-    // (gemessen in Spielzeit: Software-Rendering schafft nur wenige Bilder pro Sekunde)
+    // ---------- Run starten: Karte Akt 1 ----------
     const gameTime = () => g(() => window.__game.stage.time);
     const waitGame = async (dt, maxMs = 4000) => {
       const t1 = (await gameTime()) + dt;
       const ts = Date.now();
       while (Date.now() - ts < maxMs && (await gameTime()) < t1) await sleep(20);
     };
+    const openDev = async () => {
+      if (await g(() => window.__game.devMenu.isOpen)) return;
+      await g(() => window.__game.devMenu.open());
+      await sleep(150);
+    };
+    const closeDev = async () => { await g(() => window.__game.devMenu.close()); await sleep(100); };
+    const devTap = async (a) => {
+      await openDev();
+      await page.locator(`#devmenu [data-a=${a}]`).scrollIntoViewIfNeeded();
+      await page.tap(`#devmenu [data-a=${a}]`);
+      await sleep(250);
+      const msg = await page.locator('#devmenu [data-id=msg]').textContent();
+      return msg;
+    };
+    const runUiOpen = () => g(() => window.__game.runScreens.open);
+    // Ergebnis-Bildschirm einer Run-Etappe abwarten und weiter (Weiter / Karte / Run beenden)
+    const waitRunResult = async (timeout = 15000) => {
+      await page.waitForFunction(() => window.__game.state === 'results' && window.__game.runScreens.kind === 'result', null, { timeout });
+      await sleep(1700);
+    };
+    // Dev „Etappe überspringen“, bis eine Etappe dran war (Tankstellen/Platzhalter werden dabei nur besucht)
+    const devSkip = async (a) => {
+      for (let i = 0; i < 6; i++) {
+        await devTap(a);
+        if ((await g(() => window.__game.state)) === 'results') break;
+      }
+      await waitRunResult();
+    };
+    const pressRun = async (a) => { await page.tap(`#runui [data-a=${a}]`); await sleep(350); };
+    // Knoten auf der Karte antippen → Intro → LOS
+    const enterStageNode = async (shotName) => {
+      const reach = await g(() => window.__game.reachable());
+      const node = reach.find((n) => ['stage', 'elite', 'boss'].includes(n.type)) || reach[0];
+      await page.locator(`.mnode[data-node="${node.id}"]`).scrollIntoViewIfNeeded();
+      await page.tap(`.mnode[data-node="${node.id}"]`);
+      await sleep(400);
+      if (shotName) await shot(shotName);
+      const kind = await g(() => window.__game.runScreens.kind);
+      if (kind !== 'intro') return { node, kind };
+      await page.tap('#runui [data-a=go]');
+      await page.waitForFunction(() => window.__game.state === 'stage' && window.__game.stage.phase === 'aim', null, { timeout: 5000 });
+      await sleep(300);
+      return { node, kind };
+    };
+    // Etappe bis zum Ende fahren (Boost in der Luft), notfalls nach maxMs per Dev beenden
+    const driveToEnd = async (maxMs, shotName, shotAt = 2500) => {
+      const t0 = Date.now();
+      let shotDone = !shotName;
+      let maxX = 0;
+      while (Date.now() - t0 < maxMs) {
+        const st = await g(() => ({ state: window.__game.state, x: window.__game.stage ? window.__game.stage.vehicle.x : 0 }));
+        maxX = Math.max(maxX, st.x);
+        if (st.state !== 'stage') break;
+        if (!shotDone && Date.now() - t0 > shotAt) { await shot(shotName); shotDone = true; }
+        await sleep(250);
+      }
+      if ((await g(() => window.__game.state)) === 'stage') {
+        log('Etappe dauert zu lange – per Dev-Menü beenden');
+        await devTap('end');
+        await closeDev();
+      }
+      return maxX;
+    };
+
+    await page.tap('#garage [data-id=start]');
+    await waitState('map', 5000);
+    await sleep(500);
+    await shot('10-karte-akt1');
+    const m0 = await g(() => ({ run: !!window.__game.run, act: window.__game.run.act, biome: window.__game.run.biome, nodes: document.querySelectorAll('#map .mnode').length, reach: document.querySelectorAll('#map .mnode.reach').length, boss: document.querySelectorAll('#map .mnode.t-boss').length }));
+    check(m0.run && m0.act === 1 && m0.biome === 'schrottplatz', `Run gestartet: Akt ${m0.act}, ${m0.biome}`);
+    check(m0.nodes >= 13 && m0.boss === 1 && m0.reach >= 2, `Karte: ${m0.nodes} Knoten, ${m0.reach} erreichbar, Boss oben`);
+    const ms0 = await g(() => window.__game.save.meta.milestones);
+    check('firstRunStart' in ms0, 'Meilenstein „Erster Run gestartet“');
+
+    // ---------- echte Etappe im Schrottplatz ----------
+    const e1 = await enterStageNode('11-etappen-intro');
+    check(e1.kind === 'intro', `Etappen-Intro (${e1.node.type})`);
+    const hudAb = await g(() => ({ goal: !document.querySelector('#hud [data-id=goal]').classList.contains('hidden'), ab: window.__game.stage.abilities.slots.map((s) => s.def.id), flags: window.__game.stage.medalList.length, target: window.__game.stage.target }));
+    check(hudAb.ab.join() === 'boost,gyrokick', `Etappe mit Fähigkeiten ${hudAb.ab.join(', ')}`);
+    check(hudAb.goal && hudAb.target > 0, `Zielbalken sichtbar (Ziel ${hudAb.target} m, ${hudAb.flags} Medaillen-Marken)`);
+    check(await launchByTouch(1), 'Abschuss per Halten/Loslassen');
+    await sleep(400);
+    check((await page.locator('#hud .ability-btn:not(.hidden)').count()) === 2, '2 Fähigkeits-Knöpfe sichtbar');
+    await shot('21-flug');
+
+    // Neigen: linke Hälfte = Nase hoch, rechte = Nase runter, beide = 0 (gemessen in Spielzeit)
     const rot0 = await g(() => window.__game.stage.vehicle.rotAccum);
     await touch('touchStart', [[80, 420, 10]]);
     await sleep(120);
@@ -273,8 +344,6 @@ async function main() {
     check(boosting.b || boosting.phase !== 'fly', `Boost-Knopf halten → Boost aktiv (${boosting.b})`);
     check(multi.uses === 1 && (multi.b || multi.phase !== 'fly') && multi.tilt === 0, `Multi-Touch: Boost gehalten + Gyro-Kick getippt (Einsätze ${multi.uses}, Neigen unbeeinflusst: tilt ${multi.tilt})`);
     check(fuelAfter < fuelBefore, `Boost verbraucht Treibstoff (${fuelBefore.toFixed(0)} → ${fuelAfter.toFixed(0)})`);
-    const hudRes = await g(() => ({ fuel: document.querySelector('#hud [data-id=fuel]').style.width, dur: document.querySelector('#hud [data-id=durnum]').textContent }));
-    check(parseFloat(hudRes.fuel) < 100 && hudRes.dur !== '', `HUD-Leisten (Treibstoff ${hudRes.fuel}, Haltbarkeit ${hudRes.dur})`);
     await page.keyboard.down('Space');
     await waitGame(0.1);
     const spaceBoost = await g(() => window.__game.stage.vehicle.boosting || window.__game.stage.vehicle.fuel <= 0 || window.__game.stage.phase !== 'fly');
@@ -289,39 +358,177 @@ async function main() {
     const evc = await g(() => window.__game.stage.eventCounts);
     check(evc.launch === 1 && evc.abilityUse >= 2 && evc.boost >= 1, `Ereignisse geschrieben (${Object.entries(evc).map(([k, v]) => `${k} ${v}`).join(', ')})`);
 
-    // ---------- auf die Auswertung warten ----------
-    let t0 = Date.now();
-    let maxX = 0;
-    while (Date.now() - t0 < 90000) {
-      const s = await g(() => ({ state: window.__game.state, x: window.__game.stage ? window.__game.stage.vehicle.x : 0 }));
-      maxX = Math.max(maxX, s.x);
-      if (s.state === 'results') break;
-      await sleep(250);
+    const dist1 = await driveToEnd(90000);
+    await waitRunResult();
+    await shot('23-ergebnis');
+    const r1 = await g(() => ({ medals: document.querySelectorAll('#runui .rm-slot').length, got: document.querySelectorAll('#runui .rm-slot.got').length, rows: document.querySelectorAll('#runui .res-row').length, tow: !!document.querySelector('#runui .rr-tow'), run: window.__game.run, hist: window.__game.run.history.slice(-1)[0] }));
+    check(r1.medals === 3 && r1.rows >= 3, `Ergebnis mit Medaillen-Plätzen (${r1.got}/3 erreicht, ${Math.round(dist1)} m, ${r1.hist.medal || 'verfehlt'})`);
+    check(r1.hist.medal ? !r1.tow : r1.tow, `Abschlepp-Hinweis passt zum Ergebnis (${r1.tow ? 'abgeschleppt' : 'geschafft'})`);
+    if (r1.tow) {
+      check(await page.locator('#runui [data-a=retry]').isVisible(), 'Neuversuch-Knopf');
+      await pressRun('map');
+    } else await pressRun('next');
+    await waitState('map', 5000);
+    check(true, 'zurück auf der Karte');
+
+    // ---------- Dev: Etappen überspringen bis zum Akt-1-Boss ----------
+    await devSkip('skipGold');
+    const sk = await g(() => ({ got: document.querySelectorAll('#runui .rm-slot.got').length, hist: window.__game.run.history.slice(-1)[0] }));
+    check(sk.hist.medal === 'gold' && sk.got === 3, `Dev: Etappe übersprungen mit Gold (${sk.got} Medaillen leuchten)`);
+    await shot('24-ergebnis-gold');
+    await pressRun('next');
+    await waitState('map', 5000);
+    await devSkip('skipMiss');
+    const towed = await g(() => ({ tow: !!document.querySelector('#runui .rr-tow'), cur: window.__game.run.current }));
+    check(towed.tow && towed.cur && towed.cur.attempts === 1, 'Dev: verfehlt → Abschleppen + Neuversuch');
+    await shot('25-abschleppen');
+    await pressRun('map');
+    await waitState('map', 5000);
+    await devSkip('skipBronze');
+    await pressRun('next');
+    await waitState('map', 5000);
+    const bossMsg = await devTap('boss');
+    await closeDev();
+    await g(() => window.__game.openMap());
+    await sleep(300);
+    const reachBoss = await g(() => window.__game.reachable());
+    check(reachBoss.length === 1 && reachBoss[0].type === 'boss', `Dev: ${bossMsg}`);
+    await page.tap(`.mnode[data-node="${reachBoss[0].id}"]`);
+    await sleep(400);
+    await shot('26-boss-intro');
+    await page.tap('#runui [data-a=back]');
+    await sleep(200);
+    await devSkip('skipGold');
+    await shot('27-boss-besiegt');
+    await pressRun('next');
+    await page.waitForFunction(() => window.__game.runScreens.kind === 'act', null, { timeout: 5000 });
+    await sleep(400);
+    await shot('28-akt-uebergang');
+    const a2 = await g(() => ({ act: window.__game.run.act, biome: window.__game.run.biome, bp: window.__game.run.earned.blueprints }));
+    check(a2.act === 2 && a2.biome === 'gluewueste' && a2.bp >= 3, `Akt-Übergang → Akt 2 Glutwüste (📘 ${a2.bp} im Run)`);
+    await pressRun('next');
+    await waitState('map', 5000);
+    await sleep(400);
+    await shot('30-karte-akt2');
+
+    // ---------- echte Etappe in der Glutwüste ----------
+    await enterStageNode();
+    check((await g(() => window.__game.biome.id)) === 'gluewueste', 'Etappe in der Glutwüste');
+    check(await launchByTouch(40, false), 'Abschuss in der Glutwüste');
+    const bb = await page.locator('#hud [data-id=ab0]').boundingBox();
+    await touch('touchStart', [[60, 500, 50], [...center(bb), 51]]);
+    await sleep(1000);
+    const m2 = await g(() => ({ tilt: window.__game.input.tilt, held: window.__game.input.abilityHeld(0), heat: window.__game.stage.vehicle.heat, amb: window.__game.stage.env.heat }));
+    await touch('touchEnd', []);
+    check(m2.tilt === 1 && m2.held && m2.amb >= 4, `Multi-Touch: links neigen + Boost-Knopf gleichzeitig (Hitze ${m2.heat.toFixed(0)}, Umgebung +${m2.amb}/s)`);
+    await driveToEnd(60000, '31-gluewueste', 600);
+    await waitRunResult();
+    await shot('32-ergebnis-gluewueste');
+    if (await page.locator('#runui [data-a=next]').count()) await pressRun('next'); else await pressRun('map');
+    await waitState('map', 5000);
+
+    // ---------- Akt 3: echte Etappe in der Gewittersteppe ----------
+    const actMsg = await devTap('act');
+    await closeDev();
+    await g(() => window.__game.openMap());
+    await sleep(400);
+    await shot('40-karte-akt3');
+    check((await g(() => window.__game.run.biome)) === 'gewittersteppe', `Dev: ${actMsg}`);
+    await enterStageNode();
+    check(await launchByTouch(60, false), 'Abschuss in der Gewittersteppe');
+    const rainOn = await g(() => window.__game.stage.weather.rain);
+    check(rainOn, 'Regen in der Gewittersteppe');
+    await page.tap('#hud [data-id=pause]');
+    await page.waitForFunction(() => window.__game.paused, null, { timeout: 5000 });
+    const quitTxt = await page.locator('#pause [data-a=quit]').textContent();
+    check(/Run aufgeben/.test(quitTxt), `Pause-Menü im Run: „${quitTxt}“`);
+    await page.tap('#pause [data-a=resume]');
+    await sleep(200);
+    await driveToEnd(60000, '41-gewittersteppe', 1200);
+    await waitRunResult();
+    await shot('42-ergebnis-gewitter');
+    if (await page.locator('#runui [data-a=next]').count()) await pressRun('next'); else await pressRun('map');
+    await waitState('map', 5000);
+
+    // ---------- Niederlage: Haltbarkeit 1, Etappe verfehlt → Run-Ende ----------
+    const meta0 = await g(() => ({ ...window.__game.save.meta }));
+    await openDev();
+    await page.locator('#devmenu [data-id=dur]').fill('1');
+    await page.tap('#devmenu [data-a=setdur]');
+    await sleep(200);
+    check((await g(() => window.__game.run.durability)) === 1, 'Dev: Haltbarkeit gesetzt');
+    await devSkip('skipMiss');
+    check(await page.locator('#runui [data-a=end]').isVisible(), 'Niederlage: „Run beenden“');
+    await pressRun('end');
+    await page.waitForFunction(() => window.__game.state === 'runEnd', null, { timeout: 5000 });
+    await sleep(1800);
+    await shot('50-run-ende');
+    const end = await g(() => ({ run: window.__game.run, meta: window.__game.save.meta, rows: document.querySelectorAll('#runui .res-row').length }));
+    check(end.run === null && end.meta.scrap > meta0.scrap && end.meta.blueprints > meta0.blueprints && end.meta.cores >= meta0.cores, `Run-Ende: Meta-Belohnung (⚙ ${meta0.scrap} → ${end.meta.scrap}, 📘 ${meta0.blueprints} → ${end.meta.blueprints})`);
+    check('firstRunEnd' in end.meta.milestones && 'firstBossAct1' in end.meta.milestones, 'Meilensteine firstRunEnd, firstBossAct1');
+    await pressRun('garage');
+    await waitState('garage', 5000);
+    await sleep(300);
+    const st2 = await page.locator('#garage [data-id=start]').textContent();
+    check(/RUN STARTEN/.test(st2), 'zurück in der Garage, neuer Run möglich');
+
+    // ---------- Fortsetzen nach Neustart ----------
+    await page.tap('#garage [data-id=start]');
+    await waitState('map', 5000);
+    const runSeed = await g(() => window.__game.run.seed);
+    preSamples = await g(() => window.__samples);
+    await page.reload({ waitUntil: 'load' });
+    await waitState('garage', 15000);
+    await sleep(600);
+    const cont = await g(() => ({ seed: window.__game.run && window.__game.run.seed, txt: document.querySelector('#garage [data-id=start]').textContent, giveup: !document.querySelector('#garage [data-id=giveup]').classList.contains('hidden') }));
+    check(cont.seed === runSeed && /FORTSETZEN/.test(cont.txt) && cont.giveup, 'Run nach Neustart fortsetzbar (RUN FORTSETZEN + Aufgeben)');
+    await shot('51-garage-fortsetzen');
+    await g(() => {
+      window.__samples = [];
+      setInterval(() => {
+        const gm = window.__game;
+        const s = gm.carScreen();
+        window.__samples.push({ state: gm.state, phase: gm.stage ? gm.stage.phase : null, x: s.x, y: s.y, w: innerWidth, h: innerHeight });
+      }, 100);
+    });
+
+    // ---------- Streckenbausteine: Dev-Testfahrten über die Boss-Strecken ----------
+    const seenTypes = new Set();
+    const bosses = [['schrottplatz', 'schrottpresse'], ['schrottplatz', 'magnetkran'], ['gluewueste', 'grosser_graben'], ['gluewueste', 'gluedunen'], ['gewittersteppe', 'auge_des_sturms'], ['gewittersteppe', 'blitzallee']];
+    for (const [bio, boss] of bosses) {
+      await g(([b, id]) => window.__game.startTestDrive(b, { kind: 'boss', bossId: id, seed: 5 }), [bio, boss]);
+      await page.waitForFunction(() => window.__game.state === 'stage', null, { timeout: 5000 });
+      await g(() => window.__game.stage.launchNow(0.6, 30));
+      await sleep(300);
+      const feats = await g(() => window.__game.track.features.map((f) => ({ type: f.type, x0: f.x0, x1: f.x1, lx: f.lx, edge: f.edge, cx: f.cx })));
+      for (const f of feats) {
+        if (seenTypes.has(f.type)) continue;
+        seenTypes.add(f.type);
+        await g((ff) => {
+          const st = window.__game.stage, v = st.vehicle, tr = window.__game.track;
+          const x = ff.type === 'loop' ? ff.lx - 25 : ff.type === 'gap' ? ff.edge - 14 : ff.type === 'crusher' ? ff.cx - 14 : (ff.x0 + ff.x1) / 2 - 8;
+          v.x = x; v.maxX = Math.max(v.maxX, x);
+          const onGround = ['loop', 'gap', 'crusher', 'mud', 'sand'].includes(ff.type);
+          if (onGround) { v.onGround = true; v.loop = null; v.y = tr.heightAt(x) + 0.9; v.s = ff.type === 'loop' ? 22 : 16; v.angle = Math.atan(tr.slopeAt(x)); }
+          else { v.onGround = false; v.loop = null; v.y = tr.heightAt(x) + 7; v.vx = 9; v.vy = 2; v.angle = 0; v.w = 0; }
+          v.fuel = Math.max(v.fuel, 60);
+          v.durability = v.stats.durabilityMax;
+        }, f);
+        await sleep(f.type === 'lightning' ? 1500 : f.type === 'loop' ? 900 : 700);
+        await shot(`f-${f.type}`);
+      }
+      await devTap('end');
+      await closeDev();
+      await page.waitForFunction(() => window.__game.state === 'results', null, { timeout: 10000 });
+      await sleep(900);
     }
-    if ((await g(() => window.__game.state)) !== 'results') {
-      log('Testfahrt dauert zu lange – über das Pause-Menü beenden');
-      await quitStage();
-    }
-    await page.waitForFunction(() => window.__game.state === 'results' && !document.getElementById('results').classList.contains('hidden'), null, { timeout: 10000 });
-    check(true, `Auswertung erscheint (Strecke ≈ ${Math.round(maxX)} m)`);
-    await sleep(1600);
-    await shot('23-auswertung');
-    const res = await g(() => ({ scrap: window.__game.save.meta.scrap, ms: window.__game.save.meta.milestones, rows: document.querySelectorAll('#results .res-row').length }));
-    check(res.scrap > scrapBefore, `Schrott-Belohnung gutgeschrieben (⚙ ${scrapBefore} → ${res.scrap})`);
-    check(res.ms.firstTestDrive !== undefined && res.ms.firstPartUpgrade !== undefined, `Meilensteine gestempelt (${Object.keys(res.ms).join(', ')})`);
-    check(res.rows >= 5, 'Auswertung zeigt Distanz, Höhe, Tricks, Schrauben, Schaden');
+    check(seenTypes.size >= 10, `Bausteine gesehen: ${[...seenTypes].join(', ')}`);
+    await shot('60-testfahrt-auswertung');
     await page.tap('#results [data-id=garage]');
     await waitState('garage', 5000);
-    await sleep(400);
-    check(true, 'zurück in der Garage');
 
-    // ---------- Weitflug: Floating Origin, Boden-Pfeil, Ende über das Dev-Menü ----------
-    await g(() => {
-      const s = window.__game.save;
-      for (const id of Object.values(s.garage.parts)) s.garage.partLevels[id] = 20;
-      window.__game.openGarage();
-    });
-    await page.tap('#garage [data-id=start]');
+    // ---------- Weitflug: Floating Origin, Boden-Pfeil (Dev-Testfahrt) ----------
+    await g(() => window.__game.startTestDrive('schrottplatz'));
     await page.waitForFunction(() => window.__game.state === 'stage' && window.__game.stage.phase === 'aim', null, { timeout: 5000 });
     await sleep(300);
     const k0 = await g(() => window.__game.stage.launch.angle);
@@ -343,10 +550,6 @@ async function main() {
       keyFired = (await g(() => window.__game.stage.phase)) === 'fly';
     }
     check(keyFired, 'Abschuss per Leertaste halten/loslassen');
-    await page.keyboard.down('Space');
-    await sleep(2000);
-    await page.keyboard.up('Space');
-    await shot('30-langstrecke');
     await g(() => {
       const v = window.__game.stage.vehicle, tr = window.__game.track;
       v.x += 6000; v.y = tr.heightAt(v.x) + 600; v.vx = 70; v.vy = 5; v.onGround = false;
@@ -359,53 +562,23 @@ async function main() {
     }));
     check(far.origin > 5000 && Math.abs(far.x - far.origin) < 1000, `Floating Origin springt mit (Fahrzeug ${far.x.toFixed(0)} m, Ursprung ${far.origin} m)`);
     check(far.ind && /^Boden ↓ [\d.]+ m$/.test(far.text), `Boden-Pfeil sichtbar („${far.text}“)`);
-    await shot('31-weit-und-hoch');
-    // Testfahrt sofort beenden über das Dev-Menü (noch hoch in der Luft – eine Landung aus 600 m wäre Totalschaden)
+    await shot('61-weit-und-hoch');
     await page.tap('#hud [data-id=pause]');
     await page.waitForFunction(() => window.__game.paused, null, { timeout: 5000 });
-    check(true, 'Pause-Menü während der Testfahrt');
-    await page.tap('#pause [data-a=settings]');
-    await sleep(250);
-    for (let i = 0; i < 7; i++) { await page.tap('#settings [data-id=version]'); await sleep(60); }
-    await page.waitForFunction(() => window.__game.devMenu.isOpen, null, { timeout: 5000 });
-    await page.locator('#devmenu [data-a=end]').scrollIntoViewIfNeeded();
-    await page.tap('#devmenu [data-a=end]');
+    const quit2 = await page.locator('#pause [data-a=quit]').textContent();
+    check(/Testfahrt beenden/.test(quit2), `Pause-Menü der Testfahrt: „${quit2}“`);
+    await page.tap('#pause [data-a=quit]');
     await page.waitForFunction(() => window.__game.state === 'results', null, { timeout: 10000 });
-    check(true, 'Testfahrt per Dev-Menü beendet');
-    await sleep(1500);
-    await shot('32-auswertung-weit');
+    await sleep(1200);
     await page.tap('#results [data-id=garage]');
     await waitState('garage', 5000);
     await sleep(500);
     check((await g(() => window.__game.origin)) === 0, 'Render-Ursprung in der Garage wieder bei 0');
 
-    // ---------- Strecke 2 (durch den Weitflug freigeschaltet), Multi-Touch Neigen + Boost ----------
-    await page.locator('#garage [data-id=wnext]').scrollIntoViewIfNeeded();
-    await page.tap('#garage [data-id=wnext]');
-    await sleep(500);
-    const worldId = await g(() => window.__game.save.worlds.current);
-    check(worldId === 'desert', `Streckenwechsel auf die Glutwüste (${worldId})`);
-    await page.tap('#garage [data-id=start]');
-    await page.waitForFunction(() => window.__game.state === 'stage' && window.__game.stage.phase === 'aim', null, { timeout: 5000 });
-    check(await launchByTouch(40, false), 'Abschuss auf Strecke 2');
-    const bb = await page.locator('#hud [data-id=ab0]').boundingBox();
-    await touch('touchStart', [[60, 500, 50], [...center(bb), 51]]);
-    await sleep(1000);
-    const m2 = await g(() => ({ tilt: window.__game.input.tilt, held: window.__game.input.abilityHeld(0), heat: window.__game.stage.vehicle.heat }));
-    await touch('touchEnd', []);
-    check(m2.tilt === 1 && m2.held, `Multi-Touch: links neigen + Boost-Knopf gleichzeitig (tilt ${m2.tilt}, Boost ${m2.held}, Hitze ${m2.heat.toFixed(0)})`);
-    await sleep(1200);
-    await shot('40-strecke2');
-    await quitStage();
-    await page.waitForFunction(() => window.__game.state === 'results', null, { timeout: 15000 });
-    await sleep(1200);
-    await page.tap('#results [data-id=garage]');
-    await waitState('garage', 5000);
-
     // ---------- Auswertung der 100-ms-Samples ----------
     const fps = await g(() => new Promise((res) => { let n = 0; const t = performance.now(); const f = () => { n++; if (performance.now() - t < 1000) requestAnimationFrame(f); else res(n); }; requestAnimationFrame(f); }));
     log(`Bildrate (Software-Rendering, Garage): ~${fps} fps`);
-    const samples = await g(() => window.__samples);
+    const samples = [...preSamples, ...(await g(() => window.__samples))];
     const inGame = samples.filter((s) => s.state !== 'garage');
     const outside = samples.filter((s) => !(s.x >= 0 && s.x <= s.w && s.y >= 0 && s.y <= s.h));
     log(`${samples.length} Samples (${inGame.length} in der Etappe), x ${Math.min(...inGame.map((s) => s.x)).toFixed(0)}…${Math.max(...inGame.map((s) => s.x)).toFixed(0)}, y ${Math.min(...inGame.map((s) => s.y)).toFixed(0)}…${Math.max(...inGame.map((s) => s.y)).toFixed(0)}`);

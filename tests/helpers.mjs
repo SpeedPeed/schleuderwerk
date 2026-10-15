@@ -1,7 +1,7 @@
 // Gemeinsame Test-Helfer (keine Tests – tests/index.js lädt nur *.test.mjs)
 import { Stage } from '../www/src/stage/stage.js';
 import { Track } from '../www/src/physics/track.js';
-import { WORLDS } from '../www/src/data/worlds.js';
+import { BIOMES as WORLDS } from '../www/src/data/biomes.js';
 import { buildLoadout } from '../www/src/garage/loadout.js';
 import { defaultSave } from '../www/src/save/save.js';
 import { unlockAll } from '../www/src/garage/garage.js';

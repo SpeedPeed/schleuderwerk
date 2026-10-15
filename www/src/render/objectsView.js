@@ -13,7 +13,49 @@ function instanced(geo, mat, max) {
   return m;
 }
 
-// Zeichnet Schrauben, Schrott-Pickups, Ringe und Hindernisse als Instanzen (je Typ ein Draw Call).
+// Pickup-Modelle je Art (Kanister, Kühlpack, Reparaturset, Schrott, Item-Kiste, Blaupause)
+function pickupGeos() {
+  return {
+    fuel: merge([
+      part('box', '#d63a2f', { sx: 0.8, sy: 1.0, sz: 0.45 }, 0.1),
+      part('box', '#a82a22', { y: 0.58, x: 0.18, sx: 0.36, sy: 0.18, sz: 0.3 }),
+      part('cyl6', '#e8c83a', { y: 0.62, x: -0.2, sx: 0.1, sz: 0.1, sy: 0.25 }),
+      part('box', '#f2f2f2', { z: 0.24, sx: 0.5, sy: 0.12, sz: 0.02 }),
+    ]),
+    cool: merge([
+      part('box', '#e8f6ff', { sx: 0.95, sy: 0.6, sz: 0.55 }, 0.06),
+      part('box', '#3fa9e0', { sx: 0.97, sy: 0.16, sz: 0.57 }),
+      part('box', '#ffffff', { y: 0.36, sx: 0.4, sy: 0.12, sz: 0.2 }),
+      part('ico', '#bfe8ff', { x: 0.55, y: 0.25, s: 0.18 }),
+    ]),
+    repair: merge([
+      part('box', '#2f9e55', { sx: 0.9, sy: 0.55, sz: 0.5 }, 0.08),
+      part('box', '#ffffff', { z: 0.26, sx: 0.42, sy: 0.12, sz: 0.02 }),
+      part('box', '#ffffff', { z: 0.26, sx: 0.12, sy: 0.4, sz: 0.02 }),
+      part('box', '#1f6e3b', { y: 0.33, sx: 0.4, sy: 0.1, sz: 0.12 }),
+    ]),
+    scrap: merge([
+      part('box', '#9a4a2e', { sx: 0.7, sy: 0.4, sz: 0.6, ry: 0.3 }, 0.2),
+      part('box', '#5b6e7a', { y: 0.3, x: 0.1, sx: 0.5, sy: 0.25, sz: 0.5, ry: -0.4, rz: 0.2 }, 0.2),
+      part('cyl8', '#a36a2c', { y: 0.1, x: -0.3, rx: Math.PI / 2, sx: 0.2, sz: 0.2, sy: 0.4 }),
+    ]),
+    crate: merge([
+      part('box', '#b07a3c', { s: 1.0 }, 0.1),
+      part('box', '#7a5228', { sx: 1.04, sy: 0.14, sz: 1.04 }),
+      part('box', '#7a5228', { sx: 0.14, sy: 1.04, sz: 1.04 }),
+      part('box', '#ffd23f', { z: 0.53, sx: 0.32, sy: 0.32, sz: 0.02 }),
+    ]),
+    blueprint: merge([
+      part('cyl8', '#3b74d6', { rz: Math.PI / 2, sx: 0.28, sz: 0.28, sy: 1.1 }, 0.05),
+      part('box', '#e8f0ff', { y: -0.3, sx: 1.0, sy: 0.5, sz: 0.02 }),
+      part('box', '#3b74d6', { y: -0.3, sx: 0.7, sy: 0.04, sz: 0.03 }),
+      part('box', '#3b74d6', { y: -0.4, sx: 0.5, sy: 0.04, sz: 0.03 }),
+    ]),
+  };
+}
+export const PICKUP_KINDS = ['fuel', 'cool', 'repair', 'scrap', 'crate', 'blueprint'];
+
+// Zeichnet Schrauben, Pickups, Ringe, Hindernisse und Aufwind-Säulen als Instanzen (je Typ ein Draw Call).
 export class ObjectsView {
   constructor(scene) {
     // Schraube: Sechskantkopf + Schaft mit Gewinde-Ringen (Run-Währung 🔩)
@@ -27,12 +69,11 @@ export class ObjectsView {
     const boltMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#3a4450' });
     this.bolts = instanced(boltGeo, boltMat, 600);
 
-    // Schrott-Pickup (Mülltonne): kleiner Haufen Blech
-    this.scraps = instanced(merge([
-      part('box', '#9a4a2e', { sx: 0.7, sy: 0.4, sz: 0.6, ry: 0.3 }, 0.2),
-      part('box', '#5b6e7a', { y: 0.3, x: 0.1, sx: 0.5, sy: 0.25, sz: 0.5, ry: -0.4, rz: 0.2 }, 0.2),
-      part('cyl8', '#a36a2c', { y: 0.1, x: -0.3, rx: Math.PI / 2, sx: 0.2, sz: 0.2, sy: 0.4 }),
-    ]), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#3a2010' }), 30);
+    // Pickups: je Art ein instanziertes Modell
+    const pg = pickupGeos();
+    const pmat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#2a2018' });
+    this.pickups = {};
+    for (const k of PICKUP_KINDS) this.pickups[k] = instanced(pg[k], pmat, 40);
 
     const ringGeo = merge([part(new THREE.TorusGeometry(OBJ.ringRadius, 0.3, 5, 18).toNonIndexed(), '#33e6ff')]);
     const ringMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, emissive: '#0b7a96' });
@@ -46,7 +87,8 @@ export class ObjectsView {
     }
     this.tires = instanced(merge(tireParts), flatMatInstanced, 30);
 
-    const s = OBJ.scrap;
+    // Schrottberg-Modell in voller Höhe (OBJ.scrapModelH), wird je Hindernis auf dessen Höhe skaliert
+    const s = { w: OBJ.scrap.w };
     this.scrap = instanced(merge([
       part('box', '#9a4a2e', { y: 0.8, sx: s.w, sy: 1.6, sz: 2.2, ry: 0.1 }, 0.2),
       part('box', '#5b6e7a', { y: 2.3, sx: s.w * 0.9, sy: 1.4, sz: 2.0, ry: -0.15, rz: 0.05 }, 0.2),
@@ -73,7 +115,8 @@ export class ObjectsView {
 
     this.obstacleMeshes = { tires: this.tires, scrap: this.scrap, cactus: this.cactus, pillar: this.pillar };
 
-    for (const m of [this.bolts, this.scraps, this.rings, ...Object.values(this.obstacleMeshes)]) {
+    this.modelH = { tires: OBJ.tires.h, scrap: OBJ.scrapModelH, cactus: OBJ.cactus.h, pillar: OBJ.pillar.h };
+    for (const m of [this.bolts, this.rings, ...Object.values(this.pickups), ...Object.values(this.obstacleMeshes)]) {
       m.castShadow = true;
       scene.add(m);
     }
@@ -103,19 +146,24 @@ export class ObjectsView {
     this.bolts.count = n;
     this.bolts.instanceMatrix.needsUpdate = true;
 
-    n = 0;
+    const pc = this._pc || (this._pc = {});
+    for (const k of PICKUP_KINDS) pc[k] = 0;
     if (objects) {
-      for (const c of objects.scraps) {
-        if (!c.alive || c.x < minX || c.x > maxX || n >= 30) continue;
-        _o.position.set(c.x - originX, c.y + Math.sin(time * 3 + c.x) * 0.1, 0);
-        _o.rotation.set(0, time * 1.5 + c.x, 0);
-        _o.scale.setScalar(1);
+      for (const c of objects.pickups) {
+        if (!c.alive || c.x < minX || c.x > maxX) continue;
+        const mesh = this.pickups[c.kind];
+        if (!mesh || pc[c.kind] >= 40) continue;
+        _o.position.set(c.x - originX, c.y + Math.sin(time * 3 + c.x) * 0.15, 0);
+        _o.rotation.set(0.2, time * 1.6 + c.x, 0);
+        _o.scale.setScalar(c.kind === 'scrap' ? 1.1 : 1.25);
         _o.updateMatrix();
-        this.scraps.setMatrixAt(n++, _o.matrix);
+        mesh.setMatrixAt(pc[c.kind]++, _o.matrix);
       }
     }
-    this.scraps.count = n;
-    this.scraps.instanceMatrix.needsUpdate = true;
+    for (const k of PICKUP_KINDS) {
+      this.pickups[k].count = pc[k];
+      this.pickups[k].instanceMatrix.needsUpdate = true;
+    }
 
     n = 0;
     if (objects) {
@@ -140,7 +188,8 @@ export class ObjectsView {
         if (!mesh) continue;
         _o.position.set(o.x - originX, o.y0, 0);
         _o.rotation.set(0, 0, 0);
-        _o.scale.setScalar(1);
+        const sy = o.h / (this.modelH[o.type] || o.h);
+        _o.scale.set(o.w / (OBJ[o.type] ? OBJ[o.type].w : o.w), sy, 1);
         _o.updateMatrix();
         mesh.setMatrixAt(counts[o.type]++, _o.matrix);
       }

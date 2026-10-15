@@ -1,10 +1,11 @@
 import { el, fmt, show } from './dom.js';
-import { BASE_STATS, PHYSICS, CAMERA, LAUNCH, RESOURCES, GARAGE, TESTDRIVE, GAME_VERSION } from '../data/balance.js';
+import { BASE_STATS, PHYSICS, CAMERA, LAUNCH, RESOURCES, GARAGE, TESTDRIVE, RUN, GAME_VERSION } from '../data/balance.js';
 import { MILESTONES, fmtPlaytime } from '../garage/progression.js';
+import { BIOMES } from '../data/biomes.js';
 
 // Werte, die live geändert werden können (Objekt, Schlüssel, Beschreibung).
 // BASE_STATS wirkt sofort (laufende Etappe wird neu berechnet), alles andere sofort bzw. ab der nächsten Etappe.
-const GROUPS = { BASE_STATS, PHYSICS, CAMERA, LAUNCH, RESOURCES, GARAGE, TESTDRIVE };
+const GROUPS = { BASE_STATS, PHYSICS, CAMERA, LAUNCH, RESOURCES, GARAGE, TESTDRIVE, RUN };
 export const TWEAKS = [
   ['BASE_STATS', 'launchSpeed', 'Startkraft (m/s)'],
   ['BASE_STATS', 'airControl', 'Luftsteuerung'],
@@ -24,12 +25,13 @@ export const TWEAKS = [
   ['RESOURCES', 'overheatStall', 'Überhitzungs-Stillstand'],
   ['GARAGE', 'costGrowth', 'Preisanstieg je Stufe'],
   ['TESTDRIVE', 'distDiv', 'Testfahrt: Meter je ⚙'],
+  ['RUN', 'towPenalty', 'Abschlepp-Strafe (Anteil)'],
 ];
 const ORIGINAL = TWEAKS.map(([g, k]) => GROUPS[g][k]);
 
 // Verstecktes Entwickler-Menü (7× schnell auf die Versionsnummer in den Einstellungen tippen).
-// h: { getSave(), getStage(), onCurrency(kind, n), onResearch(), onUnlockAll(), onGiftParts(), onUnlockWorlds(), onEndStage(),
-//      onTweak(group, key) }
+// h: { getSave(), getStage(), onCurrency(kind, n), onResearch(), onUnlockAll(), onGiftParts(), onEndStage(),
+//      onTweak(group, key), onSkip('gold'|'bronze'|'miss'), onToBoss(), onNextAct(), onSetDurability(n), onTestDrive(biomeId) }
 export class DevMenu {
   constructor(root, h) {
     this.h = h;
@@ -47,9 +49,20 @@ export class DevMenu {
         <button class="btn btn-secondary" data-a="research">📘 Forschung erfüllen</button>
         <button class="btn btn-secondary" data-a="unlock">🔓 Alles freischalten</button>
         <button class="btn btn-secondary" data-a="gift">🎁 Alle Teile geschenkt</button>
-        <button class="btn btn-secondary" data-a="worlds">🗺️ Alle Strecken</button>
-        <button class="btn btn-danger" data-a="end">⏹ Testfahrt beenden</button>
+        <button class="btn btn-danger" data-a="end">⏹ Etappe sofort beenden</button>
       </div>
+      <h3>Run</h3>
+      <div class="dev-grid">
+        <button class="btn btn-secondary" data-a="skipGold">⏭ Etappe: 🥇 Gold</button>
+        <button class="btn btn-secondary" data-a="skipBronze">⏭ Etappe: 🥉 Bronze</button>
+        <button class="btn btn-secondary" data-a="skipMiss">⏭ Etappe: verfehlt</button>
+        <button class="btn btn-secondary" data-a="boss">👹 Zum Boss</button>
+        <button class="btn btn-secondary" data-a="act">➡ Nächster Akt</button>
+      </div>
+      <label class="dev-tw"><span>Haltbarkeit setzen<small>run.durability</small></span>
+        <input type="number" step="any" inputmode="decimal" data-id="dur"><button class="icon-btn small" data-a="setdur" aria-label="Setzen">✔</button></label>
+      <h3>Testfahrt (ohne Run)</h3>
+      <div class="dev-grid">${BIOMES.map((b) => `<button class="btn btn-secondary" data-test="${b.id}">${b.icon} ${b.name}</button>`).join('')}</div>
       <div class="msg" data-id="msg"></div>
       <h3>Werte live ändern</h3>
       <div class="dev-tweaks" data-id="tweaks"></div>
@@ -71,8 +84,14 @@ export class DevMenu {
     on('research', () => { h.onResearch(); this.say('Forschungs-Bedingungen erfüllt – Chassis jetzt mit 💠 kaufbar, Teile mit ⚙'); });
     on('unlock', () => { h.onUnlockAll(); this.say('Alle Chassis, Fähigkeiten und Forschungs-Bedingungen freigeschaltet'); });
     on('gift', () => { h.onGiftParts(); this.say('Alle Teile gehören dir'); });
-    on('worlds', () => { h.onUnlockWorlds(); this.say('Alle Strecken freigeschaltet'); });
     on('end', () => { h.onEndStage(); this.close(); });
+    on('skipGold', () => { this.say(h.onSkip('gold')); this.closeIfDone(); });
+    on('skipBronze', () => { this.say(h.onSkip('bronze')); this.closeIfDone(); });
+    on('skipMiss', () => { this.say(h.onSkip('miss')); this.closeIfDone(); });
+    on('boss', () => { this.say(h.onToBoss()); });
+    on('act', () => { this.say(h.onNextAct()); });
+    on('setdur', () => { this.say(h.onSetDurability(Number(String(this.q.dur.value).replace(',', '.')))); });
+    this.el.querySelectorAll('[data-test]').forEach((b) => { b.onclick = () => { h.onTestDrive(b.dataset.test); this.close(); }; });
     this.el.querySelector('[data-a=close]').onclick = () => this.close();
 
     this.q.tweaks.innerHTML = TWEAKS.map(([g, k, label], i) => `<label class="dev-tw">
@@ -102,7 +121,10 @@ export class DevMenu {
     });
   }
 
-  say(t) { this.q.msg.textContent = t; }
+  say(t) { this.q.msg.textContent = t || ''; }
+
+  // Nach „Etappe überspringen“: Menü schließen, damit Ergebnis/Karte sichtbar sind (Option keepOpen fürs Testen)
+  closeIfDone() { if (!this.keepOpen) this.close(); }
 
   refresh() {
     const save = this.h.getSave();
@@ -120,6 +142,9 @@ export class DevMenu {
     const keys = Object.keys(counts);
     this.q.ev.innerHTML = keys.length ? keys.map((k) => `<span class="dev-chip">${k} <b>${fmt(counts[k])}</b></span>`).join('') : '<span class="small">noch keine Etappe gefahren</span>';
     this.el.querySelector('[data-a=end]').disabled = !(stage && stage.phase !== 'over');
+    const run = save.run;
+    for (const a of ['skipGold', 'skipBronze', 'skipMiss', 'boss', 'act', 'setdur']) this.el.querySelector(`[data-a=${a}]`).disabled = !run;
+    if (run && document.activeElement !== this.q.dur) this.q.dur.value = String(Math.round(run.durability));
   }
 
   open() {

@@ -161,4 +161,9 @@ export class Sfx {
   denied() { this.tone(180, 0.15, { type: 'square', vol: 0.1 }); this.tone(140, 0.2, { type: 'square', vol: 0.1, delay: 0.1 }); }
   record() { [0, 4, 7, 12, 7, 12, 16].forEach((s, i) => this.tone(523 * Math.pow(2, s / 12), 0.2, { type: 'square', vol: 0.07, delay: i * 0.09 })); }
   money() { this.tone(1500 + Math.random() * 300, 0.04, { type: 'square', vol: 0.03 }); }
+  // Medaille erreicht (i = 0 Bronze, 1 Silber, 2 Gold): Fanfare, je Stufe höher
+  medal(i = 0) { [0, 4, 7, 12].forEach((s, k) => this.tone(440 * Math.pow(2, (s + i * 3) / 12), 0.22, { type: 'triangle', vol: 0.12, delay: k * 0.07 })); }
+  // Blitz-Warnung (Knistern) und Einschlag
+  warn() { this.tone(1760, 0.05, { type: 'square', vol: 0.04 }); this.tone(1760, 0.05, { type: 'square', vol: 0.04, delay: 0.12 }); }
+  zap() { this.burst(0.6, 4000, { vol: 0.45, type: 'highpass', slide: 0.3 }); this.tone(90, 0.5, { type: 'sawtooth', vol: 0.18, slide: 0.4 }); }
 }

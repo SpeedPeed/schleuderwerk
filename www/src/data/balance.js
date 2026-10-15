@@ -45,6 +45,7 @@ export const PHYSICS = {
   // Boden
   takeoffClearance: 0.03,  // so weit muss das Auto über dem Boden sein, um abzuheben (pro 1/120 s)
   takeoffMinSpeed: 4,
+  takeoffKink: 0.5,        // Kante: fällt die Bodenneigung um mehr als so viel (rad), hebt die Kiste ab
   driveMassExp: 0.5,       // Antrieb am Boden = driveAccel / mass^driveMassExp (Rollreibung ist masseunabhängig) →
                            // schwere Kisten fahren langsamer an, bleiben aber nicht stehen
   takeoffRampCheck: 4,     // Abheben zählt als Rampensprung, wenn die letzten 4 m Rampe waren
@@ -86,7 +87,7 @@ export const BASE_STATS = {
   coolRate: 10,            // Abkühlung pro Sekunde (Dauer-Boost: +30 − 10 = +20/s → Überhitzung nach 5 s)
   durabilityMax: 100,
   armor: 0,                // Schadensreduktion 0 … 0,6
-  impactThreshold: 14,     // Aufprall-Normaltempo (m/s), ab dem eine Landung Schaden macht
+  impactThreshold: 16,     // Aufprall-Normaltempo (m/s), ab dem eine Landung Schaden macht (Phase 3: 14 → 16, mehr Landungen je Etappe)
   // Landung
   landTolDeg: 25,          // saubere Landung bis zu diesem Winkel
   perfectLandDeg: 8,
@@ -193,7 +194,7 @@ export const RESOURCES = {
   durCrit: 0.25,           // … und rot unter 25 %
 };
 
-// ---------- Testfahrt (Phase 2: eine Etappe aus der Garage) ----------
+// ---------- Testfahrt (seit Phase 3 nur noch im Dev-Menü: eine Etappe ohne Run) ----------
 // Schrott-Belohnung = Distanz / distDiv + max. Höhe / heightDiv + Trickpunkte / trickDiv (+ Schrott-Pickups),
 // danach × Welt-Faktor × Stat scrapGain, gerundet.
 export const TESTDRIVE = {
@@ -201,6 +202,67 @@ export const TESTDRIVE = {
   heightDiv: 25,
   trickDiv: 15,
   scrapPickupValue: 1,     // Schrott je eingesammeltem Schrott-Pickup (Mülltonne)
+};
+
+// ---------- Streckenbausteine (physics/trackGen.js → track.js / objects.js) ----------
+// Inhaltsgebundene Werte (Längen, Höhen, Breiten je Biom) stehen in data/biomes.js; hier nur die globalen Regeln.
+export const FEATURES = {
+  firstFree: 40,           // die ersten 40 m nach der Schleuder bleiben frei
+  regionGoldMul: 1.12,     // Bausteine liegen von firstFree bis Gold-Marke × 1,12 (danach nur Hügel und Rampen)
+  slotPad: 8,              // Mindestabstand zwischen zwei Bausteinen (m)
+  minSlot: 40,             // passt ein Baustein samt Abstand nicht in so viele Meter, entfällt er
+  eliteDifficulty: 0.25,   // Elite-Etappe: Schwierigkeit + 0,25 …
+  eliteExtra: 1,           // … und ein Baustein mehr
+  bossDifficulty: 1,       // Boss-Strecken haben immer volle Schwierigkeit
+  blend: 16,               // weicher Übergang (m) von der Landschaft auf eingeebnete Bausteine
+  gap: { fallDepth: 12, fallDamage: 25, floorJitter: 3 },   // Sturz > 12 m unter die Kante → Ende 'fall' + 25 Schaden
+  loop: { flat: 10, frictionDecel: 0.6, bolts: 9, minEnter: 1.5 }, // Looping: ebene Fläche ±10 m, Reibung im Ring (m/s²), Einfahrt ab 1,5 m/s
+  crusher: { damage: 6, speedKeep: 0.45, flat: 9, gantryH: 7.5, blockH: 2.6, openY: 4.2, cooldown: 1.2 }, // Schrottpresse
+  lightning: { warn: 1, damage: 6, radius: 3.5, every: [2.2, 3.4], lead: [0.25, 1.35], show: 0.18, speedKeep: 0.85 }, // Blitz: 1 s Warnung
+  magnet: { pull: 9, radius: 15, height: 9, swing: 0.35 }, // Magnetkran: Zug (m/s²) bis Radius, Höhe des Magneten, Pendel (Hz)
+  wind: { gustFreq: 0.9 },  // Böen in Windzonen
+  trackTail: { rampEvery: [130, 260] }, // hinter dem Bausteinbereich: gelegentliche Rampen
+};
+
+// ---------- Pickups in der Etappe (physics/objects.js, stage/stage.js) ----------
+export const PICKUPS = {
+  radius: 1.6,             // Sammelradius (zzgl. Magnet)
+  fuel: 30,                // ⛽ Kanister: + Treibstoff
+  cool: 35,                // ❄ Kühlpack: − Hitze
+  repair: 8,               // 🔧 Reparaturset: + Haltbarkeit (selten)
+  scrap: 3,                // ⚙ Schrott-Häufchen: + Meta-Schrott
+  altitude: [1.4, 9],      // Höhe über dem Boden
+  blueprintChance: 0.35,   // Elite: Chance auf eine 📘 Blaupause in der Strecke
+};
+
+// ---------- Karte eines Akts (map/mapGen.js; Knotentypen in data/nodes.js) ----------
+export const MAP = {
+  floors: 6,               // Etagen 0–5, danach die Boss-Strecke (Etage 6)
+  floorSizes: [[2, 0.5], [3, 0.4], [4, 0.1]], // Knoten je Etage mit Gewicht (≈ 15 Knoten je Akt)
+  extraEdgeChance: 0.35,   // zusätzliche (kreuzungsfreie) Verbindung je Knotenpaar
+};
+
+// ---------- Run (run/runState.js) ----------
+export const RUN = {
+  acts: 3,
+  towPenalty: 0.15,        // nicht geschafft: Abschleppen kostet 15 % der max. Haltbarkeit, dann Neuversuch
+  version: 1,              // Format von save.run (älteres/fremdes Format wird verworfen)
+};
+
+// ---------- Run-Belohnungen (run/rewards.js) ----------
+// Schrauben (Run-Währung) und Meta-Schrott je geschaffter Etappe: Grundwert je Akt × Medaillen-Faktor × Knoten-Faktor.
+export const REWARDS = {
+  bolts: { 1: 18, 2: 26, 3: 36 },
+  scrap: { 1: 14, 2: 24, 3: 36 },
+  medalMul: { bronze: 1, silver: 1.4, gold: 1.8 },
+  kindMul: { stage: 1, elite: 1.6, boss: 3 },
+  bossGoldBonus: 0.5,      // Boss: Gold gibt +50 % obendrauf (Boss kennt nur Bronze und Gold)
+  blueprints: { elite: 1, boss: { 1: 3, 2: 4, 3: 5 } },
+  firstBossCores: { 2: 1, 3: 1 }, // erster Boss-Sieg in Akt 2/3: Kerne
+  winCores: 1,             // Run gewonnen: Kern(e)
+  boltsToScrap: 0.1,       // übrige Schrauben → 10 % als Schrott am Run-Ende
+  actScrap: { 1: 40, 2: 80, 3: 140 }, // Akt abgeschlossen: Bonus-Schrott
+  placeholderBolts: { event: 10, treasure: 20, dealer: 0, workbench: 0, blackmarket: 0 }, // Platzhalter bis Phase 5
 };
 
 // ---------- Items, Effekte, Ereignis-Warteschlange ----------
@@ -314,10 +376,12 @@ export const OBJECTS = {
   cleanupEvery: 0.5,       // Sekunden
   cleanupBehind: 80,       // Objekte so weit hinter dem Auto werden entfernt
   // Hitboxen der Hindernisse (Breite, Höhe)
+  // (Höhen so, dass der Hüpfer drüberkommt – Schrottberge der Bausteine haben eigene Höhen, siehe data/biomes.js)
   tires: { w: 1.9, h: 2.1 },
-  scrap: { w: 3.0, h: 4.6 },
-  cactus: { w: 1.6, h: 3.8 },
+  scrap: { w: 3.0, h: 2.4 },
+  cactus: { w: 1.6, h: 3.0 },
   pillar: { w: 3.2, h: 6.0 },
+  scrapModelH: 4.6,        // Höhe des Schrottberg-Modells (wird auf die Hitbox-Höhe skaliert)
 };
 
 export const SPAWN = {
@@ -343,6 +407,7 @@ export const STAGE = {
   stopSpeed: 2,            // darunter gilt das Auto als gestoppt …
   stopTime: 0.6,           // … nach so vielen Sekunden
   wreckDelay: 0.8,
+  fallDelay: 0.7,          // Schluchtsturz: so lange fällt die Kiste noch sichtbar, dann Ende 'fall'
   boltStreakTime: 1,
   ringSpeed: 6,            // Tempo-Schub eines Boost-Rings (unterliegt der weichen Grenze)
   ringFuelRefill: 0.25,    // Anteil des maximalen Treibstoffs
@@ -401,6 +466,7 @@ export const KOMBO = {
     cleanLanding: { pts: 10, mult: 0.1 },
     perfectLanding: { pts: 30, mult: 0.3 },
     height: { pts: 30, mult: 0.2 },
+    loop: { pts: 35, mult: 0.3 },
   },
 };
 
@@ -412,7 +478,7 @@ export const FX = {
   slowmoScale: 0.3,
   slowmoRecover: 4,        // so schnell läuft die Zeitlupe aus (1/s)
   slowmo: { perfectLaunch: 0.35, multiFlip: 0.4, perfectLanding: 0.25 },
-  shake: { launch: 0.25, hit: 0.8, crash: 0.9, bumpyMax: 0.6, bumpyDiv: 30, landMax: 0.5, landDiv: 35 },
+  shake: { launch: 0.25, hit: 0.8, crash: 0.9, bumpyMax: 0.6, bumpyDiv: 30, landMax: 0.5, landDiv: 35, lightning: 0.5 },
   landDustDiv: 20,         // Staubmenge = Aufprall / landDustDiv
   landSoundDiv: 25,
   landHapticImpact: 8,
@@ -423,6 +489,11 @@ export const FX = {
   idleBob: { amp: 0.05, freq: 2 },
   flag: { minDist: 20, z: -2.4 },
   trajectory: { max: 24, size: 0.22, opacity: 0.85, shrinkPad: 4 },
+  rain: { drops: 260, color: '#c9d8f0', opacity: 0.45, speed: 38, windMul: 1.4, depth: 30, minLen: 0.8, maxLen: 3, lenPerHeight: 0.025 },
+  // Blitz-Aufleuchten (Gewittersteppe): zufällig im Hintergrund alle every [min, max] s, bei Einschlägen stärker
+  flash: { every: [4, 11], ambient: 0.55, strike: 1, decay: 5, hemiMul: 2.2 },
+  medalFlags: { z: -2.4, colors: { bronze: '#cd7f32', silver: '#c9d1da', gold: '#ffd23f' } },
+  windStreak: { chancePerWind: 0.12, colors: ['#ffffff', '#e8f4ff'] },
   particles: {
     bolt: { n: 6, colors: ['#d7dde3', '#ffffff', '#9aa4ae'], speed: 5, life: 0.4, size: 0.35 },
     scrap: { n: 10, colors: ['#9a4a2e', '#5b6e7a', '#a36a2c'], speed: 6, life: 0.6, gravity: 9, size: 0.4 },
@@ -439,6 +510,9 @@ export const FX = {
       colors: { tires: ['#26262b', '#3a3a40', '#e8b830'], cactus: ['#4f8a4a', '#5c9a52', '#ff6b8a'], pillar: ['#c2703f', '#d08050', '#e9a466'] },
     },
     sparkle: { n: 26, colors: ['#ffd23f', '#ffffff', '#ff8a3d'], speed: 7, life: 0.9, gravity: 5, size: 0.35, jitter: 2 },
+    shock: { n: 26, colors: ['#fff6a0', '#7fd4ff', '#ffffff'], speed: 11, life: 0.45, gravity: 0, size: 0.3, jitter: 1.2 },
+    strike: { n: 22, colors: ['#ffffff', '#fff6a0', '#5a4a40'], dir: 1.5708, spread: 2.4, speed: 9, life: 0.7, gravity: 12, size: 0.45, jitter: 1 },
+    confetti: { n: 40, dir: 1.5708, spread: 2.2, speed: 12, life: 1.4, gravity: 9, size: 0.35, jitter: 2, zSpread: 4 },
     boostFlame: { n: 2, colors: ['#fff17a', '#ffa22e', '#ff5a1f'], spread: 0.5, speed: 9, inherit: 0.7, life: 0.28, size: 0.5, jitter: 0.3, zSpread: 0.6, zSpeed: 0.5 },
     groundDust: { minSpeed: 8, chance: 0.4, dx: -1.4, dy: -0.9, n: 1, dir: 0.75, spread: 0.8, speed: 3, life: 0.6, gravity: 3, size: 0.45, zSpread: 2.2 },
     windDust: { minWind: 0.5, chancePerWind: 0.06, spreadX: 1.2, windMul: 3, vy: -0.5, life: 1.4, sizeBase: 0.18, sizePerWidth: 0.004, zSpread: 6 },

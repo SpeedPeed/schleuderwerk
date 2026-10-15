@@ -24,9 +24,11 @@ Der Spielstand liegt im Browser des Handys. In der App (kommt im nächsten Schri
 
 ## Steuerung
 
-**Garage** (Startbildschirm): ◀ ▶ = Chassis wählen (gesperrte zeigen ihre Bedingungen) · Slot-Zeile antippen = Teile-Auswahl (Werte-Vergleich, Kaufen ⚙, Ausrüsten, Verbessern) · „▲ ⚙“ = Teil eine Stufe verbessern · Fähigkeiten-Chip antippen = Fähigkeit für den Slot wählen · **TESTFAHRT ▶** = losfahren · ⚙ = Einstellungen (Export/Import). Geheim: in den Einstellungen 7× schnell auf die Versionsnummer tippen = Dev-Menü.
+**Garage** (Startbildschirm): ◀ ▶ = Chassis wählen (gesperrte zeigen ihre Bedingungen) · Slot-Zeile antippen = Teile-Auswahl (Werte-Vergleich, Kaufen ⚙, Ausrüsten, Verbessern) · „▲ ⚙“ = Teil eine Stufe verbessern · Fähigkeiten-Chip antippen = Fähigkeit für den Slot wählen · **RUN STARTEN ▶** = Run beginnen (Karte Akt 1) bzw. **RUN FORTSETZEN ▶** / „Aufgeben“ bei laufendem Run · ⚙ = Einstellungen (Export/Import). Geheim: in den Einstellungen 7× schnell auf die Versionsnummer tippen = Dev-Menü.
 
-**Testfahrt**
+**Karte** (Run): erreichbare Knoten pulsieren – antippen. Etappen zeigen erst ein Intro (Ziel, Medaillen, Gefahren, Wetter) → **LOS ▶**. 🔧 oben links = zurück in die Garage (der Run bleibt gespeichert).
+
+**Etappe**
 
 | Phase | Eingabe (Handy) | Wirkung |
 |---|---|---|
@@ -52,31 +54,34 @@ www/                        ← das komplette Spiel (wird in die App gepackt)
   index.html, style.css
   vendor/three.module.js    Three.js r170, lokal (offline)
   src/
-    main.js                 Start, Spielzustände (Garage → Testfahrt → Auswertung), Hauptschleife
+    main.js                 Start, Spielzustände (Garage → Karte → Etappe → Auswertung → Run-Ende), Hauptschleife
     core/                   rng.js (Zufall mit Seed, makeRng), math.js (clamp, lerp, approach, dimLevels, softcap …)
     data/                   NUR Daten: balance.js (ALLE globalen Zahlen: BASE_STATS, SOFTCAPS, GARAGE, RESOURCES …),
-                            chassis.js, parts.js, abilities.js (Inhalte), index.js (Zugriff + Adapter), worlds.js
+                            chassis.js, parts.js, abilities.js, biomes.js (3 Akte), nodes.js (Knotentypen), index.js (Zugriff + Adapter)
     items/                  statMods.js (Stat-Pipeline mit Soft-Caps), effects.js (alle Effekte), events.js (Ereignis-Namen),
                             eventQueue.js (Warteschlange mit Kettentiefe), modState.js (Buffs, Stapel, Zähler)
     garage/                 loadout.js (Garage → Fahrzeugwerte), garage.js (kaufen/ausrüsten/verbessern), progression.js (Spielzeit, Meilensteine)
     physics/                vehicle.js (Fahrzeug: Teilschritte, Tempo-Grenzen, Landung, Treibstoff/Hitze/Haltbarkeit),
-                            track.js (Strecke), objects.js (Schrauben/Ringe/Hindernisse, „swept“ Kollision)
+                            trackGen.js (Etappen-Spezifikation), track.js (Strecke), objects.js (Pickups, Hindernisse, Zonen, „swept“ Kollision)
+    map/mapGen.js           verzweigte Karte eines Akts
+    run/                    runState.js (Roguelite-Run), rewards.js (Belohnungen)
     stage/                  stage.js (eine Etappe: Abschuss → Flug → Ende, Ereignisse), launch.js (Abschuss-Minispiel),
                             abilities.js (Fähigkeits-Slots), scoring.js (Belohnung)
     camera/cameraRig.js     Kamera-Logik ohne three.js: Zoom, Vorausschau, Sicherheitsrahmen, Boden-Pfeil
     render/                 3D: Szene, Grundformen (models.js), Fahrzeuge (vehicleModel.js: 9 Chassis + sichtbare Teile),
                             Landschaft (trackView), Objekte, Partikel, Hintergrund, origin.js (Floating Origin)
-    ui/                     Oberfläche: Garage, HUD, Auswertung, Menüs, Dev-Menü
+    ui/                     Oberfläche: Garage, Karte (map.js), Run-Bildschirme (runScreens.js), HUD, Auswertung, Menüs, Dev-Menü
     audio/sfx.js            alle Sounds per Web Audio erzeugt
     save/save.js            Spielstand v3 (localStorage, Migration, Export/Import „SW3:…“)
     platform/               input.js (Multi-Touch, Fähigkeits-Knöpfe + Tastatur), platform.js (Vibration, Display wach, Pause)
 tests/                      node --test: Mathe/Zufall, Physik, Kamera, Stat-Pipeline, Garage, Spielstand, Ressourcen, Effekte
 tools/serve.py              kleiner Webserver zum Testen am Handy
-tools/smoke.mjs             Playwright-Rauchtest (Garage, Dev-Menü, alle Chassis, Testfahrt im Hochformat)
-docs/                       ARCHITEKTUR.md, V2-DESIGN.md, PHASEN.md (was ist neu, wie testen)
+tools/smoke.mjs             Playwright-Rauchtest (Garage, Run über 3 Akte, alle Streckenbausteine, Hochformat)
+tools/sim/                  Balance-Simulator: bot.mjs (Bot), calibrate.mjs (Zielmarken → docs/BALANCE.md)
+docs/                       ARCHITEKTUR.md, V2-DESIGN.md, PHASEN.md (was ist neu, wie testen), BALANCE.md (Zielmarken)
 ```
 
-Die Logik-Ordner (`core/ data/ items/ garage/ physics/ stage/ camera/ save/`) importieren weder three.js noch das DOM und laufen deshalb auch in Node (Tests).
+Die Logik-Ordner (`core/ data/ items/ garage/ physics/ stage/ map/ run/ camera/ save/`) importieren weder three.js noch das DOM und laufen deshalb auch in Node (Tests).
 
 ## Tests
 
@@ -91,7 +96,8 @@ Der Rauchtest legt Bildschirmfotos unter `/tmp/sw-smoke/` ab und endet mit Exit-
 Alle globalen Zahlen stehen in `www/src/data/balance.js`. Beispiele:
 - `BASE_STATS` – Grundwerte aller Fahrzeug-Stats (Startkraft, Schub, Treibstoff, Hitze, Haltbarkeit, Luftsteuerung …), `SOFTCAPS` – ihre Grenzen
 - `GARAGE.costGrowth` (Preisanstieg je Teile-Stufe), `dimDivisor` (abnehmender Ertrag), `starterParts` (Startausstattung)
-- `RESOURCES` (Überhitzung, Aufprallschaden), `TESTDRIVE` (Schrott-Belohnung der Testfahrt), `RULES` (Regel-Parameter)
+- `RESOURCES` (Überhitzung, Aufprallschaden), `TESTDRIVE` (Schrott-Belohnung der Dev-Testfahrt), `RULES` (Regel-Parameter)
+- `FEATURES` (Streckenbausteine), `PICKUPS`, `MAP` (Karte), `RUN` (Abschleppen), `REWARDS` (Schrauben, Schrott, Blaupausen, Kerne)
 - `PHYSICS.speedSoftCap`/`hardSpeedCap` (Tempo-Grenzen), `LAUNCH.chargePeriod` (pendelnde Kraft), `CAMERA.minWidth/maxWidth` (Zoom)
 
-Inhalte stehen bei ihren Daten: `chassis.js`, `parts.js`, `abilities.js` (Werte, Preise, Beschreibungen), `worlds.js` (Farben, Hügel, Rampen, Wetter, Objekte). Viele Werte lassen sich auch im Dev-Menü live ausprobieren.
+Inhalte stehen bei ihren Daten: `chassis.js`, `parts.js`, `abilities.js` (Werte, Preise, Beschreibungen), `biomes.js` (Farben, Hügel, Wetter, Bausteine, Zielmarken, Bosse – Zielmarken mit `node tools/sim/calibrate.mjs --apply` neu kalibrieren), `nodes.js` (Knotentypen der Karte). Viele Werte lassen sich auch im Dev-Menü live ausprobieren.

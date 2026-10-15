@@ -179,3 +179,83 @@ Bot-Ergebnis (Mittel über alle Chassis): ohne Boost ≈ 20 s, davon ≈ 27 % in
 - Schrauben werden nur gezählt (Verwendung beim Schrotthändler in Phase 3/5).
 - Die Haltbarkeit gilt pro Testfahrt; ab Phase 3 für den ganzen Run.
 
+
+## Phase 3 – Verzweigte Run-Karte, Etappen mit Zielmarke, 3 Biome, Bosse
+
+Spielbar ist jetzt der ganze Roguelite-Ablauf: **Garage → RUN STARTEN → Karte Akt 1 → Knoten wählen → Etappen-Intro → Etappe (Ziel + Medaillen) → Auswertung → Karte … → Tankstelle → Boss → Akt 2 (Glutwüste) → … → Akt 3 (Gewittersteppe) → Sieg/Niederlage → Meta-Belohnung → Garage.** Items/Trigger folgen in Phase 4, Händler/Werkbank/Schwarzmarkt/Ereignisse/Schatz in Phase 5 (bis dahin Platzhalter mit kleinem Bonus).
+
+### Was ist neu
+
+**Biome = Akte** (`data/biomes.js`, ersetzt `data/worlds.js`)
+- 🗑️ **Schrottplatz** (Akt 1, Palette der alten Steppe): Hügel, Rampen, Schluchten (ab Etage 2), Schlamm, Schrottberge (ab Etage 2), Schrottpressen (ab Etage 3). Bosse: 🗜️ *Die Schrottpresse* (Pressen-Batterie) / 🧲 *Der Magnetkran* (Magnet zieht die Kiste zu sich, Schluchten).
+- 🏜️ **Glutwüste** (Akt 2, Palette der Wüste): +4 Hitze/s, Feuer-Items +25 % (`tagBoost`, wirkt ab Phase 4), Sandfelder (Rollreibung ×1,6), Thermik, Hitzefelder, große Schluchten, Windwetter. Bosse: 🕳️ *Der Große Graben* (zwei 26–32 m breite Schluchten) / 🔥 *Die Glutdünen*.
+- ⛈️ **Gewittersteppe** (Akt 3, neue dunkle Palette): Regen, Blitz-Aufleuchten, Elektro-Items +25 %, **Blitzzonen** (1 s Warnring am Boden, dann Einschlag: Ereignis `shock {source:'lightning'}` + 6 Schaden), Böen und Windzonen, **Loopings**, nasser Boden (Landetoleranz −5°). Bosse: 🌪️ *Das Auge des Sturms* / ⚡ *Die Blitzallee*.
+- Je Biom: Zielmarken je Etage, Elite ×1,3, Medaillen Silber ×1,25 / Gold ×1,5, Boss nur Bronze (= geschafft) und Gold (Bonus).
+
+**Etappen-Spezifikation** (`physics/trackGen.js → generateStageSpec`): deterministisch aus Seed, Biom, Art (Etappe/Elite/Boss) und Etage → `{ target, medals, features[], hazards, weather, … }`. 13 Streckenbausteine: Hügel, Rampe, **Schlucht** (Absprungrampe davor, Breite nach Schwierigkeit; > 12 m unter die Kante → Ende `fall` + 25 Schaden), **Schlamm** (×4 Reibung), Sand (×1,6), **Looping** (geskriptet: bei genug Tempo ganz herum + „LOOPING!“, sonst rollt die Kiste zurück bzw. fällt oben herunter), Schrottberge, **Schrottpresse** (zeitgesteuerter Pressblock), Windzone, Thermik, Hitzefeld, Blitzzone, Magnetkran. Bausteine liegen gleichmäßig verteilt bis kurz hinter die Gold-Marke, überlappen nie, die ersten 40 m bleiben frei; Bosse haben eine feste Bausteinfolge.
+- `physics/track.js` baut daraus die Höhenlinie (eingeebnete Flächen für Looping/Presse, Schluchtgrund, Oberflächen), `physics/objects.js` die Objekte. **Pickups:** 🔩 Schrauben (Run-Währung), ⛽ Kanister (+30 Treibstoff), ❄ Kühlpack (−35 Hitze), 🔧 Reparaturset (+8, selten), ⚙ Schrott (Meta), 📦 Item-Kiste (wird gezählt, Phase 4), 📘 Blaupause (nur Elite, selten).
+- Physik (`vehicle.js`): Oberflächen-Reibung, Looping-Kreisfahrt, Schluchtsturz, Zug des Magnetkrans; an scharfen Kanten (Rampen-/Schluchtlippe) hebt die Kiste jetzt immer ab.
+
+**Etappe** (`stage/stage.js`): Ziel + Medaillen, drei Zielflaggen (Bronze/Silber/Gold) in der Welt, Zielbalken im HUD mit Medaillen-Marken (leuchten beim Überfahren, „ZIEL ERREICHT!“), Endgründe `stop` / `wreck` / `fall` / `time`, Haltbarkeit kommt vom Run und geht an ihn zurück, Run-Werte (Tankstelle) wirken auf die Stats. Ergebnis nach ARCHITEKTUR §7.
+
+**Karte** (`map/mapGen.js`): 6 Etagen à 2–4 Knoten (≈ 15) + Boss, kreuzungsfreie Verbindungen, alles erreichbar; Etage 0 nur Etappen, Etage 5 nur Tankstellen, Elite ab Etage 2 (max. 2), mindestens ein Händler auf Etage 2–4, Werkbank/Schwarzmarkt nur mit Forschung `r_node_workbench`/`r_node_blackmarket`, keine gleichen Sonderknoten hintereinander. Knotentypen aus `data/nodes.js`.
+
+**Run** (`run/runState.js`, `run/rewards.js`, Zahlen in `balance.js → RUN, REWARDS`)
+- `newRun(save)`: Seed, Ausrüstung der Garage (für den Run fest), Haltbarkeit = durabilityMax. Liegt in `save.run`, wird nach jeder Aktion gespeichert und ist nach einem App-Neustart fortsetzbar (Garage: **RUN FORTSETZEN** + **Aufgeben**).
+- Geschafft → Schrauben und Meta-Schrott je Akt × Medaille × Knotenart, Blaupausen (Elite 1, Boss 3/4/5), Kerne beim ersten Boss-Sieg in Akt 2/3 und bei jedem Sieg. Nicht geschafft → **Abschleppen** (15 % der max. Haltbarkeit) + Neuversuch derselben Strecke. Haltbarkeit 0 → Niederlage.
+- Tankstelle: Reparieren (+35 %) / Volltanken (+15 max. Treibstoff) / Kühlerspülung (+20 % Kühlung) – für den Run.
+- Platzhalter (Händler, Werkbank, Schwarzmarkt, Ereignis, Schatz): „Kommt in Phase 5“, Ereignis +10 🔩, Schatz +20 🔩, Knoten gilt als besucht.
+- Aktwechsel nach dem Boss (+ Akt-Bonus-Schrott). `endRun` zahlt aus: gesammelter Schrott + 10 % der übrigen Schrauben, Blaupausen, Kerne. Meilensteine: `firstRunStart`, `firstRunEnd`, `firstBossAct1/2/3`, `firstAct2/3`, `firstWin`.
+
+**Oberfläche**: Kartenbildschirm (`ui/map.js`, Hochformat, scrollbar, Etage 0 unten, Boss oben, Linien, Knoten-Symbole, aktuelle Position, pulsierende erreichbare Knoten, Kopfleiste Akt/Biom, Haltbarkeit, Schrauben); `ui/runScreens.js`: Etappen-Intro (Ziel, Medaillen, Gefahren, Wetter, Biom-Eigenheiten, Neuversuch-Hinweis), Ergebnis mit Medaillen-Animation bzw. Abschlepp-Hinweis + Neuversuch, Tankstellen-Wahl, Platzhalter, Akt-Übergang, Run-Ende (Sieg/Niederlage, Statistik, hochzählende Belohnung). Pause im Run: „Run aufgeben“. Die Testfahrt gibt es nur noch im Dev-Menü.
+
+**Darstellung**: 3 Paletten/Hintergründe (Gewitter: dunkle Wolken, Regen `render/weather.js`, Blitz-Aufleuchten), Schlucht mit Felswänden und dunklem Grund, Schlamm, Sand, Stahlplatten; `render/featuresView.js`: Looping-Ring, Schrottpresse (Gerüst + beweglicher Block), Windsäcke + Windstreifen, Hitzeflimmern + glühender Boden, Blitzableiter, Gewitterwolke, Warnring + Blitz, Magnetkran mit Feld, Warnschild vor Schluchten; Pickups als eigene Modelle; Zielflaggen Bronze/Silber/Gold. Die Kamera-Garantie gilt weiter (auch im Looping und über Schluchten – Test).
+
+**Dev-Menü**: Etappe überspringen (🥇 Gold / 🥉 Bronze / verfehlt – in einer laufenden Run-Etappe oder auf der Karte für den nächsten Knoten; Tankstelle = Reparieren, Platzhalter = besucht), 👹 Zum Boss, ➡ Nächster Akt, Haltbarkeit setzen, Testfahrt je Biom, Abschlepp-Strafe live ändern.
+
+**Balance-Simulator** (`tools/sim/bot.mjs`, `tools/sim/calibrate.mjs`, Ergebnis `docs/BALANCE.md`): Ein Bot spielt headless mit der echten Etappen-Logik je Akt/Etage/Art 40 Etappen mit Start-Loadout und „gutem“ Loadout (Startteile Stufe 10) und setzt die Zielmarken (`--apply` schreibt sie in `biomes.js`). Ergebnis:
+
+| | Etage 0–5 (m) | Boss |
+|---|---|---|
+| Schrottplatz | 330 · 355 · 355 · 410 · 425 · 445 | 510 |
+| Glutwüste | 490 · 525 · 525 · 530 · 550 · 570 | 625 |
+| Gewittersteppe | 560 · 565 · 610 · 610 · 640 · 665 | 730 |
+
+Prüfpunkte: Start-Loadout Akt 1 Etage 0 Median **×1,30**, Akt-1-Boss **×0,80**, gutes Loadout Akt 2 Etage 0 **×1,00**; gutes Loadout Akt 3 Etage 0 ×0,85, Boss ×0,62 (ohne Items/Synergien kaum zu schaffen – gewollt). Schaden einer normalen Etappe (Akt 1, Etage 0–1): Median 0–2 %.
+
+**Nachjustiert / Abweichungen**
+- Startwerte der Zielmarken (Akt 1: 180–330) waren zu niedrig: Ein Abschuss mit Antrieb kommt schon mit dem Start-Loadout ≈ 430 m weit. Die kalibrierten Werte oben ersetzen sie (Kurve innerhalb eines Akts nach Soll-Verhältnis 1,3 → 0,92, nie fallend).
+- `BASE_STATS.impactThreshold` 14 → 16 m/s: Etappen haben jetzt mehrere Landungen (Rampen, Hügel); sonst kostete eine fehlerfreie Etappe ≈ 4 % allein durch Landungen.
+- Zufällige Hindernisse seltener (`spawn.obstacle` 0,04) und so niedrig, dass der Hüpfer sie überspringt (`OBJECTS.scrap.h` 2,4, `cactus.h` 3,0); Schrottberge der Bausteine 1,5–2,3 m.
+- `PHYSICS.takeoffKink` (neu): Abheben an scharfen Kanten – vorher konnte die Kiste an einer Schluchtlippe „kleben“ und die Wand hinunterfahren.
+- Der Spielstand behält Version 3; das Übergangsfeld `worlds` entfällt (Bestweiten wandern nach `stats.bestDist`), ein unbrauchbarer `save.run` wird verworfen.
+
+**Tests**: `npm test` (133 Tests) – zusätzlich `mapGen` (1000 Seeds: alle Regeln, Erreichbarkeit, Kreuzungsfreiheit, Determinismus), `runState` (ganzer Run mit Fake-Ergebnissen: Sieg über 3 Akte mit Auszahlung/Kernen/Meilensteinen, Abschleppen + Neuversuch, Niederlage durch Abschleppen und Totalschaden, Tankstelle wirkt in der Etappe, Platzhalter, Speichern/Fortsetzen nach jeder Aktion = gleicher Verlauf, Belohnungen), `trackGen` (Determinismus, keine Überlappung, erste 40 m frei, jede Schlucht mit 26 m/s Anlauf überwindbar und zu langsam nicht, Looping schnell/langsam inkl. Kamera-Garantie, Blitz → shock + 6 Schaden, Endgründe stop/wreck/fall/time, Schlamm, Presse), Spielstand mit laufendem Run.
+
+### So testest du Phase 3
+
+**Am PC (automatisch)**
+1. `npm test` → „# fail 0“.
+2. `npm run smoke` → „RAUCHTEST BESTANDEN“ (≈ 3 min). In `/tmp/sw-smoke/` u. a.: `10-karte-akt1.png`, `11-etappen-intro.png`, `21-flug.png`, `23-ergebnis.png`, `24-ergebnis-gold.png`, `25-abschleppen.png`, `26-boss-intro.png`, `27-boss-besiegt.png`, `28-akt-uebergang.png`, `30-karte-akt2.png`, `31-gluewueste.png`, `40-karte-akt3.png`, `41-gewittersteppe.png`, `50-run-ende.png`, `51-garage-fortsetzen.png` und je Streckenbaustein `f-<typ>.png` (crusher, gap, heatZone, hills, lightning, loop, magnetZone, mud, ramp, sand, scrapPile, thermal, wind).
+3. Optional: `node tools/sim/calibrate.mjs` (≈ 40 s) misst neu und schreibt `docs/BALANCE.md`; mit `--apply` werden die Zielmarken übernommen.
+
+**Am PC (von Hand)**
+1. `python tools/serve.py`, `http://localhost:8137` (F12 → Handy-Ansicht 412 × 915).
+2. Garage → **RUN STARTEN ▶** → Karte Akt 1. Einen pulsierenden Knoten unten antippen → Intro (Ziel, Medaillen, Gefahren) → **LOS ▶**.
+3. Abschuss wie bisher (Leertaste halten/loslassen). Oben der Zielbalken: B/S/G leuchten beim Überfahren, in der Welt stehen die drei Flaggen.
+4. Auswertung: Medaillen leuchten nacheinander auf. Nicht geschafft → „Abschleppen −15 🔧“ und **↻ Neuversuch** (gleiche Strecke).
+5. ⚙ → 7× Versionsnummer → Dev-Menü: „Etappe: 🥇 Gold“ mehrmals, „👹 Zum Boss“, Boss überspringen → Akt-Übergang zur Glutwüste. „➡ Nächster Akt“ → Gewittersteppe (Regen, Blitze). „Haltbarkeit setzen“ auf 1 + „Etappe: verfehlt“ → Niederlage → Run-Ende mit Belohnung.
+6. Streckenbausteine ansehen: Dev-Menü → Testfahrt je Biom, oder in der Konsole `__game.startTestDrive('gewittersteppe', { kind: 'boss', bossId: 'auge_des_sturms' })` (Loopings, Blitze, Wind).
+7. Neu laden während eines Runs → Garage zeigt **RUN FORTSETZEN ▶** und „Aufgeben“.
+
+**Am Handy**
+1. Wie bisher `python tools/serve.py` und die Handy-Adresse öffnen.
+2. Karte mit dem Finger scrollen, Knoten antippen; nicht erreichbare Knoten zeigen unten kurz ihre Beschreibung.
+3. In der Etappe: Looping mit Schwung anfahren (Boost hilft), an Schluchten über die Rampe springen, bei einem gelben Warnring (Blitz) Gas geben oder bremsen, den Hüpfer vor Schrottbergen und geschlossenen Pressen nutzen.
+4. Pause (❚❚) → „Run aufgeben“ beendet den Run mit Auszahlung.
+
+### Bekannte Grenzen (kommen in späteren Phasen)
+- Nach einer Etappe gibt es noch keine Item-Auswahl, Item-Kisten werden nur gezählt (Phase 4). `tagBoost` der Biome wirkt erst mit Items.
+- Händler, Werkbank, Schwarzmarkt, Ereignis und Schatz sind Platzhalter (Phase 5). Schrottstufen (`ascension`) sind vorbereitet (`mods` in `generateStageSpec`, `eliteWeightAdd` in der Karte), aber noch nicht wählbar.
+- Ohne Items sind Elite-Etappen (Ziel ×1,3) und die Bosse mit dem Start-Loadout bewusst schwer; ein Run endet meist in Akt 1–2.
+- Ein Abbruch per App-Schließen mitten in einer Etappe zählt nicht als Versuch (der Knoten startet beim Fortsetzen neu).
