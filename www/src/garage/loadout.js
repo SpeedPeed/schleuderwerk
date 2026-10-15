@@ -3,6 +3,7 @@
 import { GARAGE } from '../data/balance.js';
 import { SLOTS, chassisById, partById, abilityById, starterPartFor, isSlotAbility, abilityUnlock } from '../data/index.js';
 import { computeStats, collectRules, collectSources } from '../items/statMods.js';
+import { researchPerks, perkStatMods } from './research.js';
 
 // Teile-Eingabe für die Stat-Pipeline: { slot: { id, level } }
 function partInput(garage, override = {}) {
@@ -20,24 +21,27 @@ function partInput(garage, override = {}) {
 }
 
 // save: Spielstand v3. opts.chassis / opts.parts überschreiben die Auswahl (Vorschau in der Garage).
-// Ergebnis: { chassis, parts, abilities, special, stats, rules, sources, slots: { items, abilities }, statInput }
+// opts.perks: Forschungs-Boni (Standard: aus save.research, im Run der Stand beim Run-Start = run.perks).
+// opts.runAbilities: Fähigkeiten des Runs (beim Schrotthändler gekaufte brauchen keine Forschung).
+// Ergebnis: { chassis, parts, abilities, special, stats, rules, sources, slots: { items, abilities }, statInput, perks }
 export function buildLoadout(save, opts = {}) {
   const g = save.garage;
   const chassis = chassisById(opts.chassis || g.chassis) || chassisById(GARAGE.starterChassis);
   const parts = partInput(g, opts.parts || {});
-  const statInput = { chassis, parts, research: [] };
+  const perks = opts.perks || researchPerks(save);
+  const statInput = { chassis, parts, research: perkStatMods(perks) };
   const stats = computeStats(statInput);
   const slots = { items: stats.itemSlots, abilities: stats.abilitySlots };
 
   // Fähigkeiten: nur freigeschaltete Slot-Fähigkeiten, höchstens abilitySlots, ohne Doppelte
   const done = (save.research && save.research.done) || [];
   const abilities = [];
-  for (const id of g.abilities || []) {
+  for (const id of opts.runAbilities || g.abilities || []) {
     if (abilities.length >= slots.abilities) break;
     const a = abilityById(id);
     if (!a || !isSlotAbility(a) || abilities.includes(id)) continue;
     const r = abilityUnlock(a).research;
-    if (r && !done.includes(r)) continue;
+    if (r && !done.includes(r) && !opts.runAbilities) continue;
     abilities.push(id);
   }
   // Spezialfähigkeit des Chassis: immer zusätzlich ausgerüstet
@@ -53,6 +57,7 @@ export function buildLoadout(save, opts = {}) {
     sources: collectSources(statInput),
     slots,
     statInput,
+    perks,
   };
 }
 

@@ -6,6 +6,8 @@ import { CHASSIS } from './chassis.js';
 import { PARTS } from './parts.js';
 import { ABILITIES } from './abilities.js';
 import { GARAGE } from './balance.js';
+import { ITEMS } from './items.js';
+import { RESEARCH } from './research.js';
 
 export { CHASSIS, PARTS, ABILITIES };
 
@@ -87,14 +89,25 @@ export function referencedResearch() {
   return [...s];
 }
 
-// Lesbarer Name einer Forschungs-ID, solange es den Forschungsbaum (Phase 5) noch nicht gibt:
-// r_chassis_badewanne → „Bauplan Badewanne“, r_part_wheels_kugellager → „Bauplan Kugellager-Rollen“
+// Lesbarer Name einer Forschungs-ID: Name des Labor-Knotens (data/research.js), sonst aus der ID abgeleitet
+// (r_chassis_badewanne → „Bauplan Badewanne“)
 export function researchLabel(id) {
   if (!id) return '';
+  const node = RESEARCH.find((r) => r.id === id);
+  if (node) return node.name;
   const m = /^r_(chassis|part|ability)_(.+)$/.exec(id);
   if (m) {
     const target = m[1] === 'chassis' ? chassisById(m[2]) : m[1] === 'part' ? partById(m[2]) : abilityById(m[2]);
     if (target) return `Bauplan ${target.name}`;
   }
   return id;
+}
+
+// ---------- Fluch-Pool (Adapter zu data/textEvents.js „{ curse: true }“, Schwarzmarkt, Schatz-Haken) ----------
+// Verfluchte Items mit pool r_curse_1 gelten immer als verfügbar (auch ohne Forschung), alle anderen verfluchten Items
+// (r_curse_2) erst, wenn ihre Pool-Forschung erledigt ist. all: Dev-Menü „alle Items in den Pool“.
+export const ALWAYS_CURSE_POOL = 'r_curse_1';
+export function cursedItemPool(research = [], all = false) {
+  const done = new Set(research || []);
+  return ITEMS.filter((it) => it.rarity === 'cursed' && (all || it.pool === ALWAYS_CURSE_POOL || it.pool === 'base' || done.has(it.pool)));
 }

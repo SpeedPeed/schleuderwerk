@@ -20,7 +20,7 @@ export function defaultSave() {
       partLevels: {},
       abilities: [...GARAGE.starterAbilities],
     },
-    research: { done: [] },
+    research: { done: [], levels: {} },   // levels: Stufen der wiederholbaren Forschung (Feinschliff)
     ascension: { unlocked: 0, best: 0 },
     codex: { items: {}, sets: {} },
     cosmetics: { owned: [], paint: null },
@@ -110,6 +110,10 @@ export function migrate(data) {
   for (const k of Object.keys(data.ascension)) data.ascension[k] = n0(data.ascension[k]);
   data.tutorial.runs = n0(data.tutorial.runs);
   data.research.done = [...new Set(data.research.done.filter((id) => typeof id === 'string'))];
+  for (const [k, v] of Object.entries(data.research.levels)) {
+    if (typeof v !== 'number' || !isFinite(v) || v < 1) delete data.research.levels[k];
+    else data.research.levels[k] = Math.floor(v);
+  }
   data.cosmetics.owned = data.cosmetics.owned.filter((id) => typeof id === 'string');
   if (typeof data.cosmetics.paint !== 'string') data.cosmetics.paint = null;
   // Laufender Run: unbrauchbares/älteres Format wird verworfen (der Rest des Spielstands bleibt)

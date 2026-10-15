@@ -1,7 +1,8 @@
 import { el, fmt, short, show } from './dom.js';
 import { GARAGE } from '../data/balance.js';
 import { CHASSIS, ABILITIES, SLOTS, SLOT_INFO, partsForSlot, partById, abilityById, isSlotAbility, researchLabel } from '../data/index.js';
-import { chassisState, partState, abilityState } from '../garage/garage.js';
+import { chassisState, partState, abilityState, PAINTS, paintState } from '../garage/garage.js';
+import { LabPanel } from './lab.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { isBoostAbility } from '../stage/abilities.js';
 import { statDiff } from '../items/statMods.js';
@@ -25,7 +26,9 @@ function diffRows(a, b, max = 8) {
 // Garage: Währungen, 3D-Vorschau (oben, durchsichtig), Chassis-Wahl, Werte-Übersicht, 7 Teile-Slots,
 // Fähigkeiten und der Start-Knopf (RUN STARTEN bzw. RUN FORTSETZEN + Aufgeben). Teile- und Fähigkeits-Auswahl als
 // Unterblatt. Läuft ein Run, zeigt eine Zeile Akt/Biom/Haltbarkeit (die Run-Ausrüstung ist ab dem Start fest).
-// h: { onAction(name, ...args) → Ergebnis {ok}, onPreview(override|null), onSettings(), onStart(), onGiveUp(), onCompendium() }
+// Phase 5: Reiter „🔧 Garage“ · „🧪 Labor“ (Forschungsbaum, ui/lab.js) · „🎨 Lack“ (Lackierungen, Vorschau am Modell).
+// h: { onAction(name, ...args) → Ergebnis {ok}, onPreview(override|null), onSettings(), onStart(), onGiveUp(), onCompendium(),
+//      onResearch(id), onTab(tab) }   – Lack: onAction('buyPaint'|'equipPaint', id), Vorschau onPreview({ paint })
 export class GarageScreen {
   constructor(root, h) {
     this.h = h;
@@ -39,7 +42,12 @@ export class GarageScreen {
         <button class="icon-btn" data-id="codex" aria-label="Kompendium">📖</button>
         <button class="icon-btn" data-id="settings" aria-label="Einstellungen">⚙</button>
       </div>
-      <div class="g-preview" data-id="preview"><div class="g-title">GARAGE</div>
+      <div class="g-tabs" data-id="tabs">
+        <button class="g-tab on" data-tab="garage">🔧 Garage</button>
+        <button class="g-tab" data-tab="lab">🧪 Labor</button>
+        <button class="g-tab" data-tab="paint">🎨 Lack</button>
+      </div>
+      <div class="g-preview" data-id="preview"><div class="g-title" data-id="gtitle">GARAGE</div>
         <div class="g-clock hidden" data-id="clock"></div>
       </div>
       <div class="g-chassis">
@@ -53,11 +61,14 @@ export class GarageScreen {
       <div class="sheet g-sheet">
         <div class="g-scroll" data-id="scroll">
           <div class="g-run hidden" data-id="runinfo"></div>
-          <div class="g-stats" data-id="stats"></div>
-          <h4 class="g-h">Teile</h4>
-          <div class="g-slots" data-id="slots"></div>
-          <h4 class="g-h">Fähigkeiten</h4>
-          <div class="g-abil" data-id="abil"></div>
+          <div data-id="main">
+            <div class="g-stats" data-id="stats"></div>
+            <h4 class="g-h">Teile</h4>
+            <div class="g-slots" data-id="slots"></div>
+            <h4 class="g-h">Fähigkeiten</h4>
+            <div class="g-abil" data-id="abil"></div>
+          </div>
+          <div class="g-paints hidden" data-id="paints"></div>
         </div>
         <div class="g-startrow">
           <button class="btn btn-danger g-giveup hidden" data-id="giveup">Aufgeben</button>
@@ -83,6 +94,10 @@ export class GarageScreen {
     q.cnext.onclick = () => this.browse(1);
     q.giveup.onclick = () => h.onGiveUp && h.onGiveUp();
     q.pickclose.onclick = () => this.closePicker();
+    q.tabs.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => this.setTab(b.dataset.tab); });
+    this.tab = 'garage';
+    this.paintSel = undefined;   // im Lack-Reiter angetippter Lack (Vorschau), undefined = keiner
+    this.lab = new LabPanel(this.el, { onBuy: (id) => h.onResearch && h.onResearch(id) });
     q.pick.addEventListener('click', (e) => { if (e.target === q.pick) this.closePicker(); });
 
     // Slot-Zeilen (einmal angelegt, bei render() befüllt)
@@ -141,6 +156,18 @@ export class GarageScreen {
     if (!on) this.closePicker(true);
   }
 
+  // Reiter wechseln: 'garage' | 'lab' | 'paint'
+  setTab(tab) {
+    if (this.tab === tab) return;
+    this.closePicker(true);
+    this.tab = tab;
+    this.paintSel = undefined;
+    this.h.onPreview(null);
+    if (this.h.onTab) this.h.onTab(tab);
+    this.render();
+    if (tab === 'paint') this.q.scroll.scrollTop = 0;
+  }
+
   get open() { return !this.el.classList.contains('hidden'); }
 
   // Chassis blättern: gekaufte werden sofort gewählt, gesperrte nur angesehen
@@ -164,6 +191,14 @@ export class GarageScreen {
     const q = this.q;
     const g = save.garage;
     if (!this.viewId || (!this.viewingLocked && this.viewId !== g.chassis)) this.viewId = g.chassis;
+    q.tabs.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === this.tab));
+    this.el.dataset.tab = this.tab;
+    this.lab.show(this.tab === 'lab');
+    if (this.tab === 'lab') this.lab.render(save);
+    show(q.main, this.tab === 'garage');
+    show(q.paints, this.tab === 'paint');
+    q.gtitle.textContent = this.tab === 'paint' ? 'LACKIEREREI' : 'GARAGE';
+    if (this.tab === 'paint') this.renderPaints();
     q.scrap.textContent = short(save.meta.scrap);
     q.bp.textContent = fmt(save.meta.blueprints);
     q.cores.textContent = fmt(save.meta.cores);
@@ -234,6 +269,42 @@ export class GarageScreen {
     q.abil.querySelectorAll('button.ab-chip').forEach((b) => { b.onclick = () => this.openAbilities(Number(b.dataset.i)); });
 
     if (this.picker) this.renderPicker();
+  }
+
+  // ---------- Lackierungen ----------
+  renderPaints() {
+    const save = this.save;
+    const cur = save.cosmetics.paint;
+    const sel = this.paintSel === undefined ? cur : this.paintSel;
+    const card = (id, name, colors, inner, extra = '') => `<div class="pcard paint ${sel === id ? 'sel' : ''} ${cur === id ? 'equipped' : ''} ${extra}" data-paint="${id === null ? '' : id}">
+        <div class="pc-top"><span class="pt-swatch" style="--b:${colors[0]};--a:${colors[1]}"></span><div class="pc-name">${esc(name)}</div></div>${inner}</div>`;
+    let html = `<p class="small">Rein optisch – Lackierungen gelten für alle Chassis. Antippen = Vorschau am Modell.</p>`;
+    html += card(null, 'Original (Chassis-Farben)', ['#c8843a', '#d94a3a'], `<div class="pc-btns">${cur === null ? '<span class="pc-tag">✓ Angelegt</span>' : '<button class="btn btn-primary small-btn" data-act="equip">Anlegen</button>'}</div>`);
+    for (const p of PAINTS) {
+      const st = paintState(save, p);
+      let btn;
+      if (st.equipped) btn = '<span class="pc-tag">✓ Angelegt</span>';
+      else if (st.owned) btn = '<button class="btn btn-primary small-btn" data-act="equip">Anlegen</button>';
+      else if (st.currency) btn = `<button class="btn btn-buy small-btn ${st.canBuy ? '' : 'cant'}" data-act="buy">Kaufen ${st.currency === 'scrap' ? '⚙' : '💠'} ${short(st.price)}</button>`;
+      else btn = `<span class="pc-lock">🔒 Run-Sieg auf Schrottstufe ${st.ascension}</span>`;
+      html += card(p.id, p.name, [p.colors.body, p.colors.accent], `<div class="pc-desc">${esc(p.flavor || '')}</div><div class="pc-btns">${btn}</div>`, st.owned ? '' : 'locked-soft');
+    }
+    const q = this.q;
+    q.paints.innerHTML = html;
+    q.paints.querySelectorAll('.pcard.paint').forEach((c) => {
+      const id = c.dataset.paint || null;
+      c.onclick = (e) => {
+        const b = e.target.closest('[data-act]');
+        if (b) {
+          e.stopPropagation();
+          this.h.onAction(b.dataset.act === 'buy' ? 'buyPaint' : 'equipPaint', id);
+          return;
+        }
+        this.paintSel = id;
+        this.h.onPreview({ paint: id });
+        q.paints.querySelectorAll('.pcard.paint').forEach((x) => x.classList.toggle('sel', (x.dataset.paint || null) === id));
+      };
+    });
   }
 
   // Werte-Balken (GARAGE.statBars); preview = Vergleichswerte (Geister-Balken). target: Container (Standard: Liste)

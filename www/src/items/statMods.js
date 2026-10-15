@@ -113,7 +113,8 @@ const tierOf = (t) => ITEMS.tierMult[Math.max(0, Math.min(ITEMS.tierMult.length 
 // input: { chassis, parts:{slot:{id, level}}, research?:[{stats}], items?:[{item, tier} | {item, scale}],
 //          sets?:[{stats, scale?}], buffs?:[{stats}], extra?:[{stats}] }
 // Items: scale (aus items/inventory.js: ★-Faktor × tagBoost × Hybrid) ersetzt den reinen ★-Faktor; der Fluch-Teil
-// (item.curse.stats) wirkt immer unskaliert. Sets: scale = 2 mit der Regel setBonusDouble.
+// (item.curse.stats) wirkt immer unskaliert – außer der Fluch wurde entfernt (noCurse).
+// research: Stat-Boni der Forschung (garage/research.js → perkStatMods). Sets: scale = 2 mit der Regel setBonusDouble.
 export function buildAcc(input = {}) {
   const acc = emptyAcc();
   applyChassis(acc, input.chassis);
@@ -122,7 +123,7 @@ export function buildAcc(input = {}) {
   for (const it of input.items || []) {
     const item = it.item || it;
     applyMods(acc, item.stats, typeof it.scale === 'number' ? it.scale : tierOf(it.tier));
-    if (item.curse) applyMods(acc, item.curse.stats);
+    if (item.curse && !it.noCurse) applyMods(acc, item.curse.stats);
   }
   for (const s of input.sets || []) applyMods(acc, s && s.stats, s && s.scale ? s.scale : 1);
   for (const e of input.extra || []) applyMods(acc, e && e.stats);

@@ -1,7 +1,7 @@
 // Belohnungen im Run (reine Logik). Alle Zahlen: data/balance.js → REWARDS, ITEMS.
 //  - stageRewards: Schrauben + Meta-Schrott + Blaupausen einer Etappe (nach Akt, Medaille, Knotenart)
-//  - placeholderReward: kleiner Bonus der Platzhalter-Knoten bis Phase 5
-//  - runPayout: Meta-Auszahlung am Run-Ende (gesammelter Schrott, Schrauben-Rest → Schrott, Blaupausen, Kerne)
+//  - runPayout: Meta-Auszahlung am Run-Ende (gesammelter Schrott, Schrauben-Rest → Schrott, Forschungs-Bonus
+//    Feinschliff I auf allen Schrott, Blaupausen, Kerne)
 //  - itemPool / rarityWeights / rollItemChoices: Item-Auswahl nach einer Etappe (Etappe/Elite/Boss/Item-Kiste)
 import { REWARDS, ITEMS as BAL } from '../data/balance.js';
 import { ITEMS } from '../data/items.js';
@@ -32,11 +32,6 @@ export function stageRewards(act, kind, result) {
   };
 }
 
-// Platzhalter-Knoten (Händler, Werkbank, Schwarzmarkt, Ereignis, Schatz) bis Phase 5
-export function placeholderReward(type) {
-  return { bolts: REWARDS.placeholderBolts[type] || 0 };
-}
-
 // Meta-Auszahlung am Run-Ende. run.earned: { scrap, blueprints, cores } (während des Runs gesammelt).
 // Ergebnis: { scrap, blueprints, cores, rows: [{ label, scrap?, blueprints?, cores? }] }
 export function runPayout(run) {
@@ -46,10 +41,14 @@ export function runPayout(run) {
   if (e.actScrap) rows.push({ label: 'Akte abgeschlossen', scrap: e.actScrap });
   const boltScrap = Math.floor(Math.max(0, run.bolts) * REWARDS.boltsToScrap);
   if (boltScrap > 0) rows.push({ label: `Schrauben-Rest (${Math.floor(run.bolts)} 🔩 × ${Math.round(REWARDS.boltsToScrap * 100)} %)`, scrap: boltScrap });
+  // Forschung (Feinschliff I, Perk scrapGain): + Anteil auf allen Schrott des Runs
+  const gain = (run.perks && run.perks.scrapGain) || 0;
+  const perkScrap = gain > 0 ? Math.round((Math.round(e.scrap) + boltScrap) * gain) : 0;
+  if (perkScrap > 0) rows.push({ label: `Feinschliff (+${Math.round(gain * 100)} % Schrott)`, scrap: perkScrap });
   if (e.blueprints) rows.push({ label: 'Blaupausen', blueprints: e.blueprints });
   if (e.cores) rows.push({ label: 'Kerne', cores: e.cores });
   return {
-    scrap: Math.round(e.scrap) + boltScrap,
+    scrap: Math.round(e.scrap) + boltScrap + perkScrap,
     blueprints: e.blueprints || 0,
     cores: e.cores || 0,
     rows,
@@ -59,7 +58,7 @@ export function runPayout(run) {
 // ---------- Item-Auswahl ----------
 
 // Items im Zufallspool: pool 'base' + Items, deren Pool-Forschung erledigt ist (research: Liste der Forschungs-IDs).
-// all: Dev-Menü „alle Items in den Pool“. Verfluchte Items kommen nie in die Auswahl (Schwarzmarkt/Schatz, Phase 5).
+// all: Dev-Menü „alle Items in den Pool“. Verfluchte Items kommen nie in die Auswahl (Schwarzmarkt, Ereignisse, Schatz-Haken: cursedItemPool).
 export function itemPool(research = [], all = false) {
   const done = new Set(research || []);
   return ITEMS.filter((it) => it.rarity !== 'cursed' && (all || it.pool === 'base' || done.has(it.pool)));
@@ -74,31 +73,33 @@ export function rarityWeights(context = 'stage', act = 1) {
   return out;
 }
 
-// Auswahl würfeln: count verschiedene Items aus dem Pool. owned: Item-IDs im Inventar (Gewicht ITEMS.ownedWeight).
-// Je Platz wird zuerst die Seltenheit nach Gewicht gezogen (nur Seltenheiten mit noch verfügbaren Items),
-// danach ein Item dieser Seltenheit gleichverteilt. Ergebnis: Liste von Item-IDs (kann kürzer sein, wenn der Pool leer ist).
-export function rollItemChoices({ rng, context = 'stage', act = 1, count = 3, research = [], all = false, owned = [] }) {
+// Auswahl würfeln: count verschiedene Items aus dem Pool. owned: Item-IDs im Inventar (Gewicht ownedWeight,
+// Standard ITEMS.ownedWeight = 0 → erscheinen nicht). Je Platz wird zuerst die Seltenheit nach Gewicht gezogen (nur
+// Seltenheiten mit noch verfügbaren Items), danach ein Item dieser Seltenheit gleichverteilt.
+// Phase 5 (Händler, Ereignisse, Schatz): weights ersetzt die Seltenheits-Gewichte des Kontexts, filter(item) grenzt den
+// Pool ein (z. B. Tag), pool ersetzt den Pool ganz. Ergebnis: Liste von Item-IDs (kürzer, wenn der Pool leer ist).
+export function rollItemChoices({ rng, context = 'stage', act = 1, count = 3, research = [], all = false, owned = [], weights = null, ownedWeight = BAL.ownedWeight, filter = null, pool = null }) {
   const ownedSet = new Set(owned);
-  let pool = itemPool(research, all).filter((it) => !ownedSet.has(it.id) || BAL.ownedWeight > 0);
-  const weights = rarityWeights(context, act);
+  let list = (pool || itemPool(research, all)).filter((it) => (!ownedSet.has(it.id) || ownedWeight > 0) && (!filter || filter(it)));
+  const w = weights || rarityWeights(context, act);
   const out = [];
-  for (let k = 0; k < count && pool.length; k++) {
+  for (let k = 0; k < count && list.length; k++) {
     // Seltenheiten des Kontexts mit verfügbaren Items; sonst alle verbleibenden Items (Rückfall)
     const avail = {};
-    for (const [r, w] of Object.entries(weights)) if (pool.some((it) => it.rarity === r)) avail[r] = w;
+    for (const [r, wr] of Object.entries(w)) if (wr > 0 && list.some((it) => it.rarity === r)) avail[r] = wr;
     let cand;
     if (Object.keys(avail).length) {
       const r = rng.weighted(avail);
-      cand = pool.filter((it) => it.rarity === r);
-    } else cand = pool;
+      cand = list.filter((it) => it.rarity === r);
+    } else cand = list;
     // gleichverteilt, bereits besessene mit ownedWeight
-    const wts = cand.map((it) => (ownedSet.has(it.id) ? BAL.ownedWeight : 1));
+    const wts = cand.map((it) => (ownedSet.has(it.id) ? ownedWeight : 1));
     const sum = wts.reduce((a, b) => a + b, 0);
     let u = rng.next() * sum;
     let pick = cand[cand.length - 1];
     for (let i = 0; i < cand.length; i++) { u -= wts[i]; if (u <= 0) { pick = cand[i]; break; } }
     out.push(pick.id);
-    pool = pool.filter((it) => it !== pick);
+    list = list.filter((it) => it !== pick);
   }
   return out;
 }

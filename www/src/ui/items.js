@@ -3,7 +3,7 @@
 import { el, show } from './dom.js';
 import { ITEMS, RARITIES, RARITY_ORDER } from '../data/items.js';
 import { TAGS, TAG_IDS, SET_LEVELS, setId } from '../data/tags.js';
-import { describeItem, describeEntry, entryParts, entryRarity, isHybrid, setOverview, setProgressFor, MAX_TIER } from '../items/inventory.js';
+import { describeItem, describeEntry, entryParts, entryRarity, entryName, isHybrid, setOverview, setProgressFor, MAX_TIER } from '../items/inventory.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -50,15 +50,18 @@ export function entryRowHtml(entry, slot, opts = {}) {
   const descs = describeEntry(entry, { scale: opts.scale || 1 });
   const rar = entryRarity(entry);
   const r = rarityOf(rar);
-  const name = parts.map(({ def }) => esc(def.name)).join(' + ');
+  // Hybride: eigener Name (Werkbank), darunter die beiden Ursprungs-Items
+  const name = esc(entryName(entry));
+  const sub = isHybrid(entry) ? ` <small>Hybrid ×0,75 · ${parts.map(({ def }) => esc(def.name)).join(' + ')}</small>` : '';
   const icon = parts.map(({ def }) => def.icon).join('');
   const tags = [...new Set(parts.flatMap(({ def }) => def.tags))];
-  return `<div class="irow r-${rar} ${opts.napped ? 'napped' : ''}" style="--rc:${r.color}" data-slot="${slot}">
+  const tierTxt = isHybrid(entry) ? parts.map(({ tier }) => stars(tier)).join(' + ') : stars(entry.tier || 1);
+  return `<div class="irow r-${rar} ${opts.napped ? 'napped' : ''} ${opts.sel ? 'sel' : ''}" style="--rc:${r.color}" data-slot="${slot}">
     <div class="ir-top"><span class="ic-icon">${icon}</span>
-      <div class="ic-head"><div class="ic-name">${name}${isHybrid(entry) ? ' <small>Hybrid ×0,75</small>' : ''}</div>
-        <div class="ic-meta"><span class="ic-rar">${esc(r.name)}</span> ${stars(entry.tier || 1)}${opts.napped ? ' <small>😴 schläft (Schwarze Katze)</small>' : ''}</div></div></div>
+      <div class="ic-head"><div class="ic-name">${name}${sub}</div>
+        <div class="ic-meta"><span class="ic-rar">${esc(r.name)}</span> ${tierTxt}${opts.napped ? ' <small>😴 schläft (Schwarze Katze)</small>' : ''}</div></div></div>
     <div class="ic-tags">${tags.map((t) => tagChip(t)).join('')}</div>
-    ${descs.map((d) => `<div class="ic-desc">${esc(d.desc)}</div>${d.curse ? `<div class="ic-curse">☠ ${esc(d.curse)}</div>` : ''}`).join('')}
+    ${descs.map((d) => `<div class="ic-desc">${esc(d.desc)}</div>${d.curse ? `<div class="ic-curse">☠ ${esc(d.curse)}</div>` : ''}${d.cleansedCurse ? `<div class="ic-cleansed">✨ Fluch entfernt: <s>${esc(d.cleansedCurse)}</s></div>` : ''}`).join('')}
     ${opts.actions || ''}
   </div>`;
 }

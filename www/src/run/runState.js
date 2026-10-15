@@ -2,8 +2,8 @@
 // Der Run liegt in save.run und wird nach jeder Aktion gespeichert (main.js) → nach App-Neustart fortsetzbar.
 //
 // Ablauf: newRun(save) → Karte Akt 1 → reachableNodes → enterNode → (Etappe: stageSpecFor → Stage →
-//   applyStageResult | Tankstelle: chooseStation | Platzhalter: visitPlaceholder) → … → Boss → nächster Akt
-//   → … → Boss Akt 3 = Sieg. Haltbarkeit 0 = Niederlage. endRun(save, run) zahlt Meta-Belohnungen aus.
+//   applyStageResult | Sonderknoten: Logik in shops/*.js, Zustand in run.current.shop, Abschluss mit leaveNode)
+//   → … → Boss → nächster Akt → … → Boss Akt 3 = Sieg. Haltbarkeit 0 = Niederlage. endRun(save, run) zahlt aus.
 //
 // Run-Zustand:
 // { v, seed, ascension, chassisId, parts: {slot: {id, level}}, abilities, act, biome, bossIds: {act: id}, map,
@@ -11,7 +11,9 @@
 //   durability, durabilityBase, bolts, inventory: [{itemId, tier, hybrid?, hybridTier?}], reserve,
 //   pendingChoices: [{ context, items: [ids], skipBolts }], poolAll, runMods: {fuelMaxAdd, coolMul, durabilityMaxAdd},
 //   counters: { trig: {perRun-Zähler}, rolls, events }, history, stats, earned: {scrap, blueprints, cores, actScrap},
-//   bossesBeaten: [acts], over }
+//   bossesBeaten: [acts], over,
+//   Phase 5: perks (Forschungs-Boni beim Run-Start), reserve: [{ itemId, price }] (beim Händler reserviert),
+//   seenEvents: [ids], current.shop (Zustand des offenen Sonderknotens – speicherbar, Fortsetzen mitten im Shop) }
 //
 // Phase 4 – Items: Start-Item je Chassis (starterItem bzw. zufälliges base-Item des starterTag), nach jeder geschafften
 // Etappe eine Item-Auswahl (pendingChoices; Seltenheit je Etappe/Elite/Boss, run/rewards.js → rollItemChoices) plus je
@@ -19,7 +21,6 @@
 // Run-Ereignisse (runStart, nodeEnter, stageClear, itemGained, shopEnter) laufen über die Trigger-Engine mit einem
 // ctx ohne Fahrzeug (emitRunEvent). Der Kodex im Spielstand (save.codex) merkt sich gesehene/besessene Items und Set-Boni.
 import { RUN, REWARDS, ITEMS as BAL_ITEMS } from '../data/balance.js';
-import { NODE_TYPES } from '../data/nodes.js';
 import { biomeForAct } from '../data/biomes.js';
 import { SLOTS } from '../data/index.js';
 import { ITEMS, itemById } from '../data/items.js';
@@ -32,7 +33,8 @@ import { computeStats } from '../items/statMods.js';
 import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts } from '../items/inventory.js';
 import { dispatchRunEvent } from '../items/triggerEngine.js';
 import { ModState } from '../items/modState.js';
-import { stageRewards, placeholderReward, runPayout, rollItemChoices, itemSkipBolts } from './rewards.js';
+import { stageRewards, runPayout, rollItemChoices, itemSkipBolts } from './rewards.js';
+import { PERK_KEYS } from '../garage/research.js';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -49,19 +51,20 @@ export function runLoadoutSave(run, save = null) {
   }
   return {
     garage: { chassis: run.chassisId, parts, partLevels, abilities: [...run.abilities] },
-    research: { done: save && save.research ? [...save.research.done] : [] },
+    research: { done: save && save.research ? [...save.research.done] : [...(run.research || [])] },
   };
 }
 
+// Ausrüstung des Runs: Forschungs-Boni vom Run-Start (run.perks), Fähigkeiten des Runs (auch gekaufte)
 export function runLoadout(run, save = null) {
-  return buildLoadout(runLoadoutSave(run, save));
+  return buildLoadout(runLoadoutSave(run, save), { perks: run.perks || {}, runAbilities: run.abilities });
 }
 
 // Werte der Run-Ausrüstung inkl. Items, Set-Boni (Biom des aktuellen Akts) und Run-Effekten (wie in der Etappe,
 // ohne Buffs). Zwischengespeichert je Inventar/Akt/Run-Werte.
 const statCache = new WeakMap();
 export function runStats(run) {
-  const key = JSON.stringify([run.chassisId, run.parts, run.act, run.inventory, run.runMods]);
+  const key = JSON.stringify([run.chassisId, run.parts, run.act, run.inventory, run.runMods, run.perks]);
   const c = statCache.get(run);
   if (c && c.key === key) return c.stats;
   const lo = runLoadout(run);
@@ -103,6 +106,7 @@ export function newRun(save, opts = {}) {
     chassisId: lo.chassis.id,
     parts,
     abilities: lo.abilities.filter((id) => id !== lo.special),
+    perks: { ...lo.perks },
     act: 1,
     biome: null,
     bossIds: {},
@@ -113,9 +117,10 @@ export function newRun(save, opts = {}) {
     path: [],
     durability: lo.stats.durabilityMax,
     durabilityBase: lo.stats.durabilityMax,
-    bolts: 0,
+    bolts: lo.perks.startBolts || 0,
     inventory: [],
     reserve: [],
+    seenEvents: [],
     pendingChoices: [],
     poolAll: !!BAL_ITEMS.devAllPools,
     runMods: { fuelMaxAdd: 0, coolMul: 0, durabilityMaxAdd: 0 },
@@ -163,6 +168,13 @@ export function normalizeRun(run) {
   run.counters.rolls = run.counters.rolls | 0;
   run.counters.events = run.counters.events | 0;
   run.poolAll = !!run.poolAll;
+  // Phase 5: Forschungs-Boni (ältere Runs: keine), Reservierungen, gesehene Ereignisse
+  if (!isObj(run.perks)) run.perks = {};
+  for (const k of PERK_KEYS) if (typeof run.perks[k] !== 'number' || !isFinite(run.perks[k])) run.perks[k] = 0;
+  if (!Array.isArray(run.reserve)) run.reserve = [];
+  run.reserve = run.reserve.filter((r) => isObj(r) && itemById(r.itemId)).map((r) => ({ itemId: r.itemId, price: Math.max(0, Number(r.price) || 0) }));
+  if (!Array.isArray(run.seenEvents)) run.seenEvents = [];
+  if (!Array.isArray(run.research)) run.research = [];
   return run;
 }
 
@@ -202,20 +214,32 @@ export function reachableNodes(run) {
 
 export const canEnter = (run, id) => reachableNodes(run).some((n) => n.id === id);
 
+// Art eines Knotens: die Kartenart – außer der laufende Knoten wurde umgewandelt (Ereignis „{ stage: 'elite' }“ →
+// run.current.type = 'elite', der Knoten wird zur Elite-Etappe mit Elite-Belohnung)
+export function nodeKind(run, node) {
+  const n = typeof node === 'string' ? mapNode(run.map, node) : node;
+  if (!n) return null;
+  return run.current && run.current.node === n.id ? run.current.type : n.type;
+}
+
 // Etappen-Spezifikation eines Knotens (deterministisch: Run-Seed + Akt + Knoten → derselbe Neuversuch)
 export function stageSpecFor(run, node) {
   const n = typeof node === 'string' ? mapNode(run.map, node) : node;
-  if (!n || !isStageType(n.type)) return null;
+  const kind = n && nodeKind(run, n);
+  if (!n || !isStageType(kind)) return null;
   const rng = makeRng(hashSeed(`${run.seed}:${run.act}:${n.id}`));
   return generateStageSpec({
-    biome: currentBiome(run), kind: n.type, floor: n.floor, act: run.act, rng,
-    bossId: n.type === 'boss' ? run.bossIds[run.act] || n.bossId : null, mods: {},
+    biome: currentBiome(run), kind, floor: n.floor, act: run.act, rng,
+    bossId: kind === 'boss' ? run.bossIds[run.act] || n.bossId : null, mods: {},
   });
 }
 
 // ---------- Aktionen ----------
 
-// Knoten betreten. Ergebnis: { ok, node, kind: 'stage'|'station'|'placeholder', spec? } oder { ok: false, reason }
+// Knoten betreten. Ergebnis: { ok, node, kind, spec?, events } oder { ok: false, reason }
+//   kind: 'stage' (Etappe/Elite/Boss, spec) | 'station' | 'dealer' | 'workbench' | 'blackmarket' | 'event' | 'treasure'
+// Sonderknoten: die Logik liegt in shops/*.js (Zustand run.current.shop, legt der Shop beim ersten Öffnen an),
+// abgeschlossen wird mit leaveNode. Ist der Knoten schon offen (Fortsetzen), bleibt sein Zustand erhalten.
 export function enterNode(run, id) {
   if (run.over) return { ok: false, reason: 'over' };
   if (run.current && run.current.node !== id) return { ok: false, reason: 'busy' };
@@ -230,13 +254,22 @@ export function enterNode(run, id) {
     events.push(emitRunEvent(run, null, 'nodeEnter', { type: node.type }));
     if (node.type === 'dealer') events.push(emitRunEvent(run, null, 'shopEnter', {}));
   }
-  if (isStageType(node.type)) return { ok: true, node, kind: 'stage', spec: stageSpecFor(run, node), events };
-  if (node.type === 'station') return { ok: true, node, kind: 'station', options: stationOptions(), events };
-  return { ok: true, node, kind: 'placeholder', reward: placeholderReward(node.type), events };
+  const kind = nodeKind(run, node);
+  if (isStageType(kind)) return { ok: true, node, kind: 'stage', spec: stageSpecFor(run, node), events };
+  return { ok: true, node, kind, events };
+}
+
+// Sonderknoten verlassen (Händler, Werkbank, Schwarzmarkt, Tankstelle, Ereignis, Schatz): Knoten gilt als besucht
+export function leaveNode(run) {
+  const cur = run.current;
+  if (!cur || isStageType(cur.type)) return { ok: false, reason: 'noShop' };
+  const type = cur.type;
+  completeNode(run);
+  return { ok: true, type };
 }
 
 // Knoten abschließen (Boss → nächster Akt bzw. Sieg)
-function completeNode(run) {
+export function completeNode(run) {
   const id = run.current.node;
   const node = mapNode(run.map, id);
   run.visited.push(id);
@@ -405,7 +438,7 @@ export function inventoryView(run) {
   return { items: setup.items, sets: setup.sets, counts: setup.counts, slots: itemSlots(run), tagBoost: setup.tagBoost };
 }
 
-// Item direkt ins Inventar (Start-Item, Dev-Menü). replace: Platz, der ersetzt wird. Ergebnis wie addEntry
+// Item direkt ins Inventar (Start-Item, Händler, Dev-Menü). replace: Platz, der ersetzt wird. Ergebnis wie addEntry
 export function giveItem(run, save, itemId, { tier = 1, replace = null, force = false } = {}) {
   normalizeRun(run);
   const slots = force ? Infinity : itemSlots(run);
@@ -415,6 +448,24 @@ export function giveItem(run, save, itemId, { tier = 1, replace = null, force = 
   updateCodexSets(run, save);
   res.events = emitRunEvent(run, save, 'itemGained', { itemId });
   run.durability = Math.min(run.durability, durabilityMax(run));
+  return res;
+}
+
+// Ein bestimmtes Item als Auswahl anbieten (Ereignis/Schatz/Händler bei vollem Rucksack): Nehmen (ersetzt) oder Ablehnen.
+export function offerItem(run, save, itemId, context = 'event', skipBolts = 0) {
+  normalizeRun(run);
+  const choice = { context, items: [itemId], skipBolts };
+  run.pendingChoices.push(choice);
+  codexItem(save, itemId, 1);
+  return choice;
+}
+
+// Item geben – passt es nicht mehr in den Rucksack, wird es als Auswahl angeboten (ersetzen oder ablehnen).
+// Ergebnis: { ok, slot?, queued?, events? }
+export function giveOrOffer(run, save, itemId, context = 'event', tier = 1) {
+  const res = giveItem(run, save, itemId, { tier });
+  if (res.ok) return res;
+  if (res.reason === 'full') { offerItem(run, save, itemId, context); return { ok: true, queued: true }; }
   return res;
 }
 
@@ -458,42 +509,45 @@ export function skipChoice(run) {
   return { ok: true, bolts: ch.skipBolts || 0 };
 }
 
-// Tankstelle: Wahl für den Run (Zahlen aus data/nodes.js → station.params)
-export function stationOptions() {
-  const p = NODE_TYPES.station.params;
-  return [
-    { id: 'repair', icon: '🔧', name: 'Reparieren', desc: `+${Math.round(p.repairPct * 100)} % Haltbarkeit` },
-    { id: 'fuel', icon: '⛽', name: 'Volltanken', desc: `+${p.fuelMaxAdd} max. Treibstoff für den Run` },
-    { id: 'cool', icon: '❄️', name: 'Kühlerspülung', desc: `+${Math.round(p.coolMul * 100)} % Kühlung für den Run` },
-  ];
+// ---------- Run-Werte ändern (Sonderknoten, Ereignisse) ----------
+
+// Schrauben ± (Einnahmen zählen in die Statistik; nie unter 0). Ergebnis: tatsächliche Änderung
+export function addRunBolts(run, n) {
+  const before = run.bolts;
+  run.bolts = Math.max(0, run.bolts + n);
+  if (n > 0) run.stats.boltsEarned += n;
+  return run.bolts - before;
 }
 
-export function chooseStation(run, choice) {
-  const cur = run.current;
-  if (!cur || cur.type !== 'station') return { ok: false, reason: 'noStation' };
-  const p = NODE_TYPES.station.params;
-  const out = { ok: true, choice };
-  if (choice === 'repair') {
-    const before = run.durability;
-    run.durability = Math.min(durabilityMax(run), run.durability + durabilityMax(run) * p.repairPct);
-    out.healed = Math.round(run.durability - before);
-  } else if (choice === 'fuel') run.runMods.fuelMaxAdd += p.fuelMaxAdd;
-  else if (choice === 'cool') run.runMods.coolMul += p.coolMul;
-  else return { ok: false, reason: 'choice' };
-  run.stats.stations++;
-  completeNode(run);
-  return out;
+// Haltbarkeit heilen (Anteil der max. Haltbarkeit × (1 + Stat repairBonus)). Ergebnis: geheilte Punkte
+export function healRun(run, pct) {
+  const max = durabilityMax(run);
+  const before = run.durability;
+  run.durability = Math.min(max, run.durability + max * pct * (1 + (runStats(run).repairBonus || 0)));
+  return run.durability - before;
 }
 
-// Platzhalter-Knoten (bis Phase 5): kleiner Bonus, Knoten gilt als besucht
-export function visitPlaceholder(run) {
-  const cur = run.current;
-  if (!cur || isStageType(cur.type) || cur.type === 'station') return { ok: false, reason: 'noPlaceholder' };
-  const rw = placeholderReward(cur.type);
-  run.bolts += rw.bolts;
-  run.stats.boltsEarned += rw.bolts;
-  completeNode(run);
-  return { ok: true, type: cur.type, bolts: rw.bolts };
+// Schaden außerhalb der Etappe (Anteil der max. Haltbarkeit), nie unter minLeft. Ergebnis: Schaden
+export function damageRun(run, pct, minLeft = 1) {
+  const before = run.durability;
+  run.durability = Math.max(Math.min(before, minLeft), run.durability - durabilityMax(run) * pct);
+  return before - run.durability;
+}
+
+// Max. Haltbarkeit für den Run ± n (ein Plus füllt auch die aktuelle auf). Ergebnis: Änderung der max. Haltbarkeit
+export function addMaxDurability(run, n) {
+  const before = durabilityMax(run);
+  run.runMods.durabilityMaxAdd += n;
+  const after = durabilityMax(run);
+  if (after > before) run.durability += after - before;
+  run.durability = Math.max(Math.min(run.durability, 1), Math.min(run.durability, after));
+  return after - before;
+}
+
+// Max. Treibstoff für den Run ± n
+export function addMaxFuel(run, n) {
+  run.runMods.fuelMaxAdd += n;
+  return n;
 }
 
 // Aufgeben (Pause-Menü / Garage)

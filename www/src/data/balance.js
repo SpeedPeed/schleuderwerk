@@ -4,7 +4,7 @@
 // Diese Datei importiert nichts und wird auch von node --test geladen.
 
 export const SAVE_VERSION = 3;
-export const GAME_VERSION = '0.4.0';
+export const GAME_VERSION = '0.5.0';
 
 // ---------- Speichern ----------
 export const SAVE = {
@@ -260,10 +260,76 @@ export const REWARDS = {
   blueprints: { elite: 1, boss: { 1: 3, 2: 4, 3: 5 } },
   firstBossCores: { 2: 1, 3: 1 }, // erster Boss-Sieg in Akt 2/3: Kerne
   winCores: 1,             // Run gewonnen: Kern(e)
-  boltsToScrap: 0.1,       // übrige Schrauben → 10 % als Schrott am Run-Ende
+  boltsToScrap: 0.1,       // übrige Schrauben → 10 % als Schrott am Run-Ende (V2-DESIGN §6: Senke der Run-Währung)
   actScrap: { 1: 40, 2: 80, 3: 140 }, // Akt abgeschlossen: Bonus-Schrott
-  placeholderBolts: { event: 10, treasure: 20, dealer: 0, workbench: 0, blackmarket: 0 }, // Platzhalter bis Phase 5
   itemSkipBolts: { 1: 8, 2: 12, 3: 16 }, // Item-Auswahl „Überspringen“ (oder voller Rucksack abgelehnt): Schrauben je Akt
+};
+
+// ---------- Phase 5: Knoten der Karte (shops/*.js) – alle Preise und Beträge ----------
+// Preise in Schrauben (🔩, Run-Währung). Akt-Faktor gilt für Items, Fähigkeiten, Fluch-Entfernen und Zerlegen.
+// data/nodes.js → params beschreibt dieselben Grundwerte für die Anzeige; maßgeblich sind die Werte hier
+// (tests/shops.test.mjs prüft, dass beide übereinstimmen).
+export const SHOP = {
+  items: 5,                // 🛒 Schrotthändler: so viele Items im Angebot …
+  abilities: 1,            // … und so viele Fähigkeiten (ersetzt einen Fähigkeits-Slot für den Run)
+  price: { common: 30, rare: 50, epic: 80, legendary: 130, cursed: 40 }, // Grundpreis je Seltenheit
+  actMul: { 1: 1, 2: 1.3, 3: 1.6 },   // × Akt-Faktor
+  abilityPrice: 45,        // Grundpreis einer Fähigkeit (× Akt-Faktor)
+  rarityWeights: {         // Seltenheit der Angebote je Akt
+    1: { common: 0.55, rare: 0.33, epic: 0.1, legendary: 0.02 },
+    2: { common: 0.4, rare: 0.38, epic: 0.18, legendary: 0.04 },
+    3: { common: 0.28, rare: 0.38, epic: 0.27, legendary: 0.07 },
+  },
+  ownedWeight: 0.6,        // besessene Items erscheinen mit diesem Gewicht (Doppelte für die Werkbank-Fusion ★+1)
+  rerollBase: 10,          // Neu würfeln: 10 + 10 je bisherigem Reroll (× (1 − Stat rerollDiscount))
+  rerollStep: 10,
+  reserveSlots: 1,         // Reservieren-Plätze (+ Forschung r_perk_reserve_slot); Item wartet beim nächsten Händler im Run
+  // Rabatt: Preis × (1 − Stat shopDiscount) – Einkaufswagen +0,2, Items (Rabattmarkenheft); Stat-Grenze SOFTCAPS.shopDiscount
+};
+
+export const WORKBENCH = {
+  fusionsPerVisit: 1,      // 🔧 je Besuch eine Fusion (★+1 oder Hybrid); Zerlegen unbegrenzt
+  hybridMul: 0.75,         // Hybrid: beide Effekte × 0,75 (items/inventory.js → hybridMul)
+  scrapPct: 0.4,           // Zerlegen: 40 % des Händlerpreises (× ★-Stufe, Hybrid: Summe beider Teile) als Schrauben
+};
+
+export const BLACKMARKET = {
+  items: 3,                // 🕳 3 verfluchte Items (Fluch-Pool: data/index.js → cursedItemPool)
+  payDurabilityPct: 0.15,  // Bezahlen mit −15 % max. Haltbarkeit (für den Run) …
+  payFuelMax: 15,          // … oder −15 max. Treibstoff (für den Run) …
+  payCores: 1,             // … oder 1 Kern (💠 aus dem Spielstand)
+  minDurabilityLeft: 20,   // Haltbarkeit als Preis nur, solange danach mind. 20 max. Haltbarkeit bleiben …
+  minFuelLeft: 40,         // … bzw. mind. 40 max. Treibstoff
+  removeCurseBolts: 45,    // Fluch entfernen (Item behält seine Stärken) – × Akt-Faktor
+};
+
+export const STATION = {
+  repairPct: 0.35,         // ⛽ Reparieren: +35 % der max. Haltbarkeit × (1 + Stat repairBonus)
+  fuelMaxAdd: 15,          // Volltanken: +15 max. Treibstoff für den Run
+  coolMul: 0.2,            // Kühlerspülung: +20 % Kühlung für den Run
+};
+
+export const EVENTS = {
+  itemContext: 'stage',    // ❓ Effekt item ohne rarity: Seltenheit wie bei der Item-Auswahl nach einer Etappe
+  minDurability: 1,        // Ereignis-Schaden (hpPct < 0) beendet nie den Run: höchstens bis auf 1 Haltbarkeit
+  minFuelLeft: 30,         // Kosten maxFuel: Option nur wählbar, solange danach mind. 30 max. Treibstoff bleiben
+  cursePushesOut: true,    // { curse: true } bei vollem Rucksack: der Fluch verdrängt ein zufälliges nicht verfluchtes Item
+};
+
+export const TREASURE = {
+  suspiciousChance: 0.3,   // 💰 30 % „verdächtig“ (Hinweis sichtbar) mit Haken
+  context: 'crate',        // Seltenheit des Gratis-Items (wie Item-Kiste) …
+  suspiciousContext: 'elite', // … verdächtige Haufen sind besser bestückt (mind. Selten) – das Risiko lohnt sich
+  hooks: {                 // Haken (Gewicht + Wert)
+    damage: { weight: 1, pct: 0.1 },        // 10 % der max. Haltbarkeit Schaden (nie unter 1)
+    curse: { weight: 1 },                   // ein verfluchtes Item dazu (Fluch-Pool)
+    bolts: { weight: 1, pct: 0.5, min: 10 }, // die Hälfte der Schrauben weg (mind. 10, höchstens alle)
+  },
+};
+
+// Erfinder-Labor (garage/research.js): Kosten stehen je Knoten in data/research.js (Blaupausen 📘).
+export const RESEARCH = {
+  costMul: 1,              // globaler Faktor auf alle Forschungskosten
 };
 
 // ---------- Items, Effekte, Ereignis-Warteschlange ----------
@@ -283,7 +349,7 @@ export const ITEMS = {
   feedSize: 3,             // HUD: so viele letzte Auslösungen in der Feed-Zeile
   feedTime: 2.5,           // … so lange (s) bleibt eine Zeile stehen
   // Item-Auswahl nach einer Etappe (run/runState.js → rollItemChoices). Gewichte je Seltenheit und Kontext;
-  // verfluchte Items kommen nie in eine Auswahl (Schwarzmarkt/Schatz in Phase 5). Fehlen Items einer Seltenheit im
+  // verfluchte Items kommen nie in eine Auswahl (Schwarzmarkt, Ereignis-Flüche, Schatz-Haken: data/index.js → cursedItemPool). Fehlen Items einer Seltenheit im
   // Pool, wird über die übrigen Seltenheiten des Kontexts verteilt; ist der Kontext leer, über alle nicht verfluchten.
   rarityWeights: {
     stage: { common: 0.62, rare: 0.29, epic: 0.08, legendary: 0.01 },
@@ -293,7 +359,8 @@ export const ITEMS = {
   },
   // Pro Akt werden die selteneren Stufen häufiger (Faktor auf das Gewicht; Akt 1 = 1)
   rarityActMul: { 2: { rare: 1.25, epic: 1.5, legendary: 1.5 }, 3: { rare: 1.5, epic: 2, legendary: 2 } },
-  ownedWeight: 0,          // Items, die schon im Inventar sind, erscheinen nicht erneut (Werkbank-Fusion kommt in Phase 5)
+  ownedWeight: 0,          // Item-Auswahl nach Etappen: besessene Items erscheinen nicht erneut (Doppelte für die Werkbank-Fusion
+                           // gibt es beim Schrotthändler, SHOP.ownedWeight)
   devAllPools: false,      // Dev-Menü: alle Items im Pool (unabhängig von der Forschung)
 };
 

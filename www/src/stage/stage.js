@@ -193,7 +193,7 @@ export class Stage {
   pickNap(inventory) {
     let cat = -1;
     inventory.forEach((e, i) => {
-      for (const { def } of entryParts(e)) if ((def.rules && def.rules.blackCatNap) || (def.curse && def.curse.rules && def.curse.rules.blackCatNap)) cat = cat < 0 ? i : cat;
+      for (const { def } of entryParts(e)) if ((def.rules && def.rules.blackCatNap) || (!e.cleansed && def.curse && def.curse.rules && def.curse.rules.blackCatNap)) cat = cat < 0 ? i : cat;
     });
     if (cat < 0) return -1;
     const others = [];

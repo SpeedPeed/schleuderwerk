@@ -57,8 +57,9 @@ export class MapScreen {
     q.durrow.classList.toggle('warn', df < RESOURCES.durWarn && df >= RESOURCES.durCrit);
     q.durrow.classList.toggle('crit', df < RESOURCES.durCrit);
     const mods = [];
-    if (run.runMods.fuelMaxAdd) mods.push(`⛽ +${run.runMods.fuelMaxAdd}`);
-    if (run.runMods.coolMul) mods.push(`❄ +${Math.round(run.runMods.coolMul * 100)} %`);
+    const sign = (v) => (v > 0 ? `+${fmt(v)}` : `−${fmt(-v)}`);
+    if (run.runMods.fuelMaxAdd) mods.push(`⛽ ${sign(run.runMods.fuelMaxAdd)}`);
+    if (run.runMods.coolMul) mods.push(`❄ ${sign(Math.round(run.runMods.coolMul * 100))} %`);
     q.mods.textContent = mods.join(' · ');
     const slots = itemSlots(run);
     q.ibar.innerHTML = itemBarHtml(run.inventory || [], slots);

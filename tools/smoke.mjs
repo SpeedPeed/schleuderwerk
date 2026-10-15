@@ -11,6 +11,10 @@
 // Phase 4: Item-Auswahl nach jeder geschafften Etappe (Karten, Nehmen, voller Rucksack → Ersetzen), Item-Leiste auf der
 //   Karte, Inventar mit Set-Übersicht, Dev-Menü „Item hinzufügen“ (Suche), Kettenreaktion in der Etappe (Item-Symbol
 //   hüpft, „KETTENREAKTION ×n!“), Kompendium in der Garage.
+// Phase 5: Erfinder-Labor (Reiter, Knoten erforschen), Lackiererei (Lack kaufen, Farbe am Modell), danach jeden
+//   Knotentyp einmal besuchen (Dev „Nächste Knoten → Typ“): Schrotthändler (kaufen, Reroll, reservieren, Fähigkeit,
+//   Seite neu laden mitten im Shop → geht im Shop weiter), Werkbank (★-Fusion, Zerlegen), Schwarzmarkt (Kauf mit
+//   Treibstoff, Fluch entfernen), Ereignis, Schatzhaufen, Tankstelle – mit Bildschirmfotos aller Shop-Bildschirme.
 // Geprüft wird außerdem:
 //   - keine Konsolenfehler / pageerrors
 //   - das Fahrzeug liegt in JEDEM 100-ms-Sample im Bild (window.__game.carScreen())
@@ -584,6 +588,46 @@ async function main() {
     await page.tap('#itemsheet [data-id=close]');
     await sleep(200);
 
+    // ---------- Phase 5: Erfinder-Labor ----------
+    await devTap('bp');
+    await closeDev();
+    await page.tap('#garage .g-tab[data-tab=lab]');
+    await sleep(600);
+    await shot('70-labor');
+    const lab0 = await g(() => ({ open: !document.querySelector('#garage .g-lab').classList.contains('hidden'), nodes: document.querySelectorAll('#garage .lab-node').length, lines: document.querySelectorAll('#garage .lab-lines line').length, done: window.__game.save.research.done.length, bp: window.__game.save.meta.blueprints }));
+    check(lab0.open && lab0.nodes >= 45 && lab0.lines >= 45, `Labor: Baum mit ${lab0.nodes} Knoten und ${lab0.lines} Linien`);
+    const labId = await g(() => { const b = document.querySelector('#garage .lab-node.s-available.buy'); return b && b.dataset.id; });
+    await page.locator(`#garage .lab-node[data-id="${labId}"]`).scrollIntoViewIfNeeded();
+    await page.tap(`#garage .lab-node[data-id="${labId}"]`);
+    await sleep(300);
+    await shot('71-labor-knoten');
+    await page.tap('#garage .lab-detail [data-a=buy]');
+    await sleep(400);
+    const lab1 = await g((id) => ({ done: window.__game.save.research.done.includes(id), n: window.__game.save.research.done.length, bp: window.__game.save.meta.blueprints, cls: document.querySelector(`#garage .lab-node[data-id="${id}"]`).className }), labId);
+    check(lab1.done && lab1.bp < lab0.bp && /s-done/.test(lab1.cls), `Labor: ${labId} erforscht (📘 ${lab0.bp} → ${lab1.bp})`);
+    await shot('72-labor-erforscht');
+
+    // ---------- Phase 5: Lackiererei ----------
+    await page.tap('#garage .g-tab[data-tab=paint]');
+    await sleep(500);
+    const paintId = 'p_gartenzwerg_rot';
+    await page.locator(`#garage .pcard.paint[data-paint=${paintId}]`).scrollIntoViewIfNeeded();
+    await page.tap(`#garage .pcard.paint[data-paint=${paintId}] .pc-name`);
+    await sleep(500);
+    await shot('73-lack-vorschau');
+    const sc5 = await g(() => window.__game.save.meta.scrap);
+    await page.tap(`#garage .pcard.paint[data-paint=${paintId}] [data-act=buy]`);
+    await sleep(500);
+    const paint = await g(() => ({ owned: window.__game.save.cosmetics.owned, paint: window.__game.save.cosmetics.paint, scrap: window.__game.save.meta.scrap, vis: window.__game.model.userData.visual || null }));
+    check(paint.owned.includes(paintId) && paint.paint === paintId && paint.scrap < sc5, `Lackierung gekauft und angelegt (⚙ ${sc5} → ${paint.scrap})`);
+    check(paint.vis && paint.vis.color === '#d1352b', `Lack am Fahrzeugmodell sichtbar (${paint.vis && paint.vis.color})`);
+    await shot('74-lack-gekauft');
+    await page.tap('#garage .g-tab[data-tab=garage]');
+    await sleep(300);
+    // ganzer Baum erforscht → Werkbank/Schwarzmarkt im nächsten Run möglich
+    await devTap('researchAll');
+    await closeDev();
+
     // ---------- Fortsetzen nach Neustart ----------
     await page.tap('#garage [data-id=start]');
     await waitState('map', 5000);
@@ -603,6 +647,168 @@ async function main() {
         window.__samples.push({ state: gm.state, phase: gm.stage ? gm.stage.phase : null, x: s.x, y: s.y, w: innerWidth, h: innerHeight });
       }, 100);
     });
+
+    // ---------- Phase 5: jeden Knotentyp einmal besuchen ----------
+    const forceNode = async (type) => {
+      await openDev();
+      await page.locator('#devmenu [data-id=ntype]').scrollIntoViewIfNeeded();
+      await page.selectOption('#devmenu [data-id=ntype]', type);
+      await page.tap('#devmenu [data-a=force]');
+      await sleep(200);
+      const msg = await page.locator('#devmenu [data-id=msg]').textContent();
+      await closeDev();
+      return msg;
+    };
+    const tapNode = async () => {
+      const reach = await g(() => window.__game.reachable());
+      await page.locator(`.mnode[data-node="${reach[0].id}"]`).scrollIntoViewIfNeeded();
+      await page.tap(`.mnode[data-node="${reach[0].id}"]`);
+      await sleep(500);
+      return reach[0];
+    };
+    const kindNow = () => g(() => window.__game.runScreens.open && window.__game.runScreens.kind);
+    const tapRun = async (sel) => { await page.locator(`#runui ${sel}`).first().scrollIntoViewIfNeeded(); await page.locator(`#runui ${sel}`).first().tap(); await sleep(400); };
+    // Shop verlassen (Weiter), danach offene Auswahlen, zurück auf der Karte ohne offenen Knoten
+    const leaveShop = async () => {
+      for (let i = 0; i < 6; i++) {
+        const k = await kindNow();
+        if (k === 'choice' || k === 'replace') { await handleChoices(); continue; }
+        if (k === 'pick') { await tapRun('[data-pick]'); continue; }
+        const b = await g(() => { const c = document.querySelector('#runui'); for (const a of ['leave', 'cont', 'pending']) if (c.querySelector(`[data-a=${a}]`)) return a; return null; });
+        if (!b || !k) break;
+        await tapRun(`[data-a=${b}]`);
+      }
+    };
+    await page.tap('#garage [data-id=start]');
+    await waitState('map', 5000);
+    await sleep(400);
+    await g(() => { const r = window.__game.run; r.bolts = 900; r.inventory.length = Math.min(r.inventory.length, 2); });
+    const shopSeen = [];
+
+    // 🛒 Schrotthändler
+    check(/dealer/.test(await forceNode('dealer')), 'Dev: nächste Knoten → Schrotthändler');
+    const dn = await tapNode();
+    check((await kindNow()) === 'dealer', 'Schrotthändler öffnet');
+    await shot('80-haendler');
+    const d0 = await g(() => ({ cards: document.querySelectorAll('#runui .icard').length, ab: !!document.querySelector('#runui .sh-ability'), bolts: window.__game.run.bolts, inv: window.__game.run.inventory.length, offers: window.__game.run.current.shop.offers.map((o) => o.itemId) }));
+    check(d0.cards === 5 && d0.ab, `Händler: ${d0.cards} Items + 1 Fähigkeit`);
+    await tapRun('[data-buy="0"]');
+    if ((await kindNow()) === 'pick') await tapRun('[data-pick="0"]');
+    const d1 = await g(() => ({ bolts: window.__game.run.bolts, inv: window.__game.run.inventory.length, sold: window.__game.run.current.shop.offers[0].sold }));
+    check(d1.sold && d1.bolts < d0.bolts, `Händler: Item gekauft (🔩 ${d0.bolts} → ${d1.bolts})`);
+    await tapRun('[data-a=reroll]');
+    const d2 = await g(() => ({ bolts: window.__game.run.bolts, rerolls: window.__game.run.current.shop.rerolls }));
+    check(d2.rerolls === 1 && d2.bolts < d1.bolts && d2.bolts >= d1.bolts - 10, `Händler: neu gewürfelt (−${d1.bolts - d2.bolts} 🔩, Forschungs-Rabatt)`);
+    await tapRun('[data-res="1"]');
+    check((await g(() => window.__game.run.reserve.length)) === 1, 'Händler: Item für den nächsten Händler reserviert');
+    await shot('81-haendler-reserviert');
+    await tapRun('[data-a=ability]');
+    check((await kindNow()) === 'pick', 'Händler: Fähigkeit → Slot-Auswahl');
+    await shot('82-haendler-faehigkeit');
+    const abNew = await g(() => window.__game.run.current.shop.ability.id);
+    await tapRun('[data-pick="1"]');
+    check((await g(() => window.__game.run.abilities[1])) === abNew, `Händler: Fähigkeit ${abNew} ersetzt Slot 2 für den Run`);
+    // App-Neustart mitten im Shop
+    const offersBefore = await g(() => window.__game.run.current.shop.offers.map((o) => `${o.itemId}:${o.sold}`));
+    preSamples.push(...(await g(() => window.__samples)));
+    await page.reload({ waitUntil: 'load' });
+    await waitState('garage', 15000);
+    await sleep(500);
+    await g(() => { window.__samples = []; setInterval(() => { const gm = window.__game; const s = gm.carScreen(); window.__samples.push({ state: gm.state, phase: gm.stage ? gm.stage.phase : null, x: s.x, y: s.y, w: innerWidth, h: innerHeight }); }, 100); });
+    await page.tap('#garage [data-id=start]');
+    await waitState('map', 5000);
+    await sleep(600);
+    const resumed = await g(() => ({ kind: window.__game.runScreens.kind, offers: window.__game.run.current && window.__game.run.current.shop.offers.map((o) => `${o.itemId}:${o.sold}`) }));
+    check(resumed.kind === 'dealer' && JSON.stringify(resumed.offers) === JSON.stringify(offersBefore), 'Neustart mitten im Händler: geht im Shop weiter (gleiche Auslage)');
+    await shot('83-haendler-fortgesetzt');
+    await leaveShop();
+    check((await g(() => window.__game.run.current)) === null && (await g(() => window.__game.run.visited.includes(window.__game.run.pos.node))), 'Händler verlassen, Knoten besucht');
+    shopSeen.push('dealer');
+
+    // 🔧 Werkbank
+    await g(() => { const r = window.__game.run; r.inventory.length = 0; window.__game.devAddItem('feuer_buegeleisen'); window.__game.devAddItem('feuer_buegeleisen'); window.__game.devAddItem('gyro_omas_kreisel'); });
+    await forceNode('workbench');
+    await tapNode();
+    check((await kindNow()) === 'workbench', 'Werkbank öffnet');
+    await shot('84-werkbank');
+    const wb0 = await g(() => ({ opts: [...document.querySelectorAll('#runui .wb-opt')].map((e) => e.className), inv: window.__game.run.inventory.length }));
+    check(wb0.opts.some((c) => /tier/.test(c)) && wb0.opts.some((c) => /hybrid/.test(c)), `Werkbank: ★-Fusion und Hybrid angeboten (${wb0.opts.length} Möglichkeiten)`);
+    const tierIdx = wb0.opts.findIndex((c) => /tier/.test(c));
+    await tapRun(`[data-fuse="${tierIdx}"]`);
+    const wb1 = await g(() => window.__game.run.inventory.map((e) => `${e.itemId}★${e.tier}`));
+    check(wb1.includes('feuer_buegeleisen★2') && wb1.length === wb0.inv - 1, `Werkbank: ★-Fusion (${wb1.join(', ')})`);
+    await shot('85-werkbank-fusion');
+    const b5 = await g(() => window.__game.run.bolts);
+    await tapRun('[data-scrap="1"]');
+    await page.tap('.modal .btn-danger');
+    await sleep(400);
+    check((await g(() => window.__game.run.bolts)) > b5, 'Werkbank: Item zerlegt → Schrauben');
+    await leaveShop();
+    shopSeen.push('workbench');
+
+    // 🕳 Schwarzmarkt
+    await forceNode('blackmarket');
+    await tapNode();
+    check((await kindNow()) === 'blackmarket', 'Schwarzmarkt öffnet');
+    await shot('86-schwarzmarkt');
+    const fuel0 = await g(() => window.__game.run.runMods.fuelMaxAdd);
+    await tapRun('[data-buy="0"][data-pay="fuel"]');
+    if ((await kindNow()) === 'pick') await tapRun('[data-pick="0"]');
+    const bm = await g(() => ({ fuel: window.__game.run.runMods.fuelMaxAdd, cursed: window.__game.run.inventory.filter((e) => window.__game.runLogic && e.itemId).length, sold: window.__game.run.current.shop.offers[0].sold }));
+    check(bm.sold && bm.fuel === fuel0 - 15, `Schwarzmarkt: verfluchtes Item gegen −15 max. Treibstoff (${fuel0} → ${bm.fuel})`);
+    await tapRun('[data-rm]');
+    check(await g(() => window.__game.run.inventory.some((e) => e.cleansed)), 'Schwarzmarkt: Fluch entfernt');
+    await shot('87-schwarzmarkt-fluch-weg');
+    await leaveShop();
+    shopSeen.push('blackmarket');
+
+    // ❓ Ereignis
+    await forceNode('event');
+    await tapNode();
+    check((await kindNow()) === 'event', 'Ereignis öffnet');
+    await shot('88-ereignis');
+    const evOpts = await g(() => document.querySelectorAll('#runui .ev-opt').length);
+    check(evOpts >= 2, `Ereignis: ${evOpts} Optionen`);
+    await tapRun('.ev-opt:not(.off)');
+    if ((await kindNow()) === 'pick') await tapRun('[data-pick]');
+    check(await g(() => !!window.__game.run.current.shop.result), 'Ereignis: Ausgang gewürfelt');
+    await shot('89-ereignis-ergebnis');
+    const elite = await g(() => window.__game.run.current.type === 'elite');
+    if (elite) {
+      await tapRun('[data-a=cont]');
+      await handleChoices();
+      if ((await kindNow()) === 'intro') { await shot('89b-ereignis-elite'); await tapRun('[data-a=back]'); }
+      await devSkip('skipGold');
+      await pressNext();
+    } else await leaveShop();
+    await waitState('map', 5000);
+    shopSeen.push('event');
+
+    // 💰 Schatzhaufen
+    await forceNode('treasure');
+    await tapNode();
+    check((await kindNow()) === 'treasure', 'Schatzhaufen öffnet');
+    await shot('90-schatz');
+    const inv7 = await g(() => window.__game.run.inventory.length + window.__game.run.pendingChoices.length);
+    await tapRun('[data-a=take]');
+    await shot('91-schatz-genommen');
+    check(await g((n) => window.__game.run.current.shop.result.taken && window.__game.run.inventory.length + window.__game.run.pendingChoices.length >= n + 1, inv7), 'Schatz: Item genommen');
+    await leaveShop();
+    shopSeen.push('treasure');
+
+    // ⛽ Tankstelle
+    await forceNode('station');
+    await tapNode();
+    check((await kindNow()) === 'station', 'Tankstelle öffnet');
+    await shot('92-tankstelle');
+    await tapRun('[data-choice=cool]');
+    await waitState('map', 5000);
+    check((await g(() => window.__game.run.runMods.coolMul)) > 0, 'Tankstelle: Kühlerspülung');
+    shopSeen.push('station');
+    check(shopSeen.length === 6, `Alle Knotentypen besucht: ${shopSeen.join(', ')} (+ Etappe/Elite/Boss im Run)`);
+    await shot('93-karte-nach-shops');
+    await page.tap('#map [data-id=garage]');
+    await waitState('garage', 5000);
 
     // ---------- Streckenbausteine: Dev-Testfahrten über die Boss-Strecken ----------
     const seenTypes = new Set();

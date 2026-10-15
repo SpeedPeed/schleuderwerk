@@ -1,12 +1,12 @@
 // Roguelite-Run (run/runState.js + run/rewards.js) mit simulierten Etappen-Ergebnissen:
-// Sieg, Niederlage, Abschleppen + Neuversuch, Tankstelle, Platzhalter, Aktwechsel, Auszahlung, Speichern/Fortsetzen.
+// Sieg, Niederlage, Abschleppen + Neuversuch, Tankstelle, Sonderknoten verlassen, Aktwechsel, Auszahlung, Speichern/Fortsetzen.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSave, migrate } from '../www/src/save/save.js';
 import * as R from '../www/src/run/runState.js';
 import { stageRewards } from '../www/src/run/rewards.js';
-import { REWARDS, RUN } from '../www/src/data/balance.js';
-import { NODE_TYPES } from '../www/src/data/nodes.js';
+import { REWARDS, RUN, STATION } from '../www/src/data/balance.js';
+import { chooseStation } from '../www/src/shops/gasStation.js';
 import { isStageType } from '../www/src/map/mapGen.js';
 import { Stage } from '../www/src/stage/stage.js';
 import { biomeById } from '../www/src/data/biomes.js';
@@ -34,10 +34,10 @@ function play(save, { medal = () => 'gold', station = 'repair', roundtrip = fals
       const o = R.applyStageResult(run, fake(run, e.spec, medal(e.spec, run)), save);
       log.push({ act: run.act, type: n.type, o });
     } else if (e.kind === 'station') {
-      assert.ok(R.chooseStation(run, station).ok);
+      assert.ok(chooseStation(run, station).ok);
       log.push({ type: 'station' });
     } else {
-      assert.ok(R.visitPlaceholder(run).ok);
+      assert.ok(R.leaveNode(run).ok);
       log.push({ type: n.type });
     }
   }
@@ -113,8 +113,8 @@ test('Run: Abschleppen (15 % max. Haltbarkeit), Neuversuch derselben Strecke, Ni
     const m = R.reachableNodes(run)[0];
     const ee = R.enterNode(run, m.id);
     if (ee.kind === 'stage') R.applyStageResult(run, fake(run, ee.spec, 'miss'), save);
-    else if (ee.kind === 'station') R.chooseStation(run, 'fuel');
-    else R.visitPlaceholder(run);
+    else if (ee.kind === 'station') chooseStation(run, 'fuel');
+    else R.leaveNode(run);
   }
   assert.ok(run.over && !run.over.won);
   assert.equal(run.over.reason, 'tow');
@@ -137,7 +137,7 @@ test('Run: Totalschaden in der Etappe = Niederlage', () => {
 
 test('Run: Tankstelle (Reparieren / Volltanken / Kühlerspülung) wirkt für den Run, auch in der Etappe', () => {
   const save = defaultSave();
-  const p = NODE_TYPES.station.params;
+  const p = STATION;
   for (const choice of ['repair', 'fuel', 'cool']) {
     const run = R.newRun(save, { seed: 8 });
     // bis zur Tankstelle (Etage 5) vorspielen, Haltbarkeit niedrig
@@ -147,11 +147,11 @@ test('Run: Tankstelle (Reparieren / Volltanken / Kühlerspülung) wirkt für den
       e = R.enterNode(run, n.id);
       if (e.kind === 'station') break;
       if (e.kind === 'stage') R.applyStageResult(run, fake(run, e.spec, 'gold', { durability: 30 }));
-      else R.visitPlaceholder(run);
+      else R.leaveNode(run);
     }
     assert.equal(e.kind, 'station');
     const max = R.durabilityMax(run);
-    const r = R.chooseStation(run, choice);
+    const r = chooseStation(run, choice);
     assert.ok(r.ok);
     if (choice === 'repair') assert.ok(Math.abs(run.durability - Math.min(max, 30 + max * p.repairPct)) < 1e-9);
     if (choice === 'fuel') assert.equal(run.runMods.fuelMaxAdd, p.fuelMaxAdd);
@@ -165,7 +165,7 @@ test('Run: Tankstelle (Reparieren / Volltanken / Kühlerspülung) wirkt für den
   }
 });
 
-test('Run: Platzhalter-Knoten geben ihren kleinen Bonus und gelten als besucht', () => {
+test('Run: Sonderknoten öffnen ihren Shop-Typ und gelten nach dem Verlassen als besucht (keine Platzhalter mehr)', () => {
   const save = defaultSave();
   const run = R.newRun(save, { seed: 21 });
   const seen = {};
@@ -173,18 +173,18 @@ test('Run: Platzhalter-Knoten geben ihren kleinen Bonus und gelten als besucht',
     const ns = R.reachableNodes(run);
     const n = ns.find((x) => !isStageType(x.type) && x.type !== 'station') || ns[0];
     const e = R.enterNode(run, n.id);
-    if (e.kind === 'placeholder') {
-      const b = run.bolts;
-      const r = R.visitPlaceholder(run);
-      assert.equal(run.bolts - b, REWARDS.placeholderBolts[n.type] || 0);
-      assert.ok(run.visited.includes(n.id));
-      seen[n.type] = r.bolts;
-    } else if (e.kind === 'station') R.chooseStation(run, 'repair');
-    else R.applyStageResult(run, fake(run, e.spec, 'gold'));
+    if (e.kind === 'stage') { R.applyStageResult(run, fake(run, e.spec, 'gold')); continue; }
+    assert.equal(e.kind, n.type, 'Knotenart = Shop-Art');
+    if (e.kind === 'station') { chooseStation(run, 'repair'); continue; }
+    const b = run.bolts;
+    assert.ok(R.leaveNode(run).ok);
+    assert.equal(run.bolts, b, 'Verlassen ohne Bonus');
+    assert.ok(run.visited.includes(n.id));
+    assert.equal(run.current, null);
+    seen[n.type] = (seen[n.type] || 0) + 1;
   }
   assert.ok(Object.keys(seen).length >= 2, JSON.stringify(seen));
-  if ('event' in seen) assert.equal(seen.event, 10);
-  if ('treasure' in seen) assert.equal(seen.treasure, 20);
+  assert.equal(typeof R.visitPlaceholder, 'undefined');
 });
 
 test('Run: Speichern/Fortsetzen nach jeder Aktion ergibt denselben Verlauf', () => {

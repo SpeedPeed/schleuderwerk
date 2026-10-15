@@ -678,6 +678,7 @@ export function buildVehicle({ chassisId, parts = {}, visual = null }) {
   group.scale.setScalar(SCALE);
   group.userData = {
     chassisId: c.id,
+    visual: { color: vis.color, accent: vis.accent },   // Farben (Chassis oder Lackierung)
     upper,
     top: top * SCALE,
     axleHalf: ((axleMax - axleMin) / 2) * SCALE,

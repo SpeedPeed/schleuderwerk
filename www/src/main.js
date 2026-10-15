@@ -35,6 +35,14 @@ import { DevMenu } from './ui/devMenu.js';
 import { MapScreen } from './ui/map.js';
 import { RunScreens } from './ui/runScreens.js';
 import { ItemSheet } from './ui/items.js';
+import { ShopScreens } from './ui/shops.js';
+import * as Dealer from './shops/scrapDealer.js';
+import * as Workbench from './shops/workbench.js';
+import * as BlackMarket from './shops/blackMarket.js';
+import * as GasStation from './shops/gasStation.js';
+import * as TextEvent from './shops/textEvent.js';
+import * as Treasure from './shops/treasure.js';
+import * as researchLogic from './garage/research.js';
 import { confirmDialog, infoDialog } from './ui/dom.js';
 import { itemById, itemPools } from './data/items.js';
 import { setChainLog } from './items/triggerEngine.js';
@@ -87,27 +95,34 @@ for (const m of ['bronze', 'silver', 'gold']) {
   view.scene.add(flags[m]);
 }
 
-// ---------- Fahrzeug-Modell (Chassis + sichtbare Teile) ----------
+// ---------- Fahrzeug-Modell (Chassis + sichtbare Teile + Lackierung) ----------
 let carModel = null;
 let carKey = '';
 let carVisual = chassisVisual(chassisById(save.garage.chassis));
-function setVehicle(chassisId, parts) {
-  const key = `${chassisId}|${Object.values(parts).join(',')}`;
+// visual: { color, accent } einer Lackierung (data/cosmetics.js) oder null (Chassis-Farben)
+function setVehicle(chassisId, parts, visual = garageLogic.paintVisual(save)) {
+  const key = `${chassisId}|${Object.values(parts).join(',')}|${visual ? `${visual.color}${visual.accent}` : ''}`;
   if (key === carKey && carModel) return;
   const rotY = carModel ? carModel.rotation.y : CAMERA.garage.startAngle;
   if (carModel) {
     view.scene.remove(carModel);
     carModel.userData.dispose();
   }
-  carModel = buildVehicle({ chassisId, parts });
+  carModel = buildVehicle({ chassisId, parts, visual });
   carModel.rotation.y = rotY;
-  carVisual = chassisVisual(chassisById(chassisId));
+  carVisual = visual || chassisVisual(chassisById(chassisId));
   view.scene.add(carModel);
   carKey = key;
 }
+// override: Garage-Vorschau ({ chassis, parts } bzw. { paint: id|null } im Lack-Reiter)
 function vehicleFromSave(override = null) {
   const lo = buildLoadout(save, override || {});
-  setVehicle(lo.chassis.id, partIds(lo));
+  let visual = garageLogic.paintVisual(save);
+  if (override && 'paint' in override) {
+    const p = garageLogic.paintById(override.paint);
+    visual = p ? { color: p.colors.body, accent: p.colors.accent } : null;
+  }
+  setVehicle(lo.chassis.id, partIds(lo), visual);
 }
 vehicleFromSave();
 
@@ -144,7 +159,8 @@ const hud = new Hud(uiRoot, { onPause: () => pauseGame() });
 hud.abilityButtons.forEach((b, i) => input.bindButton(b, `ab${i}`));
 const garage = new GarageScreen(uiRoot, {
   onAction: (name, ...args) => garageAction(name, ...args),
-  onPreview: (ov) => { if (!save.run) vehicleFromSave(ov); },
+  onPreview: (ov) => { if (!save.run || (ov && 'paint' in ov)) vehicleFromSave(ov); },
+  onResearch: (id) => researchAction(id),
   onSettings: () => { sfx.click(); menus.openSettings(); },
   onStart: () => { sfx.click(); save.run ? openMap() : startRun(); },
   onGiveUp: () => giveUpRun(),
@@ -160,6 +176,7 @@ const itemSheet = new ItemSheet(uiRoot, {});
 const runScreens = new RunScreens(uiRoot, {
   onTick: (kind, i) => { if (kind === 'medal') sfx.medal(i); else sfx.money(); },
 });
+const shopScreens = new ShopScreens(runScreens);
 const results = new Results(uiRoot, {
   onGarage: () => { sfx.click(); openGarage(); },
   onAgain: () => { sfx.click(); startTestDrive(biome.id); },
@@ -197,6 +214,8 @@ const devMenu = new DevMenu(uiRoot, {
   onCurrency: (kind, n) => { save.meta[kind] += n; writeSave(save); refreshGarage(); },
   onUnlockAll: () => { garageLogic.unlockAll(save); writeSave(save); refreshGarage(); },
   onResearch: () => { garageLogic.completeResearch(save); writeSave(save); refreshGarage(); },
+  onResearchAll: () => { researchLogic.completeAllResearch(save); writeSave(save); refreshGarage(); },
+  onForceNode: (type) => devForceNode(type),
   onGiftParts: () => { garageLogic.giftAllParts(save); writeSave(save); refreshGarage(); },
   onEndStage: () => {
     menus.closeSettings();
@@ -252,9 +271,12 @@ const fmtN = (n) => Math.round(n).toLocaleString('de-DE');
 const DENIED = {
   scrap: 'Nicht genug Schrott ⚙',
   cores: 'Nicht genug Kerne 💠',
-  research: 'Erst im Labor erforschen (kommt bald)',
+  blueprints: 'Nicht genug Blaupausen 📘',
+  bolts: 'Nicht genug Schrauben 🔩',
+  research: 'Erst im 🧪 Labor erforschen',
   locked: 'Noch nicht freigeschaltet',
   maxed: 'Höchste Stufe erreicht',
+  ascension: 'Gibt es für einen Run-Sieg auf einer Schrottstufe',
 };
 function garageAction(name, ...args) {
   const fn = {
@@ -264,6 +286,8 @@ function garageAction(name, ...args) {
     buyChassis: garageLogic.buyChassis,
     selectChassis: garageLogic.selectChassis,
     setAbility: (s, i, id) => garageLogic.setAbility(s, i, id, buildLoadout(s).slots.abilities),
+    buyPaint: garageLogic.buyPaint,
+    equipPaint: garageLogic.equipPaint,
   }[name];
   if (!fn) return { ok: false };
   const res = fn(save, args[0], args[1]);
@@ -279,7 +303,15 @@ function garageAction(name, ...args) {
   if (name === 'upgradePart') markMilestone(save, 'firstPartUpgrade');
   if (name === 'buyPart') markMilestone(save, 'firstPartBought');
   if (name === 'buyChassis') markMilestone(save, 'firstChassisUnlocked');
+  if (name === 'buyPaint') markMilestone(save, 'firstPaint');
   writeSave(save);
+  if (name === 'buyPaint' || name === 'equipPaint') {
+    if (name === 'buyPaint') { sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1); } else sfx.click();
+    garage.paintSel = undefined;
+    vehicleFromSave();
+    garage.render(save, garageInfo());
+    return res;
+  }
   if (name === 'selectChassis') sfx.click();
   else if (name === 'equipPart' || name === 'setAbility') { sfx.click(); platform.haptic('light'); }
   else { sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1); }
@@ -288,6 +320,27 @@ function garageAction(name, ...args) {
   vehicleFromSave(garage.previewOverride());   // im Teile-Unterblatt bleibt das angetippte Teil in der Vorschau
   garage.render(save, garageInfo());
   if (partId) garage.flashPart(partId);
+  return res;
+}
+
+// Erfinder-Labor: Forschung kaufen
+function researchAction(id) {
+  const res = researchLogic.buyResearch(save, id);
+  if (!res.ok) {
+    sfx.denied();
+    platform.haptic('light');
+    popups.show(res.reason === 'locked' ? 'Erst die Voraussetzungen erforschen 🔒' : DENIED[res.reason] || 'Nicht möglich', 'info');
+    garage.lab.flash(id, 'nope');
+    return res;
+  }
+  markMilestone(save, 'firstResearch');
+  writeSave(save);
+  sfx.buy();
+  platform.haptic('success');
+  const node = researchLogic.researchById(id);
+  popups.show(`🧪 ${node.icon} ${node.name}${node.repeatable ? ` – Stufe ${res.level}` : ''} erforscht!`, 'good');
+  garage.render(save, garageInfo());
+  garage.lab.flash(id);
   return res;
 }
 
@@ -595,8 +648,10 @@ function openMap() {
   popups.clear();
   const G = CAMERA.garage;
   camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
-  // offene Item-Auswahl (z. B. nach einem Neustart der App)
-  if (runLogic.pendingChoice(run)) showChoices(() => { runScreens.hide(); mapScreen.render(run); });
+  // offene Item-Auswahl (z. B. nach einem Neustart der App), danach ein noch offener Sonderknoten (Fortsetzen im Shop)
+  const shopOpen = () => run.current && !isStageType(run.current.type);
+  if (runLogic.pendingChoice(run)) showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); });
+  else if (shopOpen()) openShop();
 }
 
 // Knoten auf der Karte gewählt
@@ -606,7 +661,7 @@ function selectNode(id) {
   const node = mapNode(run.map, id);
   if (!node) return;
   sfx.click();
-  if (isStageType(node.type)) {
+  if (isStageType(runLogic.nodeKind(run, node))) {
     // Intro (Knoten wird erst mit LOS betreten)
     const sp = runLogic.stageSpecFor(run, node);
     runScreens.intro({ spec: sp, node, attempts: run.current ? run.current.attempts : 0, durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
@@ -625,28 +680,223 @@ function selectNode(id) {
   if (!e.ok) return;
   writeSave(save);
   reportRunEvents(e.events);
-  if (e.kind === 'station') {
-    runScreens.station(e.options, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
-      onChoose: (choice) => {
-        const r = runLogic.chooseStation(run, choice);
-        if (!r.ok) return;
-        sfx.buy();
-        platform.haptic('success');
-        writeSave(save);
-        popups.show(choice === 'repair' ? `Repariert +${fmtN(r.healed)} 🔧` : choice === 'fuel' ? 'Tank vergrößert ⛽' : 'Kühler gespült ❄', 'good');
-        openMap();
-      },
-    });
-  } else {
-    runScreens.placeholder(e.node.type, e.reward, {
-      onOk: () => {
-        runLogic.visitPlaceholder(run);
-        writeSave(save);
-        sfx.click();
-        openMap();
-      },
-    });
+  openShop();
+}
+
+// ---------- Sonderknoten (shops/*.js, Oberfläche ui/shops.js) ----------
+// Alle Shops liegen als Overlay über der Karte (state 'map'); ihr Zustand steht in run.current.shop (wird gespeichert).
+const SHOP_KINDS = ['dealer', 'workbench', 'blackmarket', 'event', 'treasure', 'station', 'pick'];
+function openShop(keep = false) {
+  const run = save.run;
+  if (!run || !run.current) { openMap(); return; }
+  const t = run.current.type;
+  if (isStageType(t)) { selectNode(run.current.node); return; }
+  if (t === 'dealer') shopDealer(keep);
+  else if (t === 'workbench') shopWorkbench(keep);
+  else if (t === 'blackmarket') shopBlackMarket(keep);
+  else if (t === 'event') shopEvent();
+  else if (t === 'treasure') shopTreasure();
+  else if (t === 'station') shopStation();
+}
+
+// Sonderknoten verlassen → Karte (offene Item-Auswahlen kommen dort zuerst)
+function leaveShop() {
+  const run = save.run;
+  if (!run) return;
+  runLogic.leaveNode(run);
+  writeSave(save);
+  sfx.click();
+  runScreens.hide();
+  openMap();
+}
+
+// Rückmeldung nach einer Shop-Aktion; true = hat geklappt
+function shopFeedback(res, okText = null, kind = 'good') {
+  if (!res.ok) {
+    sfx.denied();
+    platform.haptic('light');
+    const t = { bolts: 'Nicht genug Schrauben 🔩', full: 'Kein Platz frei', used: 'Pro Besuch nur eine Fusion', pay: 'So kannst du gerade nicht bezahlen', tier: 'Gleiche ★ nötig', maxed: 'Schon ★3', sameTags: 'Gleiche Tags – kein Hybrid möglich', hp: 'Zu wenig Haltbarkeit', fuel: 'Zu wenig Treibstoff', item: 'Kein Fundstück dabei' }[res.reason];
+    popups.show(t || 'Nicht möglich', 'info');
+    return false;
   }
+  writeSave(save);
+  if (okText) popups.show(okText, kind);
+  if (save.run) mapScreen.render(save.run);
+  return true;
+}
+
+// Voller Rucksack beim Kauf: Platz zum Ersetzen wählen
+function pickReplace(itemId, onPick, onBack) {
+  const run = save.run;
+  shopScreens.pickSlot({ title: '🎒 Rucksack voll', text: `Welches Item soll <b>${(itemById(itemId) || {}).name}</b> Platz machen?`, inventory: run.inventory, label: 'Ersetzen', item: itemId }, { onPick, onBack });
+}
+
+function shopDealer(keep = false) {
+  const run = save.run;
+  const v = Dealer.dealerView(run);
+  shopScreens.dealer(v, run, {
+    onBuy: (i) => {
+      const buy = (replace = null) => {
+        const r = Dealer.buyOffer(run, save, i, replace);
+        if (!r.ok && r.reason === 'full') { sfx.click(); pickReplace(v.offers[i].itemId, (slot) => buy(slot), () => shopDealer(true)); return; }
+        if (shopFeedback(r)) { gotItem(r); }
+        shopDealer(true);
+      };
+      buy();
+    },
+    onAbility: () => {
+      if (!v.ability || v.ability.sold) return;
+      if (run.bolts < v.ability.price) { shopFeedback({ ok: false, reason: 'bolts' }); return; }
+      sfx.click();
+      shopScreens.pickAbility({ abilities: run.abilities, slots: v.abilitySlots, newId: v.ability.id }, {
+        onPick: (slot) => {
+          const r = Dealer.buyAbility(run, slot);
+          if (shopFeedback(r, `${abilityById(v.ability.id).icon} ${abilityById(v.ability.id).name} in Slot ${slot + 1}`)) { sfx.buy(); platform.haptic('success'); }
+          shopDealer(true);
+        },
+        onBack: () => { sfx.click(); shopDealer(true); },
+      });
+    },
+    onReroll: () => {
+      const r = Dealer.reroll(run);
+      if (shopFeedback(r, `↻ Neu gewürfelt (−${fmtN(r.cost)} 🔩)`, 'info')) sfx.money();
+      shopDealer(false);
+    },
+    onReserve: (i) => {
+      const r = Dealer.toggleReserve(run, i);
+      if (!r.ok && r.reason === 'full') { sfx.denied(); popups.show('Kein Reservieren-Platz frei (Forschung: +1)', 'info'); return; }
+      if (shopFeedback(r, r.reserved ? '📌 Für den nächsten Händler reserviert' : 'Reservierung gelöst', 'info')) sfx.click();
+      shopDealer(true);
+    },
+    onLeave: () => leaveShop(),
+    onInventory: () => { sfx.click(); openInventory(); },
+  }, keep);
+}
+
+function shopWorkbench(keep = false) {
+  const run = save.run;
+  const d = { inventory: run.inventory, options: Workbench.fusionOptions(run), fusionsLeft: Workbench.fusionsLeft(run), scrap: run.inventory.map((e) => Workbench.scrapValue(run, e)), bolts: run.bolts };
+  shopScreens.workbench(d, {
+    onFuse: (a, b, kind) => {
+      const r = kind === 'tier' ? Workbench.fuseItems(run, save, a, b) : Workbench.hybridize(run, save, a, b);
+      if (shopFeedback(r, kind === 'tier' ? `★ ${itemById(r.entry.itemId).name} → ★${r.entry.tier}` : `🧬 Hybrid: ${r.entry && r.entry.name}`, 'big')) {
+        sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1);
+      }
+      shopWorkbench(true);
+    },
+    onScrap: async (i) => {
+      const e = run.inventory[i];
+      const yes = await confirmDialog(uiRoot, `${itemById(e.itemId).name} zerlegen? Das Item ist danach weg (+${fmtN(Workbench.scrapValue(run, e))} 🔩).`, 'Zerlegen');
+      if (!yes || !save.run) return;
+      const r = Workbench.scrapItem(run, i);
+      if (shopFeedback(r, `🔩 +${fmtN(r.bolts)} Schrauben`)) sfx.money();
+      shopWorkbench(true);
+    },
+    onLeave: () => leaveShop(),
+  }, keep);
+}
+
+function shopBlackMarket(keep = false) {
+  const run = save.run;
+  const st = BlackMarket.openBlackMarket(run);
+  const d = { offers: st.offers, pay: BlackMarket.payOptions(run, save), cursed: BlackMarket.cursedSlots(run), removeCost: BlackMarket.removeCurseCost(run), inventory: run.inventory, bolts: run.bolts, cores: save.meta.cores };
+  shopScreens.blackMarket(d, run, {
+    onBuy: (i, pay) => {
+      const buy = (replace = null) => {
+        const r = BlackMarket.buyCursed(run, save, i, pay, replace);
+        if (!r.ok && r.reason === 'full') { sfx.click(); pickReplace(st.offers[i].itemId, (slot) => buy(slot), () => shopBlackMarket(true)); return; }
+        if (shopFeedback(r)) gotItem(r);
+        shopBlackMarket(true);
+      };
+      buy();
+    },
+    onRemoveCurse: (slot) => {
+      const r = BlackMarket.removeCurse(run, slot);
+      if (shopFeedback(r, '✨ Fluch entfernt – die Stärken bleiben')) { sfx.buy(); platform.haptic('success'); }
+      shopBlackMarket(true);
+    },
+    onLeave: () => leaveShop(),
+  }, keep);
+}
+
+function shopEvent() {
+  const run = save.run;
+  const v = TextEvent.eventView(run);
+  if (!v) { openShop(); return; }
+  const after = (r) => {
+    if (!r.ok) { shopFeedback(r); shopEvent(); return; }
+    writeSave(save);
+    const good = r.result.log.filter((l) => l.good === true).length, bad = r.result.log.filter((l) => l.good === false).length;
+    if (good >= bad) { sfx.buy(); platform.haptic('success'); } else { sfx.crash(); platform.haptic('heavy'); }
+    mapScreen.render(run);
+    shopEvent();
+  };
+  shopScreens.event(v, {
+    onOption: (i) => {
+      const o = v.options[i];
+      if (o.chooseItem) {
+        sfx.click();
+        shopScreens.pickSlot({ title: 'Welches Fundstück gibst du ab?', inventory: run.inventory, label: 'Abgeben' }, {
+          onPick: (slot) => after(TextEvent.chooseOption(run, save, i, { slot })),
+          onBack: () => { sfx.click(); shopEvent(); },
+        });
+        return;
+      }
+      after(TextEvent.chooseOption(run, save, i));
+    },
+    onPending: () => {
+      const p = v.pending[0];
+      const up = p.kind === 'upgradeItem';
+      shopScreens.pickSlot({ title: up ? '★ Welches Fundstück steigt auf?' : '🗑️ Welches Fundstück gibst du ab?', inventory: run.inventory, label: up ? '★ +1' : 'Abgeben', allowed: (i) => !up || (run.inventory[i].tier || 1) < 3 }, {
+        onPick: (slot) => {
+          const r = TextEvent.resolvePending(run, save, slot);
+          if (shopFeedback(r)) sfx.buy();
+          shopEvent();
+        },
+      });
+    },
+    onContinue: () => {
+      sfx.click();
+      if (v.elite && run.current && isStageType(run.current.type)) {
+        // Elite-Etappe direkt aus dem Ereignis: erst offene Auswahlen, dann Intro
+        showChoices(() => { runScreens.hide(); selectNode(run.current.node); });
+        return;
+      }
+      leaveShop();
+    },
+  });
+}
+
+function shopTreasure() {
+  const run = save.run;
+  const st = Treasure.openTreasure(run);
+  shopScreens.treasure(st, run, {
+    onTake: () => {
+      const r = Treasure.takeTreasure(run, save);
+      if (!r.ok) { shopFeedback(r); return; }
+      writeSave(save);
+      if (st.hook) { sfx.crash(); platform.haptic('heavy'); } else { sfx.buy(); platform.haptic('success'); }
+      mapScreen.render(run);
+      shopTreasure();
+    },
+    onLeave: () => { Treasure.leaveTreasure(run); writeSave(save); sfx.click(); runScreens.hide(); openMap(); },
+    onContinue: () => leaveShop(),
+  });
+}
+
+function shopStation() {
+  const run = save.run;
+  runScreens.station(GasStation.stationOptions(run), { durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
+    onChoose: (choice) => {
+      const r = GasStation.chooseStation(run, choice);
+      if (!r.ok) return;
+      sfx.buy();
+      platform.haptic('success');
+      writeSave(save);
+      popups.show(choice === 'repair' ? `Repariert +${fmtN(r.healed)} 🔧` : choice === 'fuel' ? 'Tank vergrößert ⛽' : 'Kühler gespült ❄', 'good');
+      openMap();
+    },
+  });
 }
 
 // Run beenden → Auszahlung → Run-Ende-Bildschirm
@@ -750,8 +1000,8 @@ function devSkip(medal) {
   if (!node) return 'Kein Knoten erreichbar';
   const e = runLogic.enterNode(run, node.id);
   if (!e.ok) return `Knoten nicht betretbar (${e.reason})`;
-  if (e.kind === 'station') { runLogic.chooseStation(run, 'repair'); writeSave(save); openMap(); return 'Tankstelle: Reparieren'; }
-  if (e.kind === 'placeholder') { runLogic.visitPlaceholder(run); writeSave(save); openMap(); return `${node.type}: besucht`; }
+  if (e.kind === 'station') { GasStation.chooseStation(run, 'repair'); writeSave(save); openMap(); return 'Tankstelle: Reparieren'; }
+  if (e.kind !== 'stage') { runLogic.leaveNode(run); writeSave(save); openMap(); return `${node.type}: verlassen`; }
   const dist = distFor(e.spec);
   const md = medalFor(dist, e.spec.medals);
   const r = {
@@ -811,6 +1061,19 @@ function devAllPool() {
   return `${pools.length} Item-Pools freigeschaltet – alle Items können angeboten werden`;
 }
 
+// Dev: alle gerade wählbaren Knoten bekommen den Typ `type` (Rauchtest: jeden Knotentyp einmal besuchen)
+function devForceNode(type) {
+  const run = save.run;
+  if (!run) return 'Kein Run aktiv';
+  if (run.current) return 'Erst den laufenden Knoten abschließen';
+  const reach = runLogic.reachableNodes(run);
+  if (!reach.length || reach[0].type === 'boss') return 'Nächster Knoten ist der Boss';
+  for (const n of reach) n.type = type;
+  writeSave(save);
+  if (state === 'map') { runScreens.hide(); mapScreen.render(run); }
+  return `${reach.length} Knoten → ${type}`;
+}
+
 function devSetDurability(n) {
   const run = save.run;
   if (!run || !isFinite(n)) return 'Kein Run aktiv';
@@ -834,8 +1097,11 @@ platform.onBackButton(async () => {
   if (itemSheet.isOpen) { itemSheet.close(); return; }
   if (runScreens.open && runScreens.kind === 'replace') { runScreens.card.querySelector('[data-a=back]')?.click(); return; }
   if (runScreens.open && runScreens.kind === 'choice') return;   // Auswahl nur über die Knöpfe beenden
+  if (runScreens.open && runScreens.kind === 'pick') { runScreens.card.querySelector('[data-a=back]')?.click(); return; }
+  if (runScreens.open && SHOP_KINDS.includes(runScreens.kind)) return;   // Shops nur über „Weiter“ verlassen
   if (menus.settingsOpen) { menus.closeSettings(); return; }
   if (state === 'garage' && garage.pickerOpen) { garage.closePicker(); return; }
+  if (state === 'garage' && garage.tab !== 'garage') { garage.setTab('garage'); return; }
   if (state === 'stage') { paused ? resumeGame() : pauseGame(); return; }
   if (state === 'map' && runScreens.kind === 'intro') { runScreens.hide(); return; }
   if (state === 'map') { openGarage(); return; }
@@ -1123,7 +1389,11 @@ window.__game = {
   devSetDurability,
   devAddItem,
   devAllPool,
+  devForceNode,
+  openShop,
   runLogic,
+  researchLogic,
+  shops: { Dealer, Workbench, BlackMarket, GasStation, TextEvent, Treasure },
   hud,
   itemSheet,
   setChainLog,

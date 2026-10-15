@@ -2,6 +2,7 @@
 // Fähigkeiten wählen. Reine Logik ohne three.js und DOM – die Oberfläche ruft nur diese Funktionen auf.
 // Alle Aktionen geben { ok, reason?, cost? } zurück und verändern `save` nur bei Erfolg.
 import { GARAGE } from '../data/balance.js';
+import { PAINTS } from '../data/cosmetics.js';
 import {
   SLOTS, CHASSIS, PARTS, ABILITIES, chassisById, partById, abilityById, chassisUnlock, partUnlock, abilityUnlock,
   isStarterPart, starterPartFor, isSlotAbility, referencedResearch,
@@ -138,12 +139,73 @@ export function setAbility(save, index, id, maxSlots = GARAGE.starterAbilities.l
   return { ok: true };
 }
 
+// ---------- Lackierungen (Endgame-Senke, data/cosmetics.js) ----------
+// Kauf mit Schrott oder Kernen; Schrottstufen-Lacke (cost null, unlock 'ascension:N') gehören einem, sobald ein Run auf
+// Schrottstufe ≥ N gewonnen wurde (save.ascension.best). Rein kosmetisch – das Fahrzeugmodell zeigt die Farben.
+
+const PAINT_MAP = new Map(PAINTS.map((p) => [p.id, p]));
+export const paintById = (id) => PAINT_MAP.get(id) || null;
+export { PAINTS };
+
+// Bedingung „ascension:N“ → N (sonst 0)
+const ascNeed = (p) => {
+  const m = /^ascension:(\d+)$/.exec(p.unlock || '');
+  return m ? Number(m[1]) : 0;
+};
+
+export function paintState(save, p) {
+  const cost = p.cost || null;
+  const need = ascNeed(p);
+  const earned = !cost && need > 0 && ((save.ascension && save.ascension.best) || 0) >= need;
+  const owned = save.cosmetics.owned.includes(p.id) || earned;
+  const cur = cost ? (cost.scrap !== undefined ? 'scrap' : 'cores') : null;
+  const price = cost ? cost[cur] : 0;
+  return {
+    owned, equipped: save.cosmetics.paint === p.id, currency: cur, price, ascension: need,
+    canBuy: !owned && !!cost && save.meta[cur] >= price,
+  };
+}
+
+export function buyPaint(save, id) {
+  const p = paintById(id);
+  if (!p) return { ok: false, reason: 'unknown' };
+  const st = paintState(save, p);
+  if (st.owned) return { ok: false, reason: 'owned' };
+  if (!st.currency) return { ok: false, reason: 'ascension', need: st.ascension };
+  if (save.meta[st.currency] < st.price) return { ok: false, reason: st.currency };
+  save.meta[st.currency] -= st.price;
+  save.cosmetics.owned.push(p.id);
+  save.cosmetics.paint = p.id;
+  return { ok: true, cost: st.price, currency: st.currency };
+}
+
+// Lack anlegen (null = Originalfarben des Chassis)
+export function equipPaint(save, id) {
+  if (id === null) { save.cosmetics.paint = null; return { ok: true }; }
+  const p = paintById(id);
+  if (!p) return { ok: false, reason: 'unknown' };
+  if (!paintState(save, p).owned) return { ok: false, reason: 'locked' };
+  save.cosmetics.paint = id;
+  return { ok: true };
+}
+
+// Farben fürs Modell: { color, accent } des angelegten Lacks oder null (Chassis-Farben)
+export function paintVisual(save) {
+  const p = save && save.cosmetics ? paintById(save.cosmetics.paint) : null;
+  return p ? { color: p.colors.body, accent: p.colors.accent } : null;
+}
+
 // ---------- Aufräumen & Dev ----------
 
 // Spielstand-Garage gegen die aktuellen Inhaltsdaten prüfen (Inhalte können sich ändern, IDs bleiben)
 export function sanitizeGarage(save) {
   if (!isObj(save.garage)) save.garage = {};
-  if (!isObj(save.research) || !Array.isArray(save.research.done)) save.research = { done: [] };
+  if (!isObj(save.research) || !Array.isArray(save.research.done)) save.research = { done: [], levels: {} };
+  if (!isObj(save.research.levels)) save.research.levels = {};
+  if (!isObj(save.cosmetics)) save.cosmetics = { owned: [], paint: null };
+  if (!Array.isArray(save.cosmetics.owned)) save.cosmetics.owned = [];
+  save.cosmetics.owned = [...new Set(save.cosmetics.owned.filter((id) => paintById(id)))];
+  if (save.cosmetics.paint && !(paintById(save.cosmetics.paint) && paintState(save, paintById(save.cosmetics.paint)).owned)) save.cosmetics.paint = null;
   const g = save.garage;
   for (const k of ['ownedChassis', 'ownedParts', 'abilities']) if (!Array.isArray(g[k])) g[k] = [];
   if (!isObj(g.parts)) g.parts = {};
@@ -179,7 +241,7 @@ export function sanitizeGarage(save) {
 }
 
 // Dev-Menü: alle Forschungs-Bedingungen erfüllen (→ alle Fähigkeiten verfügbar, Teile kaufbar, Chassis mit
-// Kernen kaufbar). Bis zum Erfinder-Labor (Phase 5) der einzige Weg, den Kauf mit 💠 auszuprobieren.
+// Kernen kaufbar). Abkürzung am Erfinder-Labor vorbei (garage/research.js → completeAllResearch erforscht den ganzen Baum).
 export function completeResearch(save) {
   const done = new Set(save.research.done);
   for (const id of referencedResearch()) done.add(id);

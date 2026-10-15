@@ -28,7 +28,8 @@ function weatherText(w) {
 }
 
 // Alle Run-Bildschirme außer der Karte in EINEM Overlay (#runui): Etappen-Intro, Ergebnis (Medaillen/Abschleppen),
-// Tankstelle, Platzhalter-Knoten, Akt-Übergang, Run-Ende. Jede Methode bekommt ihre Rückrufe direkt.
+// Item-Auswahl, Tankstelle, Akt-Übergang, Run-Ende. Die Sonderknoten (Händler, Werkbank, Schwarzmarkt, Ereignis,
+// Schatz) zeichnet ui/shops.js in dasselbe Overlay. Jede Methode bekommt ihre Rückrufe direkt.
 export class RunScreens {
   constructor(root, { onTick } = {}) {
     this.el = el('<div id="runui" class="overlay hidden"><div class="card run-card" data-id="card"></div></div>');
@@ -48,12 +49,14 @@ export class RunScreens {
     this.timers = [];
   }
 
-  present(kind, html) {
+  // keep: Bildlauf beibehalten, wenn derselbe Bildschirm neu gezeichnet wird (Shops nach einem Kauf)
+  present(kind, html, keep = false) {
+    const top = keep && this.open && this.kind === kind ? this.card.scrollTop : 0;
     this.hide();
     this.kind = kind;
     this.card.className = `card run-card rc-${kind}`;
     this.card.innerHTML = html;
-    this.card.scrollTop = 0;
+    this.card.scrollTop = top;
     show(this.el, true);
   }
 
@@ -149,15 +152,15 @@ export class RunScreens {
   // ---------- Item-Auswahl ----------
   // choice: { context, items, skipBolts }, d: { inventory, parts, slots, remaining }
   itemChoice(choice, d, { onPick, onSkip, onInventory }) {
-    const title = { stage: '🎁 Beute!', elite: '☠️ Elite-Beute!', boss: '👑 Boss-Beute!', crate: '📦 Item-Kiste!' }[choice.context] || '🎁 Beute!';
-    const sub = { elite: 'mindestens Selten', boss: 'Episch oder Legendär', crate: 'aus der Kiste in der Strecke' }[choice.context] || 'Wähle ein Item';
+    const title = { stage: '🎁 Beute!', elite: '☠️ Elite-Beute!', boss: '👑 Boss-Beute!', crate: '📦 Item-Kiste!', event: '❓ Fundstück', treasure: '💰 Schatz' }[choice.context] || '🎁 Beute!';
+    const sub = { elite: 'mindestens Selten', boss: 'Episch oder Legendär', crate: 'aus der Kiste in der Strecke', event: 'Rucksack voll – ersetzen oder ablehnen', treasure: 'Rucksack voll – ersetzen oder liegen lassen' }[choice.context] || 'Wähle ein Item';
     const cards = choice.items.length ? choiceCardsHtml(choice, d) : '<p class="ri-desc">Der Pool ist leer – nimm die Schrauben.</p>';
     this.present('choice', `
       <h2>${title}</h2>
       <div class="ri-sub">${esc(sub)}${d.remaining > 1 ? ` · noch ${d.remaining - 1} weitere Auswahl` : ''}</div>
       <button class="ch-inv" data-a="inv">🎒 ${d.inventory.length}/${d.slots} ${d.inventory.length >= d.slots ? '· voll – Nehmen ersetzt ein Item' : ''}</button>
       <div class="ch-cards">${cards}</div>
-      <div class="btn-row"><button class="btn btn-secondary" data-a="skip">Überspringen: +${fmt(choice.skipBolts)} 🔩</button></div>`);
+      <div class="btn-row"><button class="btn btn-secondary" data-a="skip">${choice.skipBolts ? `Überspringen: +${fmt(choice.skipBolts)} 🔩` : 'Ablehnen'}</button></div>`);
     this.card.querySelectorAll('[data-pick]').forEach((b) => { b.onclick = () => onPick(Number(b.dataset.pick)); });
     this.bind('[data-a=skip]', onSkip);
     this.bind('[data-a=inv]', onInventory);
@@ -172,7 +175,7 @@ export class RunScreens {
       ${itemCardHtml(d.itemId, { cls: 'new' })}
       <h4>Ersetzen</h4>
       <div class="ch-rows">${rows}</div>
-      <div class="btn-row"><button class="btn btn-secondary" data-a="back">◀ Andere Wahl</button><button class="btn btn-secondary" data-a="reject">Ablehnen: +${fmt(d.skipBolts)} 🔩</button></div>`);
+      <div class="btn-row"><button class="btn btn-secondary" data-a="back">◀ Andere Wahl</button><button class="btn btn-secondary" data-a="reject">${d.skipBolts ? `Ablehnen: +${fmt(d.skipBolts)} 🔩` : 'Ablehnen'}</button></div>`);
     this.card.querySelectorAll('[data-rep]').forEach((b) => { b.onclick = () => onReplace(Number(b.dataset.rep)); });
     this.bind('[data-a=back]', onBack);
     this.bind('[data-a=reject]', onReject);
@@ -181,22 +184,10 @@ export class RunScreens {
   // ---------- Tankstelle ----------
   station(options, d, { onChoose }) {
     this.present('station', `
-      <h2>⛽ Tankstelle</h2>
+      <div class="ri-kind" style="--c:${NODE_TYPES.station.color}">⛽ Tankstelle</div>
       <p class="ri-desc">Eine Wahl für den Rest des Runs. Haltbarkeit: ${fmt(Math.ceil(d.durability))} / ${fmt(d.durabilityMax)}</p>
       <div class="st-opts">${options.map((o) => `<button class="st-opt" data-choice="${o.id}"><span>${o.icon}</span><b>${esc(o.name)}</b><small>${esc(o.desc)}</small></button>`).join('')}</div>`);
     this.card.querySelectorAll('[data-choice]').forEach((b) => { b.onclick = () => onChoose(b.dataset.choice); });
-  }
-
-  // ---------- Platzhalter (bis Phase 5) ----------
-  placeholder(type, reward, { onOk }) {
-    const def = NODE_TYPES[type] || {};
-    this.present('placeholder', `
-      <div class="ri-kind" style="--c:${def.color || '#888'}">${def.icon || '?'} ${esc(def.name || type)}</div>
-      <p class="ri-desc">${esc(def.desc || '')}</p>
-      <div class="ph-soon">🚧 Kommt in Phase 5</div>
-      <p class="ri-desc">${reward.bolts ? `Als kleines Trostpflaster: <b>+${fmt(reward.bolts)} 🔩</b>` : 'Hier ist noch niemand – weiter geht’s.'}</p>
-      <div class="btn-row"><button class="btn btn-primary" data-a="ok">Weiter ▶</button></div>`);
-    this.bind('[data-a=ok]', onOk);
   }
 
   // ---------- Akt-Übergang ----------

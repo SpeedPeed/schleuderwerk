@@ -15,6 +15,7 @@ import { generateStageSpec } from '../../www/src/physics/trackGen.js';
 import { makeRng } from '../../www/src/core/rng.js';
 import { simSave, makeSimStage, playStage } from './bot.mjs';
 import * as RS from '../../www/src/run/runState.js';
+import { chooseStation } from '../../www/src/shops/gasStation.js';
 import { itemById } from '../../www/src/data/items.js';
 import { Stage } from '../../www/src/stage/stage.js';
 import { Track } from '../../www/src/physics/track.js';
@@ -141,8 +142,8 @@ export function simulateRun(seed, policy) {
     const reach = RS.reachableNodes(run);
     const node = reach.find((n) => n.type === 'station') || reach.find((n) => isStageType(n.type) && n.type !== 'elite') || reach[0];
     const e = RS.enterNode(run, node.id);
-    if (e.kind === 'station') { RS.chooseStation(run, run.durability < RS.durabilityMax(run) * 0.6 ? 'repair' : 'fuel'); continue; }
-    if (e.kind === 'placeholder') { RS.visitPlaceholder(run); continue; }
+    if (e.kind === 'station') { chooseStation(run, run.durability < RS.durabilityMax(run) * 0.6 ? 'repair' : 'fuel'); continue; }
+    if (e.kind !== 'stage') { RS.leaveNode(run); continue; }   // Sonderknoten (Phase 5): der Bot geht nur durch
     const su = RS.runStageSetup(run, save);
     const biome = biomeForAct(run.act);
     let result = null;

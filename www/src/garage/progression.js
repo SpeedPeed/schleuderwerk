@@ -14,6 +14,8 @@ export const MILESTONES = [
   { id: 'firstPartUpgrade', name: 'Erste Teile-Verbesserung' },
   { id: 'firstPartBought', name: 'Erstes Teil gekauft' },
   { id: 'firstChassisUnlocked', name: 'Erstes neues Chassis' },
+  { id: 'firstResearch', name: 'Erste Forschung im Labor' },
+  { id: 'firstPaint', name: 'Erste Lackierung gekauft' },
   { id: 'firstTestDrive', name: 'Erste Testfahrt (Dev)' },
 ];
 

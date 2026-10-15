@@ -59,26 +59,29 @@ www/                        ← das komplette Spiel (wird in die App gepackt)
     data/                   NUR Daten: balance.js (ALLE globalen Zahlen: BASE_STATS, SOFTCAPS, GARAGE, RESOURCES …),
                             chassis.js, parts.js, abilities.js, biomes.js (3 Akte), nodes.js (Knotentypen), index.js (Zugriff + Adapter),
                             tags.js (10 Tags + Set-Boni), items.js (88 Items) aus den geprüften Inhaltsdateien content/content_*.js,
-                            research.js, textEvents.js, ascension.js, cosmetics.js (Inhalte für Phase 5/6)
+                            research.js (Forschungsbaum), textEvents.js (26 Ereignisse), cosmetics.js (Lackierungen), ascension.js (Phase 6)
     items/                  statMods.js (Stat-Pipeline mit Soft-Caps), effects.js (alle Effekte), events.js (Ereignis-Namen),
                             eventQueue.js (Warteschlange mit Kettentiefe), modState.js (Buffs, Stapel, Zähler),
                             triggerEngine.js (Auslöser, Limits, Ketten), conditions.js (Bedingungen), inventory.js (Slots, ★, Sets, Hybride)
-    garage/                 loadout.js (Garage → Fahrzeugwerte), garage.js (kaufen/ausrüsten/verbessern), progression.js (Spielzeit, Meilensteine)
+    garage/                 loadout.js (Garage → Fahrzeugwerte), garage.js (kaufen/ausrüsten/verbessern, Lackierungen),
+                            research.js (Erfinder-Labor), progression.js (Spielzeit, Meilensteine)
     physics/                vehicle.js (Fahrzeug: Teilschritte, Tempo-Grenzen, Landung, Treibstoff/Hitze/Haltbarkeit),
                             trackGen.js (Etappen-Spezifikation), track.js (Strecke), objects.js (Pickups, Hindernisse, Zonen, „swept“ Kollision)
     map/mapGen.js           verzweigte Karte eines Akts
     run/                    runState.js (Roguelite-Run), rewards.js (Belohnungen)
+    shops/                  Sonderknoten: scrapDealer.js (Händler), workbench.js, blackMarket.js, gasStation.js, textEvent.js, treasure.js
     stage/                  stage.js (eine Etappe: Abschuss → Flug → Ende, Ereignisse), launch.js (Abschuss-Minispiel),
                             abilities.js (Fähigkeits-Slots), scoring.js (Belohnung)
     camera/cameraRig.js     Kamera-Logik ohne three.js: Zoom, Vorausschau, Sicherheitsrahmen, Boden-Pfeil
     render/                 3D: Szene, Grundformen (models.js), Fahrzeuge (vehicleModel.js: 9 Chassis + sichtbare Teile),
                             Landschaft (trackView), Objekte, Partikel, Hintergrund, origin.js (Floating Origin)
-    ui/                     Oberfläche: Garage, Karte (map.js), Run-Bildschirme (runScreens.js), HUD, Auswertung, Menüs, Dev-Menü
+    ui/                     Oberfläche: Garage (+ Labor lab.js, Lack), Karte (map.js), Run-Bildschirme (runScreens.js), Shops (shops.js),
+                            HUD, Auswertung, Menüs, Dev-Menü
     audio/sfx.js            alle Sounds per Web Audio erzeugt
     save/save.js            Spielstand v3 (localStorage, Migration, Export/Import „SW3:…“)
     platform/               input.js (Multi-Touch, Fähigkeits-Knöpfe + Tastatur), platform.js (Vibration, Display wach, Pause)
 tests/                      node --test: Mathe/Zufall, Physik, Kamera, Stat-Pipeline, Garage, Spielstand, Ressourcen, Effekte,
-                            Trigger-Engine, Regeln, Items/Inventar/Auswahl
+                            Trigger-Engine, Regeln, Items/Inventar/Auswahl, Shops/Ereignisse, Forschung/Lackierungen
 tools/validateContent.mjs   Prüfer der Inhaltsdaten (Vokabular, Querverweise, Texte)
 tools/serve.py              kleiner Webserver zum Testen am Handy
 tools/smoke.mjs             Playwright-Rauchtest (Garage, Run über 3 Akte, alle Streckenbausteine, Hochformat)
@@ -86,7 +89,7 @@ tools/sim/                  Balance-Simulator: bot.mjs (Bot), calibrate.mjs (Zie
 docs/                       ARCHITEKTUR.md, V2-DESIGN.md, PHASEN.md (was ist neu, wie testen), BALANCE.md (Zielmarken)
 ```
 
-Die Logik-Ordner (`core/ data/ items/ garage/ physics/ stage/ map/ run/ camera/ save/`) importieren weder three.js noch das DOM und laufen deshalb auch in Node (Tests).
+Die Logik-Ordner (`core/ data/ items/ garage/ physics/ stage/ map/ run/ shops/ camera/ save/`) importieren weder three.js noch das DOM und laufen deshalb auch in Node (Tests).
 
 ## Tests
 

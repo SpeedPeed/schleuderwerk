@@ -93,7 +93,7 @@ test('Inventar: Badewanne 5 Plätze, voller Rucksack → ersetzen; Fusion und Hy
   assert.equal(fuseSame({ itemId: 'feuer_buegeleisen', tier: 1 }, { itemId: 'eis_bohnerwachs', tier: 1 }).reason, 'different');
   const h = makeHybrid({ itemId: 'feuer_buegeleisen', tier: 2 }, { itemId: 'eis_bohnerwachs', tier: 1 });
   assert.ok(h.ok);
-  assert.deepEqual(h.entry, { itemId: 'feuer_buegeleisen', tier: 2, hybrid: 'eis_bohnerwachs', hybridTier: 1 });
+  assert.deepEqual(h.entry, { itemId: 'feuer_buegeleisen', tier: 2, hybrid: 'eis_bohnerwachs', hybridTier: 1, name: 'Bügeleisen-Bohnerwachs' });
   assert.equal(makeHybrid({ itemId: 'feuer_buegeleisen', tier: 1 }, { itemId: 'feuer_grillanzuender', tier: 1 }).reason, 'sameTags');
   const setup = applyInventory(buildLoadout(defaultSave()), [h.entry]);
   const srcs = setup.sources.filter((s) => s.kind === 'item');

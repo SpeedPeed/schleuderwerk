@@ -1,7 +1,8 @@
 // Inventar eines Runs (ARCHITEKTUR.md §8 inventory: [{ itemId, tier, hybrid?, hybridTier? }]) und alles, was daraus
 // für Etappe und Anzeige entsteht: Item-Slots, Stufen ★1–3, Tag-Zählung, aktive Set-Boni 2/4/6, Stat-Beiträge für die
 // Stat-Pipeline (items/statMods.js), Trigger-Quellen für die Trigger-Engine, Beschreibungen mit Platzhaltern,
-// Fusion und Hybride (reine Funktionen; die Werkbank-Oberfläche kommt in Phase 5).
+// Fusion und Hybride (reine Funktionen; Werkbank-Regeln je Besuch: shops/workbench.js).
+// Eintrag: { itemId, tier, hybrid?, hybridTier?, name? (Hybrid-Name, gespeichert), cleansed? (Fluch entfernt) }
 //
 // Regeln, die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A):
 //   setBonusDouble (Badewanne) – beim Aufbau der Set-Quellen: skalierte Schlüssel ×2 (Engine-Faktor), stack.max ×2,
@@ -10,10 +11,9 @@
 //                                auf passive Stats (add/mul) und skalierte Effekt-Parameter; Chassis- und Biom-Werte
 //                                desselben Tags addieren sich, bei mehreren verstärkten Tags eines Items gilt der größte.
 // Reine Logik ohne three.js und DOM.
-import { ITEMS as BAL, RULES } from '../data/balance.js';
+import { ITEMS as BAL, RULES, WORKBENCH } from '../data/balance.js';
 import { itemById, RARITIES } from '../data/items.js';
 import { TAGS, TAG_IDS, SET_LEVELS, setBonus, setId } from '../data/tags.js';
-import { NODE_TYPES } from '../data/nodes.js';
 import { partById } from '../data/index.js';
 import { SCALE_KEYS } from './effects.js';
 import { mergeRules, resolveParts } from './statMods.js';
@@ -27,8 +27,8 @@ export function tierMult(tier) {
   return BAL.tierMult[t - 1];
 }
 
-// Wirkung jedes Teils eines Hybrids (Werkbank-Parameter, data/nodes.js)
-export const hybridMul = () => NODE_TYPES.workbench.params.hybridEffectMul;
+// Wirkung jedes Teils eines Hybrids (balance.WORKBENCH.hybridMul; data/nodes.js workbench.params beschreibt denselben Wert)
+export const hybridMul = () => WORKBENCH.hybridMul;
 
 // ---------- Einträge ----------
 
@@ -53,9 +53,14 @@ export function entryTags(entry) {
   return [...s];
 }
 
+// Anzeigename: Hybride tragen ihren gespeicherten Namen („Zündkerzen-Kreisel“), sonst der Item-Name
 export function entryName(entry) {
+  if (entry && entry.name && isHybrid(entry)) return entry.name;
   return entryParts(entry).map(({ def }) => def.name).join(' + ');
 }
+
+// Ist ein Eintrag (noch) verflucht? (Fluch entfernt: cleansed – das Item behält seine Stärken)
+export const isCursedEntry = (entry) => !!entry && !entry.cleansed && entryParts(entry).some(({ def }) => !!def.curse);
 
 export function entryIcon(entry) {
   return entryParts(entry).map(({ def }) => def.icon).join('');
@@ -182,14 +187,16 @@ export function buildItemParts(inventory = [], opts = {}) {
     const f = boostFactor(entryTags(entry), boost) * hyb;
     for (const { def, tier } of parts) {
       const scale = tierMult(tier) * f;
-      statItems.push({ item: def, scale, slot });
+      // Fluch entfernt (Schwarzmarkt/Ereignis): Fluch-Stats, -Regeln und -Auslöser entfallen
+      const curse = def.curse && !entry.cleansed ? def.curse : null;
+      statItems.push({ item: def, scale, slot, noCurse: !curse });
       mergeRules(rules, def.rules);
-      if (def.curse) mergeRules(rules, def.curse.rules);
-      const triggers = [...(def.triggers || []), ...((def.curse && def.curse.triggers) || [])];
+      if (curse) mergeRules(rules, curse.rules);
+      const triggers = [...(def.triggers || []), ...((curse && curse.triggers) || [])];
       if (!triggers.length) continue;
       sources.push({
         uid: `item:${slot}:${def.id}`, id: def.id, kind: 'item', slot, name: def.name, icon: def.icon, rarity: def.rarity,
-        tier, scale, scaleUp: tierMult(tier + 1) * f, triggers, rules: { ...(def.rules || {}), ...((def.curse && def.curse.rules) || {}) },
+        tier, scale, scaleUp: tierMult(tier + 1) * f, triggers, rules: { ...(def.rules || {}), ...((curse && curse.rules) || {}) },
       });
     }
   });
@@ -285,11 +292,15 @@ export function describeItem(item, tier = 1, opts = {}) {
   };
 }
 
-// Beschreibung eines Inventar-Eintrags (Hybrid: beide Texte, je ×0,75)
+// Beschreibung eines Inventar-Eintrags (Hybrid: beide Texte, je ×0,75; Fluch entfernt: ohne Fluch-Text)
 export function describeEntry(entry, opts = {}) {
   const parts = entryParts(entry);
   const hyb = parts.length > 1 ? hybridMul() : 1;
-  return parts.map(({ def, tier }) => describeItem(def, tier, { scale: (opts.scale || 1) * hyb }));
+  return parts.map(({ def, tier }) => {
+    const d = describeItem(def, tier, { scale: (opts.scale || 1) * hyb });
+    if (entry.cleansed && d.curse) { d.cleansedCurse = d.curse; d.curse = null; }
+    return d;
+  });
 }
 
 // ---------- Slots, Hinzufügen, Fusion, Hybride ----------
@@ -320,14 +331,41 @@ export function fuseSame(a, b) {
   return { ok: true, entry: { itemId: a.itemId, tier: tier + 1 } };
 }
 
-// Zwei Items mit verschiedenen Tags → ein Hybrid mit beiden Tags und beiden Effekten (je × hybridMul, data/nodes.js)
+// Zwei Items mit verschiedenen Tags → ein Hybrid mit beiden Tags und beiden Effekten (je × hybridMul) und eigenem Namen.
+// Ein entfernter Fluch bleibt entfernt (cleansed gilt dann für beide Teile – nur Flüche haben einen Fluch-Teil).
 export function makeHybrid(a, b) {
   if (!isValidEntry(a) || !isValidEntry(b)) return { ok: false, reason: 'unknown' };
   if (a.hybrid || b.hybrid) return { ok: false, reason: 'hybrid' };
   if (a.itemId === b.itemId) return { ok: false, reason: 'same' };
-  const ta = itemById(a.itemId).tags, tb = itemById(b.itemId).tags;
+  const da = itemById(a.itemId), db = itemById(b.itemId);
+  const ta = da.tags, tb = db.tags;
   if (ta.every((t) => tb.includes(t)) && tb.every((t) => ta.includes(t))) return { ok: false, reason: 'sameTags' };
-  return { ok: true, entry: { itemId: a.itemId, tier: a.tier || 1, hybrid: b.itemId, hybridTier: b.tier || 1 } };
+  const entry = { itemId: a.itemId, tier: a.tier || 1, hybrid: b.itemId, hybridTier: b.tier || 1, name: hybridName(da.name, db.name) };
+  const curseA = da.curse && !a.cleansed, curseB = db.curse && !b.cleansed;
+  if ((da.curse || db.curse) && !curseA && !curseB) entry.cleansed = true;
+  return { ok: true, entry };
+}
+
+// ---------- Hybrid-Namen ----------
+// Aus „Zündkerzen-Kette“ + „Kreisel aus Omas Nachttisch“ wird „Zündkerzen-Kreisel“: Hauptwort beider Namen (ohne
+// vorangestellte Besitzer/Adjektive wie „Opas“, „Verfluchter“ und ohne Zusätze ab „aus“, „vom“ …), vom ersten das
+// Bestimmungswort (Teil vor dem Bindestrich), vom zweiten das Grundwort (Teil nach dem letzten Bindestrich).
+const NAME_LINKS = new Set(['aus', 'vom', 'von', 'der', 'die', 'das', 'dem', 'den', 'des', 'im', 'in', 'mit', 'an', 'am', 'auf', 'für', 'Marke']);
+function headNoun(name) {
+  let words = String(name || '').split(/\s+/).filter(Boolean);
+  const cut = words.findIndex((w, i) => i > 0 && NAME_LINKS.has(w));
+  if (cut > 0) words = words.slice(0, cut);
+  // Besitzer („Opas“, „Nachbars“) und Adjektive („Verfluchter“, „Schwarze“, „Höllische“) vor dem Hauptwort weglassen
+  while (words.length > 1 && /(s|er|es|ische|rze)$/.test(words[0])) words = words.slice(1);
+  return words[words.length - 1] || String(name || '');
+}
+export function hybridName(nameA, nameB) {
+  const a = headNoun(nameA), b = headNoun(nameB);
+  const sa = a.split('-'), sb = b.split('-');
+  const pre = sa.length > 1 && sa[0].length >= 3 ? sa[0] : a;
+  const suf = sb.length > 1 && sb[sb.length - 1].length >= 3 ? sb[sb.length - 1] : b;
+  const cap = suf.charAt(0).toUpperCase() + suf.slice(1);
+  return pre.toLowerCase() === suf.toLowerCase() ? `${pre}-Hybrid` : `${pre}-${cap}`;
 }
 
 // Zufälliges Item ★+1 (Effekt upgradeItem). Ergebnis: Platz oder -1 (alle schon ★3)

@@ -6,6 +6,7 @@ import { ITEMS, RARITIES } from '../data/items.js';
 import { TAGS } from '../data/tags.js';
 import { entryName } from '../items/inventory.js';
 import { chainLogOn } from '../items/triggerEngine.js';
+import { NODE_TYPES } from '../data/nodes.js';
 
 // Werte, die live geändert werden können (Objekt, Schlüssel, Beschreibung).
 // BASE_STATS wirkt sofort (laufende Etappe wird neu berechnet), alles andere sofort bzw. ab der nächsten Etappe.
@@ -36,7 +37,8 @@ const ORIGINAL = TWEAKS.map(([g, k]) => GROUPS[g][k]);
 // Verstecktes Entwickler-Menü (7× schnell auf die Versionsnummer in den Einstellungen tippen).
 // h: { getSave(), getStage(), onCurrency(kind, n), onResearch(), onUnlockAll(), onGiftParts(), onEndStage(),
 //      onTweak(group, key), onSkip('gold'|'bronze'|'miss'), onToBoss(), onNextAct(), onSetDurability(n), onTestDrive(biomeId),
-//      onAddItem(id) → Text, onTierUp(slot) → Text, onAllPool() → Text, onChainLog(on) }
+//      onAddItem(id) → Text, onTierUp(slot) → Text, onAllPool() → Text, onChainLog(on),
+//      onResearchAll(), onForceNode(type) → Text }
 export class DevMenu {
   constructor(root, h) {
     this.h = h;
@@ -52,6 +54,7 @@ export class DevMenu {
       <h3>Freischalten</h3>
       <div class="dev-grid">
         <button class="btn btn-secondary" data-a="research">📘 Forschung erfüllen</button>
+        <button class="btn btn-secondary" data-a="researchAll">🧪 Ganzen Baum erforschen</button>
         <button class="btn btn-secondary" data-a="unlock">🔓 Alles freischalten</button>
         <button class="btn btn-secondary" data-a="gift">🎁 Alle Teile geschenkt</button>
         <button class="btn btn-danger" data-a="end">⏹ Etappe sofort beenden</button>
@@ -64,6 +67,7 @@ export class DevMenu {
         <button class="btn btn-secondary" data-a="boss">👹 Zum Boss</button>
         <button class="btn btn-secondary" data-a="act">➡ Nächster Akt</button>
       </div>
+      <div class="dev-tw dev-tier"><span>Nächste Knoten<small>Typ erzwingen</small></span><select data-id="ntype">${Object.entries(NODE_TYPES).filter(([t]) => t !== 'boss').map(([t, d]) => `<option value="${t}">${d.icon} ${d.name}</option>`).join('')}</select><button class="icon-btn small" data-a="force" aria-label="Erzwingen">✔</button></div>
       <label class="dev-tw"><span>Haltbarkeit setzen<small>run.durability</small></span>
         <input type="number" step="any" inputmode="decimal" data-id="dur"><button class="icon-btn small" data-a="setdur" aria-label="Setzen">✔</button></label>
       <h3>Items (Run)</h3>
@@ -98,6 +102,8 @@ export class DevMenu {
     on('bp', () => { h.onCurrency('blueprints', 10); this.say('+10 Blaupausen'); });
     on('cores', () => { h.onCurrency('cores', 3); this.say('+3 Kerne'); });
     on('research', () => { h.onResearch(); this.say('Forschungs-Bedingungen erfüllt – Chassis jetzt mit 💠 kaufbar, Teile mit ⚙'); });
+    on('researchAll', () => { h.onResearchAll(); this.say('Ganzer Forschungsbaum erforscht (Feinschliff Stufe 1) – Werkbank/Schwarzmarkt ab dem nächsten Akt bzw. Run'); });
+    on('force', () => { this.say(h.onForceNode(this.q.ntype.value)); });
     on('unlock', () => { h.onUnlockAll(); this.say('Alle Chassis, Fähigkeiten und Forschungs-Bedingungen freigeschaltet'); });
     on('gift', () => { h.onGiftParts(); this.say('Alle Teile gehören dir'); });
     on('end', () => { h.onEndStage(); this.close(); });
@@ -172,7 +178,7 @@ export class DevMenu {
     this.q.ev.innerHTML = keys.length ? keys.map((k) => `<span class="dev-chip">${k} <b>${fmt(counts[k])}</b></span>`).join('') : '<span class="small">noch keine Etappe gefahren</span>';
     this.el.querySelector('[data-a=end]').disabled = !(stage && stage.phase !== 'over');
     const run = save.run;
-    for (const a of ['skipGold', 'skipBronze', 'skipMiss', 'boss', 'act', 'setdur', 'iadd', 'itier']) this.el.querySelector(`[data-a=${a}]`).disabled = !run;
+    for (const a of ['skipGold', 'skipBronze', 'skipMiss', 'boss', 'act', 'setdur', 'iadd', 'itier', 'force']) this.el.querySelector(`[data-a=${a}]`).disabled = !run;
     const inv = run ? run.inventory || [] : [];
     this.q.islot.innerHTML = inv.map((e, i) => `<option value="${i}">${i + 1}: ${entryName(e)} ★${e.tier || 1}</option>`).join('') || '<option value="-1">– leer –</option>';
     this.q.ilog.checked = chainLogOn();

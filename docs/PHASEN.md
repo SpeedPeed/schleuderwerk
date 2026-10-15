@@ -349,3 +349,86 @@ Ergebnis: Items verschieben die Weite stark (zufällig ×1,1–1,6, Synergie ×1
 - `firstHitBounces`/`fuelRegenOnFlip` (nur als Beispiele in ARCHITEKTUR 4.10/4.11) kommen in keinem Inhalt vor und sind nicht umgesetzt.
 - Der Feuer-Set-Kreislauf (Überhitzen als Waffe) wird vom Bot nicht gespielt (er boostet nur unter 72 % Hitze) – in der Messung wirkt das Feuer-Set deshalb kaum.
 - Werkbank-Oberfläche, Händler, Schwarzmarkt (verfluchte Items), Ereignisse, Labor/Forschung für die Item-Pools: Phase 5.
+
+## Phase 5 – Währungen, alle Shops, Werkbank, Schwarzmarkt, Erfinder-Labor
+
+Alle Platzhalter-Knoten aus Phase 3 sind jetzt echte Knoten, die vier Währungen haben je eine klare Aufgabe und Endgame-Senken, und das Erfinder-Labor bringt Items, Teile, Fähigkeiten, Chassis und Kartenknoten ins Spiel. Spielbar: **Garage → 🧪 Labor (Blaupausen ausgeben) / 🎨 Lack → RUN → Karte mit Händler, Werkbank, Schwarzmarkt, Tankstelle, Ereignissen und Schatzhaufen.**
+
+### Was ist neu
+
+**Währungen** (V2-DESIGN §6, alle Beträge in `data/balance.js`)
+| Währung | Quelle | Verwendung | Senke |
+|---|---|---|---|
+| 🔩 Schrauben (Run) | Etappen, Pickups, Stunts, Zerlegen, Ereignisse, Start-Bonus aus der Forschung | Händler (Items, Fähigkeit, Reroll), Fluch entfernen, Ereignis-Kosten | Rest am Run-Ende → **10 % als Schrott** (`REWARDS.boltsToScrap`, Zeile „Schrauben-Rest“ in der Auszahlung) |
+| ⚙ Schrott (Meta) | Medaillen, Bosse, Akt-Bonus, Run-Ende, Ereignisse | Teile kaufen/verbessern, Lackierungen | 16 Schrott-Lacke (500–20.000 ⚙, zusammen ≈ 103.000 ⚙), Teile-Stufen bis 20 |
+| 📘 Blaupausen | Elite 1, Boss 3/4/5, Ereignisse | Erfinder-Labor | 3 Feinschliff-Knoten mit 25/20/10 Stufen (Preis × 1,15 je Stufe) |
+| 💠 Kerne (selten) | erster Boss-Sieg Akt 2/3, Run-Sieg (`REWARDS`), drei Akt-3-Ereignisse (≤ 10 %) | Chassis (zusätzlich zur Forschung), Schwarzmarkt (1 Kern je Item), Kern-Lacke | nie inflationär: max. 1 (Sieg) + 2 (erste Boss-Siege, einmalig) + selten 1 aus einem Ereignis je Run |
+
+**Neue Zahlenblöcke** in `balance.js`: `SHOP`, `WORKBENCH`, `BLACKMARKET`, `STATION`, `EVENTS`, `TREASURE`, `RESEARCH` (Kosten-Faktor). Die `params` in `data/nodes.js` bleiben als Beschreibung; ein Test prüft, dass beide übereinstimmen. `REWARDS.placeholderBolts` ist entfernt.
+
+**🛒 Schrotthändler** (`shops/scrapDealer.js`)
+- 5 Items (Seltenheit nach Akt: Akt 1 55 % Gewöhnlich … Akt 3 27 % Episch, 7 % Legendär) + 1 Fähigkeit. Preis = Seltenheit (30/50/80/130 🔩) × Akt-Faktor (1 / 1,3 / 1,6) × (1 − Händler-Rabatt). Einkaufswagen −20 %, Items wie Opas Glückspfennig addieren sich.
+- Fähigkeit: ersetzt einen Fähigkeits-Slot bis zum Run-Ende (auch nicht erforschte Fähigkeiten).
+- **Neu würfeln**: 10 + 10 je Reroll, Reroll-Rabatt aus Items und Forschung (−20 %).
+- **Reservieren** (📌, 1 Platz, Forschung +1): das Item wartet beim nächsten Händler des Runs zum gesicherten Preis.
+- Bereits besessene Items können angeboten werden (Gewicht 0,6) – Doppelte für die Werkbank. `shopEnter` löst Items aus.
+
+**🔧 Werkbank** (`shops/workbench.js`, nur mit Forschung „Opas Werkbank“)
+- 2 gleiche Items mit gleicher ★ → ★+1 (max. ★3) · 2 Items mit verschiedenen Tags → **Hybrid** (beide Tags, beide Effekte × 0,75, ein Slot wird frei, Name aus beiden Namen: „Zündkerzen-Kette“ + „Kreisel aus Omas Nachttisch“ = **Zündkerzen-Kreisel**; wird gespeichert). Je Besuch eine Fusion.
+- Zerlegen (unbegrenzt) → 40 % des Händler-Grundpreises je ★-Wert (★2 = 2 Items, ★3 = 4) als Schrauben.
+
+**🕳 Schwarzmarkt** (`shops/blackMarket.js`, nur mit Forschung „Kofferraum-Kontakte“)
+- 3 verfluchte Items (die vier Grund-Flüche immer, die vier weiteren nach „Dunkle Bastelstunde“), bezahlt mit **−15 % max. Haltbarkeit**, **−15 max. Treibstoff** (beides für den Run) oder **1 Kern**.
+- **Fluch entfernen** gegen 45 🔩 × Akt-Faktor: das Item behält seine Stärken, der Fluch-Teil entfällt („✨ Fluch entfernt“).
+
+**⛽ Tankstelle** (`shops/gasStation.js`, aus `runState.js` verschoben): Reparieren +35 % × (1 + Reparatur-Bonus) / +15 max. Treibstoff / +20 % Kühlung.
+
+**❓ Ereignisse** (`shops/textEvent.js`): alle 26 Ereignisse aus `data/textEvents.js`, je Akt ausgewählt und im Run nicht doppelt; Kosten (Schrauben, Haltbarkeit, Treibstoff, Fundstück zufällig/gewählt) werden vor dem Würfeln bezahlt, nicht bezahlbare Optionen sind grau mit Grund. Ausgang deterministisch aus dem Run-Seed. Alle Effekt-Arten: Schrauben, Schrott, Blaupausen, Haltbarkeit ±, max. Haltbarkeit, max. Treibstoff, Fundstück (Seltenheit/Tag), Item weg (zufällig/gewählt), Item ★+1 (zufällig/gewählt), Fluch dazu, Fluch weg, **Elite-Etappe** (der Knoten wird sofort zur Elite-Etappe mit Elite-Belohnung), Kern, nichts. Ergebnis-Text mit allen Änderungen. Ereignis-Schaden beendet nie den Run (mind. 1 Haltbarkeit).
+
+**💰 Schatzhaufen** (`shops/treasure.js`): Gratis-Item (wie Item-Kiste). 30 % **„verdächtig“** – der Hinweis ist sichtbar, das Item besser (mind. Selten), dafür ein Haken: 10 % Schaden, ein Fluch-Item dazu oder die Hälfte der Schrauben weg. Wahl: **Nehmen** / **Liegen lassen**.
+
+Voller Rucksack: Kauf → Platz zum Ersetzen wählen; Item aus Ereignis/Schatz → Auswahl „Nehmen (ersetzen) / Ablehnen“; ein Fluch verdrängt ein zufälliges nicht verfluchtes Item.
+
+**🧪 Erfinder-Labor** (`garage/research.js`, Garage-Reiter „Labor“, `ui/lab.js`)
+- 72 Knoten in 5 Ästen (Mechanik, Chemie, Elektrik, Glück & Handel, Karosseriebau) als scrollbarer Baum mit Linien zu den Voraussetzungen; Zustände gesperrt (grau) / verfügbar (Astfarbe, leuchtet, wenn bezahlbar) / erforscht (grün). Antippen → Beschreibung, Freischaltungen, Voraussetzungen, „Erforschen · 📘 n“.
+- Freischaltungen: Item-Pools, Garage-Teile, Fähigkeiten, Chassis-Baupläne (Kauf dann mit 💠 in der Garage), Kartenknoten (Werkbank, Schwarzmarkt – ab dem nächsten Akt bzw. Run), Perks: Start-Schrauben, +1 Item-Slot, 3. Fähigkeits-Slot, Reroll-Rabatt, +1 Reservieren-Platz, Start-Haltbarkeit, +Schrott (auf allen Schrott am Run-Ende), `choiceExtra` (+ Items zur Wahl, vorbereitet).
+- Wiederholbare **Feinschliff I–III** (Preis × 1,15 je Stufe, Höchststufe 25/20/10). Spielstand: `research.levels`.
+- Der Run merkt sich Forschung und Perks beim Start (`run.research`, `run.perks`).
+
+**🎨 Lackiererei** (Garage-Reiter „Lack“): 24 Lackierungen aus `data/cosmetics.js` – Schrott, Kerne oder Run-Sieg auf einer Schrottstufe (Phase 6). Antippen = Vorschau am 3D-Modell, Kaufen legt sofort an, „Original“ = Chassis-Farben. Die Farbe gilt auch in der Etappe.
+
+**Dev-Menü**: „🧪 Ganzen Baum erforschen“, „Nächste Knoten → Typ“ (alle wählbaren Knoten bekommen einen Typ – zum Testen jedes Shops), „Etappe überspringen“ verlässt Sonderknoten. „📘 Forschung erfüllen“ / „🔓 Alles freischalten“ bleiben als Abkürzung.
+
+### Tests
+`npm test` (209 Tests) – neu: `tests/shops.test.mjs` (Händler: Auslage, Seltenheit je Akt, Preise × Akt × Rabatt inkl. Einkaufswagen und Item-Rabatt, Reroll 10/20/30 + Forschungs-Rabatt, Reservieren über Akte hinweg + Forschungs-Platz, Kaufen mit vollem Rucksack, Fähigkeit ersetzt Slot, shopEnter; Werkbank: ★-Fusion nur mit gleicher ★, 1 Fusion je Besuch, ★3-Grenze, Hybrid mit beiden Tags/Effekten × 0,75/Set-Zählung/Name/Speichern, Zerlegen; Schwarzmarkt: Fluch-Pool, alle drei Bezahlarten, Mindest-Rest, Fluch entfernen; Tankstelle; Ereignisse: Auswahl je Akt ohne Wiederholung, Determinismus, jede Effekt-Art, alle Kosten-Arten, Elite aus Ereignis, **alle 26 Ereignisse × alle Optionen × alle Ausgänge**; Schatz: 30 %-Anteil, jeder Haken, Liegen lassen; Run-Ende 10 %; **Speichern/Fortsetzen mitten in jedem Shop**), `tests/research.test.mjs` (Baum-Daten, Voraussetzungen, Kosten, alle Freischaltarten, alle Perks, Feinschliff, Migration, Lackierungen). Angepasst: `runState` (Sonderknoten statt Platzhalter), `items` (Hybrid-Name).
+
+### So testest du Phase 5
+
+**Am PC (automatisch)**
+1. `npm test` → „# fail 0“.
+2. `npm run smoke` → „RAUCHTEST BESTANDEN“ (≈ 8 min). Neu in `/tmp/sw-smoke/`: `70-labor.png`, `71-labor-knoten.png`, `72-labor-erforscht.png`, `73-lack-vorschau.png`, `74-lack-gekauft.png`, `80-haendler.png`, `81-haendler-reserviert.png`, `82-haendler-faehigkeit.png`, `83-haendler-fortgesetzt.png` (nach Neuladen mitten im Shop), `84-werkbank.png`, `85-werkbank-fusion.png`, `86-schwarzmarkt.png`, `87-schwarzmarkt-fluch-weg.png`, `88-ereignis.png`, `89-ereignis-ergebnis.png`, `90-schatz.png`, `91-schatz-genommen.png`, `92-tankstelle.png`.
+
+**Am PC (von Hand)**
+1. `python tools/serve.py`, `http://localhost:8137` (F12 → Handy-Ansicht 412 × 915).
+2. Dev-Menü (⚙ → 7× Versionsnummer): „+10 📘“, „+10.000 ⚙“. Reiter **🧪 Labor**: Baum mit dem Finger/der Maus verschieben, „Opas Werkbank“ antippen → **Erforschen**. Reiter **🎨 Lack**: einen Lack antippen (Vorschau), **Kaufen**.
+3. Dev-Menü „🧪 Ganzen Baum erforschen“, dann **RUN STARTEN**. Dev-Menü → „Nächste Knoten“ z. B. „Schrotthändler“ → ✔ → Knoten antippen.
+4. Händler: Kaufen, „↻ Neu würfeln“ (10, dann 20 …), „📌 Reservieren“ (das Item liegt beim nächsten Händler vorne), Fähigkeit kaufen → Slot wählen. Seite neu laden → RUN FORTSETZEN → der Händler ist sofort wieder offen.
+5. Werkbank: zwei gleiche Items (Dev-Menü „Item hinzufügen“ zweimal) → „★ Verschmelzen“; Hybrid bauen; Zerlegen.
+6. Schwarzmarkt, Ereignis, Schatzhaufen, Tankstelle genauso über „Nächste Knoten“.
+7. Run aufgeben → Auszahlung zeigt „Schrauben-Rest (… × 10 %)“.
+
+**Am Handy**
+1. Wie bisher `python tools/serve.py` und die Handy-Adresse öffnen.
+2. Garage: Reiter oben (Garage · Labor · Lack). Im Labor mit einem Finger in beide Richtungen wischen, Knoten antippen, unten erforschen.
+3. Shops sind Karten über der Karte: nach unten wischen für alle Angebote; „Weiter ▶“ verlässt den Knoten. Die Zurück-Taste schließt nur die Platz-Auswahl (Shops bewusst nur über „Weiter“).
+
+### Abweichungen / offene Punkte
+- **Maßgebliche Zahlen in `balance.js`**: `data/nodes.js → params` bleibt als Beschreibung (gleiche Werte, Test). `WORKBENCH.hybridMul` ersetzt `nodes.workbench.params.hybridEffectMul` im Code.
+- **Perk scrapGain** („+2 % Schrott je Stufe“) wirkt am Run-Ende auf allen Schrott des Runs (eigene Zeile in der Auszahlung) – nicht als Stat, sonst würden Pickups doppelt zählen.
+- **„Fluch entfernen“** (Schwarzmarkt, Ereignis `removeCurse`) entfernt den Fluch-Teil, das Item bleibt mit seinen Stärken. Ein Hybrid aus einem gebannten und einem aktiven Fluch-Item trägt wieder beide Flüche.
+- **`choiceExtra`** steht in der Aufgabe, aber in keinem Forschungsknoten – als Perk unterstützt (+ Items zur Wahl), noch ungenutzt.
+- **Ereignis-Items** und Händler nutzen den Forschungs-Pool: ohne Forschung gibt es nur die 20 Grund-Items (alle Gewöhnlich); ein „seltenes Fundstück“ fällt dann auf ein Grund-Item zurück.
+- Händler-Fähigkeiten brauchen keine Forschung (der Händler ist eine Möglichkeit, sie auszuprobieren).
+- Schrottstufen (`ascension`: Preise, Reparatur, Start-Fluch) wirken noch nicht – Phase 6. Lacke mit „Schrottstufe N“ sind bis dahin nur per Spielstand erreichbar.
+- Der Balance-Simulator (`tools/sim/items.mjs`) geht durch Sonderknoten nur hindurch; eine Ökonomie-Hochrechnung (Schrauben-Einnahmen gegen Händlerpreise, Meilenstein-Zeiten) folgt in Phase 6.
+- Version 0.5.0.
