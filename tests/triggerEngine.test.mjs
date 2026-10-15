@@ -206,3 +206,35 @@ test('Kette Elektro + Gyro + Kühlung: Salto → Stromschlag → Gratis-Boost �
   assert.deepEqual(log.filter((l) => !l.id.startsWith('set_')).slice(0, 3).map((l) => l.id), ['gyro_fahrraddynamo', 'elektro_blitzableiter', 'eis_kuehlerschlauch']);
   assert.ok(log.some((l) => l.id === 'set_elektro2' && l.depth === 1), 'Elektro-Set 2 (2 Elektro-Items)');
 });
+
+// ---------- Auslöser von Chassis und Garage-Teilen wirken in der Etappe ----------
+test('Chassis- und Teile-Auslöser: Raketenschlitten (Gratis-Boost), Hupe (Schrauben), Topfdeckel (Schild)', () => {
+  const save = defaultSave();
+  save.garage.chassis = 'raketenschlitten';
+  save.garage.ownedChassis = [...new Set([...save.garage.ownedChassis, 'raketenschlitten'])];
+  save.garage.parts.gadget = 'gadget_hupe';
+  save.garage.parts.armor = 'armor_topfdeckel';
+  save.garage.ownedParts = [...new Set([...save.garage.ownedParts, 'gadget_hupe', 'armor_topfdeckel'])];
+  const lo = buildLoadout(save);
+  assert.equal(lo.chassis.id, 'raketenschlitten');
+  const biome = BIOMES[0];
+  const log = [];
+  const stage = new Stage({ biome, track: new Track(biome), loadout: lo, seed: 7, hooks: { triggered: (s, depth) => log.push({ id: s.id, kind: s.kind, depth }) } });
+  const events = [];
+  stage.onEvent = (name, data, depth) => events.push({ name, data, depth });
+  assert.ok(stage.setup.sources.some((s) => s.kind === 'part' && s.id === 'gadget_hupe'), 'Teil-Quelle Hupe');
+  // stageStart → Topfdeckel gibt 1 Schild
+  run(stage, mockInput(), 1 / 60);
+  assert.ok(stage.vehicle.shields >= 1, `Schilde ${stage.vehicle.shields}`);
+  assert.ok(log.some((l) => l.id === 'armor_topfdeckel' && l.kind === 'part'));
+  // perfekter Abschuss → Hupe +2 Schrauben, Raketenschlitten startet einen Gratis-Boost
+  const bolts0 = stage.bolts;
+  stage.launchNow(0.9, 30, true);
+  for (let i = 0; i < 8; i++) run(stage, mockInput(), 1 / 60);
+  assert.ok(stage.bolts >= bolts0 + 2 - 1e-9, `Schrauben ${bolts0} → ${stage.bolts}`);
+  assert.ok(log.some((l) => l.id === 'gadget_hupe' && l.kind === 'part'), 'Hupe ausgelöst');
+  assert.ok(log.some((l) => l.id === 'raketenschlitten' && l.kind === 'chassis'), 'Raketenschlitten ausgelöst');
+  const fb = events.find((e) => e.name === 'boost' && e.data.free);
+  assert.ok(fb, 'Gratis-Boost des Raketenschlittens');
+  assert.equal(fb.depth, 1, 'perfectLaunch (0) → Gratis-Boost (1)');
+});

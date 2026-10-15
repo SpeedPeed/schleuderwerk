@@ -642,13 +642,27 @@ async function main() {
     // ---------- Weitflug: Floating Origin, Boden-Pfeil (Dev-Testfahrt) ----------
     await g(() => window.__game.startTestDrive('schrottplatz'));
     await page.waitForFunction(() => window.__game.state === 'stage' && window.__game.stage.phase === 'aim', null, { timeout: 5000 });
+    // Tasten werden je Bild abgefragt: erst weiter, wenn die Etappe Bilder verarbeitet (der erste Frame nach dem Aufbau
+    // einer neuen Strecke dauert mit Software-Rendering mitunter > 0,5 s – ein kürzerer Tastendruck fiele dazwischen)
+    const tReady = Date.now();
+    await page.waitForFunction(() => window.__game.stage.launch.armed, null, { timeout: 30000 });
+    if (Date.now() - tReady > 1000) log(`Testfahrt bereit nach ${((Date.now() - tReady) / 1000).toFixed(1)} s`);
     await sleep(300);
     const k0 = await g(() => window.__game.stage.launch.angle);
     await page.keyboard.down('ArrowUp');
     await sleep(300);
+    await page.waitForFunction((a) => window.__game.stage.launch.angle > a, k0, { timeout: 5000 }).catch(() => {});
     await page.keyboard.up('ArrowUp');
     const k1 = await g(() => window.__game.stage.launch.angle);
     check(k1 > k0, `Pfeil hoch beim Zielen = steiler (${(k0 * 57.3).toFixed(0)}° → ${(k1 * 57.3).toFixed(0)}°)`);
+    if (!(k1 > k0)) {
+      log(`Diagnose: ${JSON.stringify(await g(() => {
+        const a = document.activeElement, gm = window.__game, inp = gm.input;
+        return { active: a ? `${a.tagName}#${a.id || ''}[${a.type || ''}] ${a.getAttribute('data-id') || ''}` : null, keys: [...inp.keys], pointers: inp.pointers.size,
+          presses: [...inp.presses], paused: gm.paused, phase: gm.stage.phase, state: gm.state, armed: gm.stage.launch.armed, fired: gm.stage.launch.fired,
+          charging: gm.stage.launch.charging, x: gm.stage.vehicle.x, t: gm.stage.time, hasFocus: document.hasFocus(), vis: document.visibilityState };
+      }))} – Bilder in 1 s: ${await g(() => new Promise((res) => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else res(n); }; requestAnimationFrame(f); }))}, danach armed: ${await g(() => window.__game.stage.launch.armed)}`);
+    }
     let keyFired = false;
     for (let attempt = 0; attempt < 4 && !keyFired; attempt++) {
       await page.keyboard.down('Space');

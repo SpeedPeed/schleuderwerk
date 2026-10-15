@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Schleuderwerk 2 – strenger Prüfer für die Inhaltsdaten (ohne Abhängigkeiten).
 //
-// Aufruf:   node tools/validateContent.mjs [ordner] [--quiet] [--json]   (npm test prüft das mit tests/content.test.mjs)
+// Aufruf:   node tools/validateContent.mjs [ordner] [--quiet] [--json]   (npm test prüft das in tests/items.test.mjs)
 //   ordner   Standard: www/src/data (Inhaltsdateien) – die Item-/Tag-Dateien content_*.js liegen in <ordner>/content/
 // Übernommen aus der geprüften Inhalts-Lieferung (validate.mjs); angepasst sind nur die Pfade (Laden aus data/ und
 // data/content/, nur die bekannten Inhaltsdateien – balance.js, biomes.js, index.js, tags.js, items.js sind Code).

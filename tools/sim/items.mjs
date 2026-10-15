@@ -47,15 +47,21 @@ const fmtR = (x) => x.toFixed(2).replace('.', ',');
 const fmtPct = (x) => `${Math.round(x * 100)} %`;
 const inv = (ids) => ids.map((itemId) => ({ itemId, tier: 1 }));
 
-// Saltos lohnen sich nur mit Items, die auf Saltos/Landungen nach Saltos reagieren (sonst kosten sie nur Weite)
+// Saltos lohnen sich nur mit Items, die auf Saltos/Landungen nach Saltos reagieren (sonst kosten sie nur Weite) – und
+// erst ab TRICK_MIN Punkten (Gyro-Item 2, anderes Salto-Item 1): ein einzelnes Salto-Item ohne Gyro (z. B. die
+// Zündkerzen-Kette im Feuer-Set, 3 Saltos für 0,8 s Boost) wiegt die verlorene
+// Weite nicht auf, so würde auch eine geübte Person nicht spielen
+export const TRICK_MIN = 2;
 export function wantsTricks(inventory) {
+  let n = 0;
   for (const e of inventory || []) {
     const it = itemById(e.itemId);
     if (!it) continue;
-    if (it.tags.includes('gyro')) return true;
-    for (const t of it.triggers || []) if (t.on === 'flip' || (t.if && t.if.minCount)) return true;
+    // Gyro-Items leben von Saltos (zählen doppelt), andere Salto-Auslöser einfach
+    if (it.tags.includes('gyro')) n += 2;
+    else if ((it.triggers || []).some((t) => t.on === 'flip' || (t.if && t.if.minCount))) n++;
   }
-  return false;
+  return n >= TRICK_MIN;
 }
 
 function randomBuild(rng) {
@@ -192,7 +198,7 @@ export function itemsSection(rows, secs, runs = null) {
   L.push('');
   L.push(`> Erzeugt von \`node tools/sim/items.mjs\` (${N} Etappen je Build, ${NR} zufällige Builds je Zeile; Rechenzeit ${secs} s).`);
   L.push('');
-  L.push('Bot wie bei den Zielmarken; mit Salto-Items (Gyro, Auslöser auf flip bzw. minCount) dreht er zusätzlich Rückwärtssaltos, wenn bis zur Landung > 1,7 s bleiben. Gutes Loadout (Startteile Stufe 10), volle Haltbarkeit je Etappe, 40 Run-Schrauben. **Zufällig (6)** = 6 zufällige nicht verfluchte Items ★1 je Etappe (mittelmäßiger Build ohne Plan). Synergie-Builds = 6 Items eines Tags (Set 2/4/6) bzw. die Elektro-Ketten-Bauweise (Salto → Stromschlag → Gratis-Boost → Kühlung). Zellen: Median Distanz ÷ Ziel · geschafft (mind. Bronze).');
+  L.push('Bot wie bei den Zielmarken; mit Salto-Items (ein Gyro-Item oder mindestens zwei andere Items mit Auslöser auf flip bzw. minCount) dreht er zusätzlich Rückwärtssaltos, wenn bis zur Landung > 1,7 s bleiben; ist Überhitzen folgenlos (Feuer-Set 6 Nachbrenner, Kühlschrank, Waschmaschine), boostet er ohne Hitze-Reserve bis zum Überhitzen. Gutes Loadout (Startteile Stufe 10), volle Haltbarkeit je Etappe, 40 Run-Schrauben. **Zufällig (6)** = 6 zufällige nicht verfluchte Items ★1 je Etappe (mittelmäßiger Build ohne Plan). Synergie-Builds = 6 Items eines Tags (Set 2/4/6) bzw. die Elektro-Ketten-Bauweise (Salto → Stromschlag → Gratis-Boost → Kühlung). Zellen: Median Distanz ÷ Ziel · geschafft (mind. Bronze).');
   L.push('');
   L.push(`| Akt | Art | Etage | ${names.join(' | ')} |`);
   L.push(`|---|---|---|${names.map(() => '---').join('|')}|`);

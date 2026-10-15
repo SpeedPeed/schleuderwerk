@@ -11,6 +11,17 @@ import { CONTROLS } from '../data/balance.js';
 //    takeAbilityPress(i) = Anzahl neuer Drücke seit dem letzten Abruf (für Tipp-Fähigkeiten).
 //  - Tastatur: Leertaste = halten (Abschuss) bzw. Boost (Fähigkeit boostSlot), 1–4 = Fähigkeit 1–4 (CONTROLS.abilityKeys),
 //    ← / → = neigen, ↑ / ↓ = Winkel beim Zielen.
+// Tasten gehören einem Eingabefeld nur, wenn darin getippt wird: sichtbares Text-/Zahlenfeld. Kontrollkästchen und
+// Felder in geschlossenen Menüs (behalten nach dem Ausblenden u. U. den Fokus) sperren die Spielsteuerung nicht.
+const TEXT_TYPES = new Set(['text', 'search', 'number', 'email', 'password', 'tel', 'url', '']);
+function isTyping(t) {
+  if (!t || !t.tagName) return false;
+  const tag = t.tagName;
+  if (tag !== 'INPUT' && tag !== 'TEXTAREA') return false;
+  if (tag === 'INPUT' && !TEXT_TYPES.has(String(t.type || '').toLowerCase())) return false;
+  return typeof t.getClientRects !== 'function' || t.getClientRects().length > 0;
+}
+
 const KEYS = new Set(['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ...CONTROLS.abilityKeys]);
 
 export class Input {
@@ -68,7 +79,7 @@ export class Input {
   onKey(e, down) {
     if (!KEYS.has(e.code)) return;
     const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+    if (isTyping(t)) return;
     if (down) {
       if (!this.keys.has(e.code)) {
         const slot = CONTROLS.abilityKeys.indexOf(e.code);

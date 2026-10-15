@@ -296,29 +296,36 @@ Spielbar ist jetzt der Kern des Roguelites: **Start-Item je Chassis → nach jed
 **Dev-Menü**: Abschnitt „Items (Run)“: Suche + Liste aller 88 Items → **➕ Item hinzufügen** (auch über die Plätze hinaus), **★ erhöhen** für einen Inventar-Platz, **🎲 Alle Items in den Pool**, **🔗 Ketten-Log** (jede Auslösung eingerückt nach Tiefe in der Browser-Konsole).
 
 ### Balance-Check (`node tools/sim/items.mjs`, Ergebnis `docs/BALANCE.md` → „Items“)
-Bot mit gutem Loadout (Startteile Stufe 10); mit Salto-Items dreht er zusätzlich Saltos.
+Bot mit gutem Loadout (Startteile Stufe 10); mit Salto-Items (ein Gyro-Item oder zwei andere Salto-Auslöser) dreht er zusätzlich Saltos, ist Überhitzen folgenlos (Feuer-Set 6), boostet er bis zum Überhitzen.
 
 | | ohne Items | 6 zufällige Items | beste Synergie (Elektro-Kette / Raketen-Set 6) |
 |---|---|---|---|
-| Akt 2, Etappen geschafft | 39 % | 69 % | 100 % |
-| Akt 3, Etappen geschafft | 22 % | 52 % | 100 % |
+| Akt 2, Etappen geschafft | 39 % | 68 % | 100 % |
+| Akt 3, Etappen geschafft | 22 % | 53 % | 100 % |
 | Akt-3-Boss geschafft | 0 % | 37 % | 67 % / 100 % |
-| ganze Runs: Sieg | 13 % | 25 % (65 % scheitern in Akt 2–3) | 30 % (Synergie-Auswahl, Abschleppen Median 1,5 statt 4) |
+| ganze Runs: Sieg | 13 % | 23 % (68 % scheitern in Akt 2–3) | 30 % (Synergie-Auswahl, Abschleppen Median 1,5 statt 4) |
 
-Ergebnis: Items verschieben die Weite stark (zufällig ×1,1–1,6, Synergie ×1,4–3); gute Synergie-Builds schaffen die Akt-3-Ziele, zufällige mittelmäßige Builds scheitern meist in Akt 2–3, ohne Items scheitern 88 % der Runs. Die Zielmarken bleiben unverändert.
+Ergebnis: Items verschieben die Weite stark (zufällig ×1,1–1,6, Synergie ×1,4–3); gute Synergie-Builds (Elektro-Kette, Raketen-, Gyro-, Hydraulik-Set) schaffen die Akt-3-Etappenziele, zufällige mittelmäßige Builds scheitern meist in Akt 2–3, ohne Items scheitern 88 % der Runs. Die Zielmarken bleiben unverändert. Schwächster Synergie-Build ist das Feuer-Set 6 (Akt 3 ×0,8–0,9, Boss 8 %): es lebt vom Überhitzen im Nachbrenner-Takt (8 s), das der Bot nur grob nachspielt – Werte stehen in der ruleSpec/Item-Beschreibung und bleiben daher, offener Punkt für die Balance in Phase 5/6.
 
 **Nachjustiert** (nur `balance.js`):
 - `ITEMS.effectJumpCancelFall = 0` (neu): Sprünge aus Item-Effekten (Jo-Jo, Explosionen) sind in der Luft reine Impulse; nur die Fähigkeit Hüpfer hebt das Fallen ganz auf. Vorher ließ sich per Salto-Sprung endlos schweben (Gyro-Set: ×16 der Zielweite).
 - `STAGE.farMul = 2` (neu): Etappe endet bei Gold × 2 (Grund `far`). Kreisläufe wie Gyro-Set 6 (Salto → Landung → Schub → Sprung …) liefen sonst bis zur Zeitgrenze (bis zu 165 s).
 - Item-Auswahl: Gewichte, Akt-Faktoren, Überspringen-Schrauben, Regel-Parameter `RULES.*` sind neu in `balance.js`.
+- Simulator (nur Messung, kein Spielwert): der Bot dreht Saltos erst mit einem Gyro-Item oder zwei anderen Salto-Auslösern (eine einzelne Zündkerzen-Kette kostete ihn mehr Weite, als sie brachte) und boostet bei folgenlosem Überhitzen ohne Hitze-Reserve. Feuer-Set 6 dadurch Akt 1 Boss ×0,75 → ×1,07, die übrigen Spalten unverändert.
 
-**Tests**: `npm test` (192 Tests) – zusätzlich `triggerEngine` (Kettentiefe 8, 64 Ereignisse je Abarbeitung, cooldown/perStage/perRun, charge + stack, chance mit Glück, ★-Faktor, alle Bedingungen, Run-Kontext, **Pflicht-Kette Elektro + Gyro + Kühlung in einer echten Etappe**), `rules` (jede Regel mindestens einmal), `items` (Inhalts-Prüfer ohne Fehler, Tag-Zählung/Sets/Hybride, Stat-Beiträge, Badewanne + voller Rucksack, Fusion/Hybrid, Platzhalter aller 88 Items in ★1–3, Auswahl-Gewichte und Pool, Start-Item je Chassis, Auswahl nach der Etappe + Kisten + Überspringen + Kodex + Speichern, Run-Ereignisse, **alle 88 Items ★3 gleichzeitig 60 s in einer Etappe je Biom**: keine Ausnahme, ≤ 64 Ereignisse je Abarbeitung, alle Werte endlich, Ende bei Gold × 2).
+**Tests**: `npm test` (183 Tests) – zusätzlich `triggerEngine` (Kettentiefe 8, 64 Ereignisse je Abarbeitung, cooldown/perStage/perRun, charge + stack, chance mit Glück, ★-Faktor, alle Bedingungen, Run-Kontext, Chassis- und Teile-Auslöser in der Etappe – Raketenschlitten, Hupe, Topfdeckel –, **Pflicht-Kette Elektro + Gyro + Kühlung in einer echten Etappe**), `rules` (jede Regel mindestens einmal), `items` (Inhalts-Prüfer ohne Fehler, Tag-Zählung/Sets/Hybride, Stat-Beiträge, Badewanne + voller Rucksack, Fusion/Hybrid, Platzhalter aller 88 Items in ★1–3, Auswahl-Gewichte und Pool, Start-Item je Chassis, Auswahl nach der Etappe + Kisten + Überspringen + Kodex + Speichern, Run-Ereignisse, **alle 88 Items ★3 gleichzeitig 60 s in einer Etappe je Biom**: keine Ausnahme, ≤ 64 Ereignisse je Abarbeitung, alle Werte endlich, Ende bei Gold × 2).
+
+### Geprüft und nachgebessert
+- Tastatur: Pfeil- und Leertaste gehen nur noch dann an ein Eingabefeld, wenn darin wirklich getippt wird (sichtbares Text-/Zahlenfeld). Das Kontrollkästchen „Ketten-Log“ oder ein Feld im geschlossenen Dev-Menü sperrten vorher die Steuerung; das Dev-Menü gibt beim Schließen den Fokus ab (`platform/input.js`, `ui/devMenu.js`).
+- Rauchtest: Vor den Tastatur-Prüfungen der Weitflug-Testfahrt wartet er, bis die Etappe Bilder verarbeitet (der erste Frame einer neuen Strecke dauert mit Software-Rendering teils > 0,5 s, ein kurzer Tastendruck fiel dazwischen – der Test schlug dadurch sporadisch fehl). Bei einem Fehlschlag schreibt er eine Diagnose-Zeile.
+- Neuer Test: Auslöser von Chassis und Garage-Teilen wirken in einer echten Etappe (Raketenschlitten-Gratis-Boost mit Kettentiefe 1, Hupe, Topfdeckel-Schild).
+- Balance-Simulator: Bot-Fahrweise für Salto- und Feuer-Builds verfeinert (siehe oben); Ergebnis in `docs/BALANCE.md` neu erzeugt.
 
 ### So testest du Phase 4
 
 **Am PC (automatisch)**
 1. `npm test` → „# fail 0“.
-2. `npm run smoke` → „RAUCHTEST BESTANDEN“. Neu in `/tmp/sw-smoke/`: `12-item-auswahl.png`, `13-inventar.png`, `14-set-uebersicht.png`, `33-kettenreaktion.png`, `52-kompendium.png`, `53-kompendium-sets.png` (ggf. `15-rucksack-voll.png`).
+2. `npm run smoke` → „RAUCHTEST BESTANDEN“ (≈ 7 min mit Software-Rendering). Neu in `/tmp/sw-smoke/`: `12-item-auswahl.png`, `13-inventar.png`, `14-set-uebersicht.png`, `33-kettenreaktion.png`, `52-kompendium.png`, `53-kompendium-sets.png` (ggf. `15-rucksack-voll.png`).
 3. Optional: `node tools/validateContent.mjs` (Inhalte), `node tools/sim/items.mjs` (≈ 1 min, schreibt den Abschnitt „Items“ in `docs/BALANCE.md`).
 
 **Am PC (von Hand)**

@@ -185,7 +185,12 @@ export class DevMenu {
     show(this.el, true);
   }
 
-  close() { show(this.el, false); }
+  close() {
+    // Fokus aus dem Menü nehmen (sonst landen Pfeil-/Leertaste weiter im versteckten Eingabefeld)
+    const a = document.activeElement;
+    if (a && this.el.contains(a) && typeof a.blur === 'function') a.blur();
+    show(this.el, false);
+  }
 
   get isOpen() { return !this.el.classList.contains('hidden'); }
 }

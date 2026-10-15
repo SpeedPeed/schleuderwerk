@@ -4,6 +4,7 @@
 // Pressen und an Schluchtkanten, gibt bei Blitzwarnungen Gas.
 // Option tricks (Phase 4, Items): dreht Rückwärtssaltos, solange bis zur Landung genug Zeit bleibt (Saltos lösen viele
 // Item-Ketten aus), und richtet die Kiste danach wie gewohnt aus. Inventar über makeSimStage({ inventory }).
+// Mit Regeln, die Überhitzen folgenlos machen (overheatAfterburner, noOverheat, heatIsResource), boostet er ohne Hitze-Reserve.
 import { Stage } from '../../www/src/stage/stage.js';
 import { Track } from '../../www/src/physics/track.js';
 import { buildLoadout } from '../../www/src/garage/loadout.js';
@@ -59,6 +60,11 @@ export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1
   const dt = 1 / 60;
   let jumpCd = 0;
   let flipFrom = null;      // tricks: Drehung zu Beginn des laufenden Saltos
+  // Überhitzen ohne Folgen (Feuer-Set 6 Nachbrenner, Kühlschrank, Waschmaschine): Hitze als Waffe – der Bot boostet
+  // dann ohne Hitze-Reserve (sonst nutzt er den Feuer-Kreislauf nie)
+  const R = stage.rules || {};
+  const heatFree = !!(R.overheatAfterburner || R.noOverheat || R.heatIsResource);
+  const heatOk = (v, st, f) => heatFree || v.heat < st.heatMax * f;
   while (!getResult() && stage.time < maxTime) {
     const v = stage.vehicle;
     const st = stage.stats;
@@ -88,16 +94,17 @@ export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1
     if (!v.onGround && !v.loop) {
       // Boost nach vorn (nicht steil nach oben – das kostet nur Landeschaden)
       const fwd = Math.abs(v.angle) < 0.35 || (v.angle < 0 && v.angle > -0.6);
-      boost = fwd && v.fuel > st.fuelMax * 0.35 && v.vy > -4 && v.heat < st.heatMax * 0.72;
+      // Hitze als Waffe: dann bis zum Überhitzen durchboosten (kleine Reserve für Schluchten)
+      boost = heatFree ? fwd && v.fuel > st.fuelMax * 0.1 : fwd && v.fuel > st.fuelMax * 0.35 && v.vy > -4 && heatOk(v, st, 0.72);
     }
     if (v.onGround && boostSlot >= 0) {
       // Vor einer Schlucht Anlauf nehmen
       const g = stage.track.gaps.find((x) => x.rs - 40 < v.x && v.x < x.edge);
-      if (g && v.fuel > 0 && v.s < 22 && v.heat < st.heatMax * 0.8) boost = true;
+      if (g && v.fuel > 0 && v.s < 22 && heatOk(v, st, 0.8)) boost = true;
     }
     // Blitzwarnung vor/auf dem Fahrzeug → Gas geben
     for (const s of o.strikes) {
-      if (s.t > 0 && Math.abs(v.x + v.vx * s.t - s.x) < FEATURES.lightning.radius * 1.6 && v.heat < st.heatMax * 0.85) boost = true;
+      if (s.t > 0 && Math.abs(v.x + v.vx * s.t - s.x) < FEATURES.lightning.radius * 1.6 && heatOk(v, st, 0.85)) boost = true;
     }
     input.st.held[boostSlot] = boost && boostSlot >= 0;
     // Hüpfer: Hindernis/Presse kurz voraus, Schluchtkante

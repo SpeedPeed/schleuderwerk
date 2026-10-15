@@ -118,24 +118,24 @@ Verhältnis = Distanz ÷ Zielmarke (Median, in Klammern 25.–75. Perzentil). �
 <!-- items -->
 ## Items (Phase 4)
 
-> Erzeugt von `node tools/sim/items.mjs` (12 Etappen je Build, 30 zufällige Builds je Zeile; Rechenzeit 50 s).
+> Erzeugt von `node tools/sim/items.mjs` (12 Etappen je Build, 30 zufällige Builds je Zeile; Rechenzeit 49 s).
 
-Bot wie bei den Zielmarken; mit Salto-Items (Gyro, Auslöser auf flip bzw. minCount) dreht er zusätzlich Rückwärtssaltos, wenn bis zur Landung > 1,7 s bleiben. Gutes Loadout (Startteile Stufe 10), volle Haltbarkeit je Etappe, 40 Run-Schrauben. **Zufällig (6)** = 6 zufällige nicht verfluchte Items ★1 je Etappe (mittelmäßiger Build ohne Plan). Synergie-Builds = 6 Items eines Tags (Set 2/4/6) bzw. die Elektro-Ketten-Bauweise (Salto → Stromschlag → Gratis-Boost → Kühlung). Zellen: Median Distanz ÷ Ziel · geschafft (mind. Bronze).
+Bot wie bei den Zielmarken; mit Salto-Items (ein Gyro-Item oder mindestens zwei andere Items mit Auslöser auf flip bzw. minCount) dreht er zusätzlich Rückwärtssaltos, wenn bis zur Landung > 1,7 s bleiben; ist Überhitzen folgenlos (Feuer-Set 6 Nachbrenner, Kühlschrank, Waschmaschine), boostet er ohne Hitze-Reserve bis zum Überhitzen. Gutes Loadout (Startteile Stufe 10), volle Haltbarkeit je Etappe, 40 Run-Schrauben. **Zufällig (6)** = 6 zufällige nicht verfluchte Items ★1 je Etappe (mittelmäßiger Build ohne Plan). Synergie-Builds = 6 Items eines Tags (Set 2/4/6) bzw. die Elektro-Ketten-Bauweise (Salto → Stromschlag → Gratis-Boost → Kühlung). Zellen: Median Distanz ÷ Ziel · geschafft (mind. Bronze).
 
 | Akt | Art | Etage | ohne Items | zufällig (6) | Elektro-Kette | Raketen-Set 6 | Gyro-Set 6 | Feuer-Set 6 | Hydraulik-Set 6 |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 🗑️ | Etappe | 0 | ×1,66 · 100 % | ×2,18 · 100 % | ×3,00 · 100 % | ×3,00 · 100 % | ×3,00 · 100 % | ×1,34 · 100 % | ×3,00 · 100 % |
-| 1 🗑️ | Etappe | 3 | ×1,27 · 92 % | ×2,04 · 97 % | ×3,00 · 100 % | ×3,00 · 100 % | ×3,00 · 100 % | ×1,17 · 83 % | ×3,00 · 100 % |
-| 1 🗑️ | Etappe | 5 | ×1,06 · 83 % | ×1,61 · 80 % | ×3,00 · 100 % | ×2,48 · 100 % | ×2,93 · 100 % | ×0,94 · 25 % | ×3,00 · 100 % |
-| 1 🗑️ | Boss | – | ×0,89 · 25 % | ×1,10 · 73 % | ×2,39 · 92 % | ×2,28 · 100 % | ×2,94 · 92 % | ×0,75 · 8 % | ×2,58 · 92 % |
-| 2 🏜️ | Etappe | 0 | ×1,01 · 58 % | ×1,21 · 73 % | ×2,22 · 100 % | ×2,05 · 100 % | ×1,69 · 100 % | ×0,99 · 50 % | ×1,98 · 92 % |
-| 2 🏜️ | Etappe | 3 | ×0,92 · 42 % | ×1,35 · 80 % | ×2,27 · 100 % | ×2,05 · 100 % | ×3,00 · 92 % | ×0,77 · 25 % | ×1,97 · 100 % |
-| 2 🏜️ | Etappe | 5 | ×0,79 · 17 % | ×1,06 · 53 % | ×1,70 · 100 % | ×1,71 · 92 % | ×1,55 · 75 % | ×0,64 · 8 % | ×2,50 · 92 % |
-| 2 🏜️ | Boss | – | ×0,80 · 0 % | ×1,08 · 57 % | ×1,37 · 92 % | ×1,46 · 100 % | ×1,39 · 92 % | ×0,64 · 0 % | ×1,29 · 100 % |
-| 3 ⛈️ | Etappe | 0 | ×0,88 · 33 % | ×0,99 · 50 % | ×2,27 · 100 % | ×1,76 · 100 % | ×1,39 · 92 % | ×0,77 · 0 % | ×1,43 · 83 % |
-| 3 ⛈️ | Etappe | 3 | ×0,81 · 33 % | ×1,20 · 60 % | ×1,54 · 100 % | ×1,75 · 100 % | ×1,44 · 83 % | ×0,75 · 8 % | ×1,48 · 92 % |
-| 3 ⛈️ | Etappe | 5 | ×0,75 · 0 % | ×0,89 · 47 % | ×1,43 · 100 % | ×1,48 · 100 % | ×1,17 · 67 % | ×0,72 · 0 % | ×1,10 · 67 % |
-| 3 ⛈️ | Boss | – | ×0,72 · 0 % | ×0,82 · 37 % | ×1,21 · 67 % | ×1,31 · 100 % | ×1,01 · 50 % | ×0,60 · 0 % | ×0,87 · 33 % |
+| 1 🗑️ | Etappe | 0 | ×1,66 · 100 % | ×2,18 · 100 % | ×3,00 · 100 % | ×3,00 · 100 % | ×3,00 · 100 % | ×1,61 · 100 % | ×3,00 · 100 % |
+| 1 🗑️ | Etappe | 3 | ×1,27 · 92 % | ×1,99 · 97 % | ×3,00 · 100 % | ×3,00 · 100 % | ×3,00 · 100 % | ×1,53 · 83 % | ×3,00 · 100 % |
+| 1 🗑️ | Etappe | 5 | ×1,06 · 83 % | ×1,64 · 80 % | ×3,00 · 100 % | ×2,48 · 100 % | ×2,93 · 100 % | ×1,40 · 75 % | ×3,00 · 100 % |
+| 1 🗑️ | Boss | – | ×0,89 · 25 % | ×1,10 · 73 % | ×2,39 · 92 % | ×2,28 · 100 % | ×2,94 · 92 % | ×1,07 · 75 % | ×2,58 · 92 % |
+| 2 🏜️ | Etappe | 0 | ×1,01 · 58 % | ×1,19 · 73 % | ×2,22 · 100 % | ×2,05 · 100 % | ×1,69 · 100 % | ×1,11 · 67 % | ×1,98 · 92 % |
+| 2 🏜️ | Etappe | 3 | ×0,92 · 42 % | ×1,35 · 80 % | ×2,27 · 100 % | ×2,05 · 100 % | ×3,00 · 92 % | ×1,25 · 75 % | ×1,97 · 100 % |
+| 2 🏜️ | Etappe | 5 | ×0,79 · 17 % | ×1,00 · 50 % | ×1,70 · 100 % | ×1,71 · 92 % | ×1,55 · 75 % | ×0,97 · 42 % | ×2,50 · 92 % |
+| 2 🏜️ | Boss | – | ×0,80 · 0 % | ×1,08 · 57 % | ×1,37 · 92 % | ×1,46 · 100 % | ×1,39 · 92 % | ×1,04 · 58 % | ×1,29 · 100 % |
+| 3 ⛈️ | Etappe | 0 | ×0,88 · 33 % | ×0,99 · 50 % | ×2,27 · 100 % | ×1,76 · 100 % | ×1,39 · 92 % | ×0,90 · 42 % | ×1,43 · 83 % |
+| 3 ⛈️ | Etappe | 3 | ×0,81 · 33 % | ×1,20 · 63 % | ×1,54 · 100 % | ×1,75 · 100 % | ×1,44 · 83 % | ×0,92 · 42 % | ×1,48 · 92 % |
+| 3 ⛈️ | Etappe | 5 | ×0,75 · 0 % | ×0,93 · 47 % | ×1,43 · 100 % | ×1,48 · 100 % | ×1,17 · 67 % | ×0,81 · 17 % | ×1,10 · 67 % |
+| 3 ⛈️ | Boss | – | ×0,72 · 0 % | ×0,82 · 37 % | ×1,21 · 67 % | ×1,31 · 100 % | ×1,01 · 50 % | ×0,79 · 8 % | ×0,87 · 33 % |
 
 ### Ganze Runs
 
@@ -144,12 +144,12 @@ Bot wie bei den Zielmarken; mit Salto-Items (Gyro, Auslöser auf flip bzw. minCo
 | Auswahl | Sieg | Ende in Akt 1 | Akt 2 | Akt 3 | Abschleppen (Median) |
 |---|---|---|---|---|---|
 | ohne | 13 % | 23 % | 40 % | 25 % | 4 |
-| zufällig | 25 % | 10 % | 30 % | 35 % | 4 |
+| zufällig | 23 % | 10 % | 30 % | 38 % | 4 |
 | synergie | 30 % | 13 % | 30 % | 28 % | 1,5 |
 
 ### Ergebnis
 
 - Akt 1: ohne Items 92 %, zufällig 92 %, beste Synergie (Elektro-Kette) 100 % der Etappen geschafft (Etage 0/3/5); Boss: ohne 25 %, zufällig 73 %, beste Synergie 100 %.
-- Akt 2: ohne Items 39 %, zufällig 69 %, beste Synergie (Elektro-Kette) 100 % der Etappen geschafft (Etage 0/3/5); Boss: ohne 0 %, zufällig 57 %, beste Synergie 100 %.
-- Akt 3: ohne Items 22 %, zufällig 52 %, beste Synergie (Elektro-Kette) 100 % der Etappen geschafft (Etage 0/3/5); Boss: ohne 0 %, zufällig 37 %, beste Synergie 100 %.
-- Ganze Runs: ohne Items 13 % Siege (88 % scheitern), zufällige Builds scheitern zu 65 % in Akt 2–3 (10 % in Akt 1, 25 % Siege), Synergie-Auswahl 30 % Siege bei 1,5 statt 4 Abschlepp-Vorgängen (Median).
+- Akt 2: ohne Items 39 %, zufällig 68 %, beste Synergie (Elektro-Kette) 100 % der Etappen geschafft (Etage 0/3/5); Boss: ohne 0 %, zufällig 57 %, beste Synergie 100 %.
+- Akt 3: ohne Items 22 %, zufällig 53 %, beste Synergie (Elektro-Kette) 100 % der Etappen geschafft (Etage 0/3/5); Boss: ohne 0 %, zufällig 37 %, beste Synergie 100 %.
+- Ganze Runs: ohne Items 13 % Siege (88 % scheitern), zufällige Builds scheitern zu 68 % in Akt 2–3 (10 % in Akt 1, 23 % Siege), Synergie-Auswahl 30 % Siege bei 1,5 statt 4 Abschlepp-Vorgängen (Median).
