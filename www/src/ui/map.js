@@ -2,7 +2,8 @@ import { el, fmt, show } from './dom.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeById } from '../data/biomes.js';
 import { RESOURCES } from '../data/balance.js';
-import { reachableNodes, durabilityMax } from '../run/runState.js';
+import { reachableNodes, durabilityMax, itemSlots } from '../run/runState.js';
+import { itemBarHtml } from './items.js';
 import { BOSS_FLOOR } from '../map/mapGen.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -12,7 +13,8 @@ const PAD = 70;          // Rand oben/unten (px)
 // Kartenbildschirm eines Akts (Hochformat, scrollbar): Etage 0 unten, Boss oben, Linien zwischen verbundenen
 // Knoten, Knoten-Symbole, aktuelle Position, erreichbare Knoten pulsieren. Kopfleiste: Akt/Biom, Haltbarkeit,
 // Schrauben. Tippen auf einen erreichbaren Knoten → h.onNode(id); andere Knoten zeigen nur ihre Beschreibung.
-// h: { onNode(id), onGarage() }
+// Unter der Kopfleiste die Item-Leiste (Tippen → Inventar mit Set-Übersicht).
+// h: { onNode(id), onGarage(), onInventory() }
 export class MapScreen {
   constructor(root, h) {
     this.h = h;
@@ -26,6 +28,7 @@ export class MapScreen {
         <div class="map-dur" data-id="durrow"><b>🔧</b><div class="rb-track"><div class="rb-fill" data-id="dur"></div><em class="rb-num" data-id="durnum">100</em></div></div>
         <div class="map-mods" data-id="mods"></div>
       </div>
+      <button class="map-items" data-id="items" aria-label="Inventar"><span class="mi-bar" data-id="ibar"></span><small data-id="icount"></small></button>
       <div class="map-scroll" data-id="scroll"><div class="map-canvas" data-id="canvas"></div></div>
       <div class="map-info hidden" data-id="info"></div>
     </div>`);
@@ -33,6 +36,7 @@ export class MapScreen {
     this.q = {};
     this.el.querySelectorAll('[data-id]').forEach((e) => { this.q[e.dataset.id] = e; });
     this.q.garage.onclick = () => h.onGarage();
+    this.q.items.onclick = () => h.onInventory && h.onInventory();
     this.run = null;
   }
 
@@ -56,6 +60,9 @@ export class MapScreen {
     if (run.runMods.fuelMaxAdd) mods.push(`⛽ +${run.runMods.fuelMaxAdd}`);
     if (run.runMods.coolMul) mods.push(`❄ +${Math.round(run.runMods.coolMul * 100)} %`);
     q.mods.textContent = mods.join(' · ');
+    const slots = itemSlots(run);
+    q.ibar.innerHTML = itemBarHtml(run.inventory || [], slots);
+    q.icount.textContent = `🎒 ${(run.inventory || []).length}/${slots} ›`;
 
     // Knoten-Lage: Etage 0 unten, Boss oben
     const map = run.map;

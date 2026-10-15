@@ -62,6 +62,10 @@ export function crusherLift(c, t) {
 // Die Bausteine kommen aus der StageSpec der Strecke (track.spec), dazwischen wird zufällig verteilt.
 // opts.scrapPickups: zusätzliche Schrott-Häufchen in Bodennähe (Regel collectScrapMass, Mülltonne).
 // Kompatibel: biome darf ein schlichtes Objekt mit spawn/thermals sein (Tests).
+//
+// Regeln, die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A): obstacleBounce (Hüpfburg) und wreckingBall
+// (Schrott-Set 6) in der Hindernis-Kollision (collide → hitObstacle). Für Regeln anderer Stellen liefert die Klasse
+// Suchfunktionen: nearestObstacle (obstacleMagnet), nearestPickupAhead (mutualAttraction), arcStrike (shockArc).
 export class Objects {
   constructor(biome, track, seed, opts = {}) {
     this.biome = biome || {};
@@ -229,7 +233,7 @@ export class Objects {
     this.time += dt;
     const t = this.time;
     for (const c of this.crushers) {
-      c.lift = crusherLift(c, t);
+      c.lift = c.broken ? FEATURES.crusher.openY : crusherLift(c, t);   // zerstörte Presse bleibt offen stehen
       if (c.cd > 0) c.cd -= dt;
     }
     const M = FEATURES.magnet;
@@ -385,7 +389,8 @@ export class Objects {
     for (const o of this.obstacles) {
       if (!o.alive) continue;
       const hw = o.w / 2 + cr;
-      if (segmentBox(x0, y0, x1, y1, o.x - hw, o.y0 - cr, o.x + hw, o.y0 + o.h + cr) >= 0) {
+      if ((o.rehit || 0) <= this.time && segmentBox(x0, y0, x1, y1, o.x - hw, o.y0 - cr, o.x + hw, o.y0 + o.h + cr) >= 0) {
+        if (this.hitObstacle(car, o, o.x, o.y0 + o.h / 2, ev)) continue;
         o.alive = false;
         ev.push({ type: 'hit', x: o.x, y: o.y0 + o.h / 2, obstacle: o });
         continue;
@@ -400,12 +405,14 @@ export class Objects {
     // Schrottpressen: der Block (zwischen lift und lift + blockH über dem Boden) ist das Hindernis
     const C = FEATURES.crusher;
     for (const c of this.crushers) {
-      if (c.cd > 0) continue;
+      if (c.cd > 0 || c.broken) continue;
       const hw = c.w / 2 + cr * 0.6;
       const by = c.y0 + c.lift;
       if (segmentBox(x0, y0, x1, y1, c.x - hw, by - cr * 0.6, c.x + hw, by + C.blockH + cr * 0.6) >= 0) {
         c.cd = C.cooldown;
-        ev.push({ type: 'hit', x: c.x, y: by + C.blockH / 2, obstacle: { type: 'crusher', crusher: c } });
+        const ob = { type: 'crusher', crusher: c };
+        if (this.hitObstacle(car, ob, c.x, by + C.blockH / 2, ev)) continue;
+        ev.push({ type: 'hit', x: c.x, y: by + C.blockH / 2, obstacle: ob });
       }
     }
 
@@ -420,6 +427,100 @@ export class Objects {
       this.obstacles = this.obstacles.filter((o) => o.x > minX);
       this.thermals = this.thermals.filter((t) => t.x + t.w > minX);
     }
+  }
+
+  // Regeln beim Treffer eines Hindernisses. Ergebnis: true = Treffer erledigt (kein normales 'hit').
+  //   wreckingBall (Schrott-Set 6): ab minSpeed wird das Hindernis zerstört, Tempo × speedKeep, Ereignis 'wreck'
+  //   obstacleBounce (Hüpfburg): kein Schaden, Abprall nach oben/vorn, Ereignis 'bounce'; 1 s kein erneuter Treffer
+  hitObstacle(car, o, x, y, ev) {
+    const r = car.rules || {};
+    if (r.wreckingBall) {
+      const W = RULES.wreckingBall;
+      if (car.speed >= (r.setBonusDouble ? W.minSpeedDouble : W.minSpeed)) {
+        if (o.crusher) o.crusher.broken = true;
+        else o.alive = false;
+        if (car.scaleSpeed) car.scaleSpeed(W.speedKeep);
+        ev.push({ type: 'wreck', x, y, obstacle: o, scrap: r.setBonusDouble ? W.scrapDouble : W.scrap });
+        return true;
+      }
+    }
+    if (r.obstacleBounce) {
+      const B = RULES.obstacleBounce;
+      if (o.crusher) o.crusher.cd = Math.max(o.crusher.cd, B.rehit);
+      else o.rehit = this.time + B.rehit;
+      if (car.obstacleBounce) car.obstacleBounce(B.vy, B.vx);
+      ev.push({ type: 'bounce', source: 'huepfburg', x, y });
+      return true;
+    }
+    return false;
+  }
+
+  // Nächstes Hindernis vor der Kiste (Mittelpunkt-x > x) im Abstand ≤ range (Abstand zum Mittelpunkt) – obstacleMagnet
+  nearestObstacle(x, y, range) {
+    let best = null, bd = range * range;
+    for (const o of this.obstacles) {
+      if (!o.alive || o.x <= x) continue;
+      const cy = o.y0 + o.h / 2;
+      const d = (o.x - x) ** 2 + (cy - y) ** 2;
+      if (d <= bd) { bd = d; best = { x: o.x, y: cy }; }
+    }
+    const C = FEATURES.crusher;
+    for (const c of this.crushers) {
+      if (c.broken || c.x <= x) continue;
+      const cy = c.y0 + c.lift + C.blockH / 2;
+      const d = (c.x - x) ** 2 + (cy - y) ** 2;
+      if (d <= bd) { bd = d; best = { x: c.x, y: cy }; }
+    }
+    return best;
+  }
+
+  // Nächstes noch nicht eingesammeltes Einsammelbares (Schraube oder Pickup) vor der Kiste im Radius – mutualAttraction
+  nearestPickupAhead(x, y, range) {
+    let best = null, bd = range * range;
+    for (const list of [this.pickups, this.bolts]) {
+      for (const c of list) {
+        if (!c.alive || c.x <= x) continue;
+        const d = (c.x - x) ** 2 + (c.y - y) ** 2;
+        if (d <= bd) { bd = d; best = c; }
+      }
+    }
+    return best;
+  }
+
+  // Lichtbogen (shockArc): nächstes Hindernis vor der Kiste mit Kanten-Abstand ≤ range wird zerstört (ohne Ereignis),
+  // alle Schrauben/Pickups im Umkreis range werden eingesammelt (Rohereignisse 'bolt'/'pickup' in ev).
+  // Ergebnis: { target: {x, y} | null, collected: n }
+  arcStrike(x, y, range, ev) {
+    let target = null, bd = Infinity;
+    for (const o of this.obstacles) {
+      if (!o.alive) continue;
+      const d = o.x - o.w / 2 - x;
+      if (o.x >= x && d <= range && d < bd) { bd = d; target = o; }
+    }
+    let crusher = null;
+    for (const c of this.crushers) {
+      if (c.broken) continue;
+      const d = c.x - c.w / 2 - x;
+      if (c.x >= x && d <= range && d < bd) { bd = d; crusher = c; target = null; }
+    }
+    let t = null;
+    if (crusher) { crusher.broken = true; t = { x: crusher.x, y: crusher.y0 + crusher.lift }; }
+    else if (target) { target.alive = false; t = { x: target.x, y: target.y0 + target.h / 2 }; }
+    let collected = 0;
+    const r2 = range * range;
+    for (const c of this.bolts) {
+      if (!c.alive || (c.x - x) ** 2 + (c.y - y) ** 2 > r2) continue;
+      c.alive = false;
+      collected++;
+      ev.push({ type: 'bolt', v: c.v, x: c.x, y: c.y, big: c.big });
+    }
+    for (const c of this.pickups) {
+      if (!c.alive || (c.x - x) ** 2 + (c.y - y) ** 2 > r2) continue;
+      c.alive = false;
+      collected++;
+      ev.push({ type: 'pickup', kind: c.kind, value: c.value, x: c.x, y: c.y });
+    }
+    return { target: t, collected };
   }
 
   // Einsammelbares im Magnetradius fliegt zum Auto

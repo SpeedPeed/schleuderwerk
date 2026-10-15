@@ -3,7 +3,7 @@
 // migrate() repariert falsch typisierte Felder (Standardwert statt Absturz); nicht ladbare Stände werden gesichert.
 import { SAVE_VERSION, GARAGE } from '../data/balance.js';
 import { sanitizeGarage } from '../garage/garage.js';
-import { isValidRun } from '../run/runState.js';
+import { isValidRun, normalizeRun } from '../run/runState.js';
 
 const KEY = 'schleuderwerk.save';
 export const BACKUP_KEY = 'schleuderwerk.save.bak';
@@ -114,6 +114,11 @@ export function migrate(data) {
   if (typeof data.cosmetics.paint !== 'string') data.cosmetics.paint = null;
   // Laufender Run: unbrauchbares/älteres Format wird verworfen (der Rest des Spielstands bleibt)
   if (!isValidRun(data.run)) data.run = null;
+  else normalizeRun(data.run);
+  // Kodex: nur Zahlen (Items: 1 = gesehen, 2 = besessen; Sets: 1 = schon einmal aktiv)
+  for (const k of ['items', 'sets']) {
+    for (const [id, v] of Object.entries(data.codex[k])) if (typeof v !== 'number' || !isFinite(v) || v < 0) delete data.codex[k][id];
+  }
   // Welten-Rekorde gab es bis Phase 2 (seit Phase 3: Biome als Akte eines Runs)
   if (isObj(data.worlds)) {
     for (const r of Object.values(isObj(data.worlds.records) ? data.worlds.records : {})) {

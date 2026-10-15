@@ -2,6 +2,10 @@ import { el, fmt, show } from './dom.js';
 import { BASE_STATS, PHYSICS, CAMERA, LAUNCH, RESOURCES, GARAGE, TESTDRIVE, RUN, GAME_VERSION } from '../data/balance.js';
 import { MILESTONES, fmtPlaytime } from '../garage/progression.js';
 import { BIOMES } from '../data/biomes.js';
+import { ITEMS, RARITIES } from '../data/items.js';
+import { TAGS } from '../data/tags.js';
+import { entryName } from '../items/inventory.js';
+import { chainLogOn } from '../items/triggerEngine.js';
 
 // Werte, die live geändert werden können (Objekt, Schlüssel, Beschreibung).
 // BASE_STATS wirkt sofort (laufende Etappe wird neu berechnet), alles andere sofort bzw. ab der nächsten Etappe.
@@ -31,7 +35,8 @@ const ORIGINAL = TWEAKS.map(([g, k]) => GROUPS[g][k]);
 
 // Verstecktes Entwickler-Menü (7× schnell auf die Versionsnummer in den Einstellungen tippen).
 // h: { getSave(), getStage(), onCurrency(kind, n), onResearch(), onUnlockAll(), onGiftParts(), onEndStage(),
-//      onTweak(group, key), onSkip('gold'|'bronze'|'miss'), onToBoss(), onNextAct(), onSetDurability(n), onTestDrive(biomeId) }
+//      onTweak(group, key), onSkip('gold'|'bronze'|'miss'), onToBoss(), onNextAct(), onSetDurability(n), onTestDrive(biomeId),
+//      onAddItem(id) → Text, onTierUp(slot) → Text, onAllPool() → Text, onChainLog(on) }
 export class DevMenu {
   constructor(root, h) {
     this.h = h;
@@ -61,6 +66,17 @@ export class DevMenu {
       </div>
       <label class="dev-tw"><span>Haltbarkeit setzen<small>run.durability</small></span>
         <input type="number" step="any" inputmode="decimal" data-id="dur"><button class="icon-btn small" data-a="setdur" aria-label="Setzen">✔</button></label>
+      <h3>Items (Run)</h3>
+      <div class="dev-items">
+        <input type="search" data-id="isearch" placeholder="Item suchen (Name, ID, Tag) …" autocomplete="off">
+        <select data-id="ilist" size="6"></select>
+        <div class="dev-grid">
+          <button class="btn btn-secondary" data-a="iadd">➕ Item hinzufügen</button>
+          <button class="btn btn-secondary" data-a="ipool">🎲 Alle Items in den Pool</button>
+        </div>
+        <div class="dev-tw dev-tier"><span>★ erhöhen<small>Inventar-Platz</small></span><select data-id="islot"></select><button class="icon-btn small" data-a="itier" aria-label="★ erhöhen">★</button></div>
+        <label class="dev-check"><input type="checkbox" data-id="ilog"> 🔗 Ketten-Log in der Konsole</label>
+      </div>
       <h3>Testfahrt (ohne Run)</h3>
       <div class="dev-grid">${BIOMES.map((b) => `<button class="btn btn-secondary" data-test="${b.id}">${b.icon} ${b.name}</button>`).join('')}</div>
       <div class="msg" data-id="msg"></div>
@@ -92,6 +108,19 @@ export class DevMenu {
     on('act', () => { this.say(h.onNextAct()); });
     on('setdur', () => { this.say(h.onSetDurability(Number(String(this.q.dur.value).replace(',', '.')))); });
     this.el.querySelectorAll('[data-test]').forEach((b) => { b.onclick = () => { h.onTestDrive(b.dataset.test); this.close(); }; });
+    // Items: Liste mit Suche
+    const fillList = () => {
+      const qs = String(this.q.isearch.value || '').trim().toLowerCase();
+      const list = ITEMS.filter((it) => !qs || it.name.toLowerCase().includes(qs) || it.id.includes(qs) || it.tags.some((t) => t.includes(qs) || (TAGS[t] && TAGS[t].name.toLowerCase().includes(qs))));
+      this.q.ilist.innerHTML = list.map((it) => `<option value="${it.id}">${it.icon} ${it.name} · ${(RARITIES[it.rarity] || {}).name || it.rarity}</option>`).join('');
+      if (list.length) this.q.ilist.value = list[0].id;
+    };
+    this.q.isearch.oninput = fillList;
+    fillList();
+    on('iadd', () => { const id = this.q.ilist.value; this.say(id ? h.onAddItem(id) : 'Kein Item gewählt'); });
+    on('ipool', () => { this.say(h.onAllPool()); });
+    on('itier', () => { this.say(h.onTierUp(Number(this.q.islot.value))); });
+    this.q.ilog.onchange = () => { h.onChainLog(this.q.ilog.checked); this.say(this.q.ilog.checked ? 'Ketten-Log an (Konsole, F12)' : 'Ketten-Log aus'); };
     this.el.querySelector('[data-a=close]').onclick = () => this.close();
 
     this.q.tweaks.innerHTML = TWEAKS.map(([g, k, label], i) => `<label class="dev-tw">
@@ -143,7 +172,10 @@ export class DevMenu {
     this.q.ev.innerHTML = keys.length ? keys.map((k) => `<span class="dev-chip">${k} <b>${fmt(counts[k])}</b></span>`).join('') : '<span class="small">noch keine Etappe gefahren</span>';
     this.el.querySelector('[data-a=end]').disabled = !(stage && stage.phase !== 'over');
     const run = save.run;
-    for (const a of ['skipGold', 'skipBronze', 'skipMiss', 'boss', 'act', 'setdur']) this.el.querySelector(`[data-a=${a}]`).disabled = !run;
+    for (const a of ['skipGold', 'skipBronze', 'skipMiss', 'boss', 'act', 'setdur', 'iadd', 'itier']) this.el.querySelector(`[data-a=${a}]`).disabled = !run;
+    const inv = run ? run.inventory || [] : [];
+    this.q.islot.innerHTML = inv.map((e, i) => `<option value="${i}">${i + 1}: ${entryName(e)} ★${e.tier || 1}</option>`).join('') || '<option value="-1">– leer –</option>';
+    this.q.ilog.checked = chainLogOn();
     if (run && document.activeElement !== this.q.dur) this.q.dur.value = String(Math.round(run.durability));
   }
 

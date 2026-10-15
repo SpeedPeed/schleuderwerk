@@ -44,7 +44,7 @@
 ## 2. Ordnerstruktur (`www/src/`)
 
 Plan für alle Phasen; Dateien, die es noch nicht gibt, kommen mit ihrer Phase. **Ist-Stand nach Phase 3** (zusätzlich bzw. abweichend vom Plan):
-`platform/input.js` (Touch/Tastatur), `ui/garage.js`, `ui/map.js` (Karte), `ui/runScreens.js` (Intro, Ergebnis, Tankstelle, Platzhalter, Akt-Übergang, Run-Ende), `ui/results.js` (Dev-Testfahrt), `ui/menus.js`, `ui/popups.js`, `ui/statLabels.js`, `ui/hud.js`, `ui/devMenu.js`, `ui/dom.js` statt `ui/screens/*.js`; `render/featuresView.js` (Streckenbausteine), `render/weather.js` (Regen); `items/events.js`, `items/eventQueue.js`, `items/modState.js` (Vorstufen der Trigger-Engine); `tools/sim/bot.mjs` + `tools/sim/calibrate.mjs` (Balance-Simulator, Ergebnis `docs/BALANCE.md`). Noch nicht vorhanden: `core/bus.js`, `data/tags.js`/`items.js`/`textEvents.js`/`research.js`/`ascension.js`/`cosmetics.js`, `shops/`, `garage/research.js`, `items/triggerEngine.js`/`inventory.js`/`conditions.js`.
+`platform/input.js` (Touch/Tastatur), `ui/garage.js`, `ui/map.js` (Karte), `ui/runScreens.js` (Intro, Ergebnis, Tankstelle, Platzhalter, Akt-Übergang, Run-Ende), `ui/results.js` (Dev-Testfahrt), `ui/menus.js`, `ui/popups.js`, `ui/statLabels.js`, `ui/hud.js`, `ui/devMenu.js`, `ui/dom.js` statt `ui/screens/*.js`; `render/featuresView.js` (Streckenbausteine), `render/weather.js` (Regen); `items/events.js`, `items/eventQueue.js`, `items/modState.js` (Bausteine der Trigger-Engine); `tools/sim/bot.mjs` + `tools/sim/calibrate.mjs` (Balance-Simulator, Ergebnis `docs/BALANCE.md`). **Phase 4:** `data/content/content_*.js` (geprüfte Inhaltsdateien, unverändert; `data/tags.js` und `data/items.js` führen sie nur zusammen), `data/research.js`, `textEvents.js`, `ascension.js`, `cosmetics.js` (geprüfte Inhalte, unverändert, Verwendung ab Phase 5/6 – der Inhalts-Prüfer braucht sie für Querverweise), `items/triggerEngine.js`, `items/conditions.js`, `items/inventory.js`, `ui/items.js` (Karten, Set-Übersicht, Item-Blatt Inventar/Kompendium), `tools/validateContent.mjs` (Inhalts-Prüfer), `tools/sim/items.mjs` (Item-Balance). Die Item-Auswahl liegt in `run/rewards.js` (Würfeln) und `run/runState.js` (Ablauf). Noch nicht vorhanden: `core/bus.js`, `shops/`, `garage/research.js`.
 
 ```
 main.js                 Start, Bildschirm-Zustandsmaschine, Hauptschleife
@@ -159,7 +159,7 @@ Jeder Effekt: `{ fx: '<name>', ...params }`. Zahlen-Parameter in `SCALE_KEYS` (`
 | fx | Parameter | Wirkung |
 |---|---|---|
 | `thrust` | `amount` (m/s) | Sofort-Schub in Blickrichtung (unterliegt Soft-Cap) |
-| `jump` | `amount` (m/s) | Impuls nach oben (am Boden: abheben) |
+| `jump` | `amount` (m/s) | Impuls nach oben (am Boden: abheben). In der Luft hebt nur die Fähigkeit Hüpfer das Fallen ganz auf (Doppelsprung); Item-Sprünge (und der Sprung-Anteil von `explosion`) heben `ITEMS.effectJumpCancelFall` (0) davon auf – sonst ließe sich per Salto-Sprung endlos schweben |
 | `boost` | `dur` | Gratis-Boost ohne Treibstoff (löst `boost{free:true}` aus) |
 | `explosion` | `amount` | Schub nach vorn + kleiner Sprung, löst `explosion` aus |
 | `heal` | `amount` oder `pct` | Haltbarkeit + |
@@ -262,6 +262,13 @@ eng.statMods();                                // aktuelle zeitweise Modifikator
 - Limits (`perStage`, `cooldown`, `perRun`) leben im Engine-Zustand; `perRun`-Zähler kommen aus `runState`.
 - `ctx` (von `stage.js` geliefert) ist die **einzige** Schnittstelle der Effekte zur Welt: `ctx.vehicle`, `ctx.addBolts(n)`, `ctx.addScrap(n)`, `ctx.heal(n)`, `ctx.damage(n, src)`, `ctx.popup(text, kind)`, `ctx.fx(name, data)`, `ctx.luck()`, `ctx.rng`.
 
+**Umsetzung (Phase 4):**
+- Die Etappe übergibt ihre `EventQueue` (`stage.queue`) und ihren `ModState` (`stage.mods`) – Warteschlange, Buffs, Stapel und Zähler gibt es nur einmal. `stage.flushEvents()` arbeitet nach jedem Physik-Schritt ab: Zähler, `hooks.event`, `engine.dispatch`, Regel `shockArc`; Rohereignisse, die Effekte dabei auslösen (Heilung, Schaden, Abprall, Überhitzung, eingesammelte Pickups), werden sofort mit Tiefe + 1 weitergegeben. Ein Gratis-Boost (`fx boost`) meldet sein `boost`-Ereignis im nächsten Physik-Schritt mit der Tiefe des auslösenden Effekts + 1 (`vehicle.freeBoostDepth`) – so bleibt die Kette Salto → Stromschlag → Boost → … zusammenhängend.
+- Quellen: `{ uid, id, kind: 'chassis'|'part'|'set'|'item', name, icon, slot?, tier, scale, scaleUp?, triggers, rules }` aus `items/inventory.js → applyInventory` (Chassis immer, Teile mit Auslösern, aktive Set-Boni, Items). `scale` = ★-Faktor × tagBoost × Hybrid (0,75) bzw. 2 bei `setBonusDouble`; Reihenfolge Chassis → Teile → Sets → Items.
+- Limits je Trigger (`<uid>#<index>`): `cooldown` in Engine-Zeit (`update(dt)`), `perStage` (Zähler, `stageStart` setzt zurück), `perRun` im Objekt `runCounters` (= `run.counters.trig`, Schlüssel `<kind>:<id>#<index>`). Bedingungen: `items/conditions.js` (alle Schlüssel aus 4.4/4.11; `heatAbove/heatBelow` in Hitze-Einheiten, `fuelBelow/hpBelow` als Anteil; im Run-Kontext nur `hpBelow` über `ctx.hpFrac()` und `chassis`).
+- `ctx.onTriggered(source, depth, info)` → `hooks.triggered` → HUD (Symbol hüpft, Feed-Zeile; `info.echo` „×2“, `info.tierUp` „★+1“, `info.recharge` Aufblitzen). Ab `ITEMS.chainPopupDepth` (3) → `hooks.chain(n)` mit n = Tiefe + 1 („KETTENREAKTION ×n!“). Dev-Menü: Ketten-Log in der Konsole (`setChainLog`).
+- Run-Kontext: `dispatchRunEvent` (in `run/runState.js → emitRunEvent`) mit einem ctx ohne Fahrzeug – `addBolts`/`addScrap`/`heal`/`damage`/`maxHp`/`maxFuel`/`upgradeItem` wirken auf den Run, Fahrzeug-Effekte entfallen, Zufall deterministisch aus Run-Seed + Ereigniszähler.
+
 ## 6. Physik (`physics/vehicle.js`)
 - Fester Schritt `PHYSICS.dt = 1/120`; **adaptive Substeps**: `n = ceil(|v|·dt / PHYSICS.maxStepDist)` (max. `PHYSICS.maxSubsteps`).
 - Luft: Schwerkraft, quadratischer Luftwiderstand (Wind-relativ), Auftrieb, Thermik, Boost-Schub mit **weicher Tempo-Grenze** (`thrustFactor = 1 / (1 + (v / speedSoftCap)^softCapPow)`), harte Grenze `PHYSICS.hardSpeedCap`.
@@ -274,7 +281,7 @@ eng.statMods();                                // aktuelle zeitweise Modifikator
 - Oberflächen: `track.frictionAt(x)` (Schlamm ×4, Sand ×1,6) auf die Rollreibung; Magnetkran über `env.ax/ay`; an scharfen Kanten (`PHYSICS.takeoffKink`) hebt die Kiste ab.
 
 ## 7. Etappe (`stage/stage.js`)
-Zustände: `aim → fly → over`. `new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods })`, `update(realDt, input)` mit Akkumulator. Je Physik-Schritt: Umgebung (Wetter + Windzone, Biom- + Feldhitze, Magnetzug) → Fahrzeug → `objects.update` (Pressen, Magnet, Blitze) → Rohereignisse. Ergebnis: `{ cleared, medal: null|'bronze'|'silver'|'gold', dist, target, medals, medalList, kind, bolts, scrap, blueprints, crates, pickups, stunts: {...}, damageTaken, durability, durabilityMax, reason: 'stop'|'wreck'|'fall'|'time', testDrive }` (`cleared` = mindestens Bronze und kein Totalschaden).
+Zustände: `aim → fly → over`. `new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods, inventory, runInfo, farEnd })`, `update(realDt, input)` mit Akkumulator. Je Physik-Schritt: Umgebung (Wetter + Windzone, Biom- + Feldhitze, Magnetzug) → Fahrzeug → `objects.update` (Pressen, Magnet, Blitze) → Rohereignisse → Trigger-Engine. `inventory` = Run-Inventar (über `applyInventory` auf die Ausrüstung: Stats, Regeln, Set-Boni, Quellen), `runInfo = { bolts, counters }` (Run-Schrauben für `boltsAreFuel`/`boltHoardThrust`, perRun-Zähler), `farEnd` (Standard an; Dev-Testfahrten aus). Ergebnis: `{ cleared, medal: null|'bronze'|'silver'|'gold', dist, target, medals, medalList, kind, bolts, boltsSpent, scrap, blueprints, crates, pickups, stunts: {...}, damageTaken, durability, durabilityMax, itemTriggers, maxChain, napped, reason: 'stop'|'wreck'|'fall'|'time'|'far', testDrive }` (`cleared` = mindestens Bronze und kein Totalschaden; `far` = Gold × `STAGE.farMul` erreicht – beendet Item-Kreisläufe, die sonst bis `STAGE.maxTime` liefen).
 
 ## 8. Run (`run/runState.js`)
 Reiner Zustand, serialisierbar (Run kann gespeichert und fortgesetzt werden):
@@ -283,6 +290,7 @@ Reiner Zustand, serialisierbar (Run kann gespeichert und fortgesetzt werden):
   bolts, inventory:[{itemId, tier, hybrid?}], reserve, runMods:{maxFuelAdd, coolMul, …}, counters, history, stats }
 ```
 Aktionen geben neue Teilzustände zurück bzw. mutieren kontrolliert; UI ruft nur Aktionen auf.
+Phase 4: `inventory` (Start-Item je Chassis über `starterItem`/`starterTag`), `pendingChoices: [{ context: 'stage'|'elite'|'boss'|'crate', items, skipBolts }]` (nach jeder geschafften Etappe 1 + je Item-Kiste 1; `rollItemChoices` in `run/rewards.js`: Seltenheit nach `ITEMS.rarityWeights[context]` × `rarityActMul[act]`, Pool = `base` + erledigte Pool-Forschung bzw. `poolAll` (Dev), nie verflucht, nie schon Besessenes, Anzahl = Stat `itemChoices`), `poolAll`, `counters: { trig, rolls, events }`; Aktionen `pickItem(run, save, i, replace?)` (voller Rucksack → `reason: 'full'`, dann mit Platz ersetzen), `skipChoice` (+ `REWARDS.itemSkipBolts[act]`), `giveItem`, `queueChoice`, `emitRunEvent` (runStart, nodeEnter, shopEnter beim Händler, stageClear, itemGained), `runStats`/`durabilityMax`/`itemSlots`/`inventoryView` (Werte inkl. Items, Sets und Biom des Akts), `runStageSetup` (alles für `new Stage`), `normalizeRun` (Phase-3-Runs bekommen die neuen Felder), Dev: `devAddItem`, `devTierUp`. Kodex `save.codex.items[id]` = 1 gesehen (angeboten) / 2 besessen, `save.codex.sets['feuer4']` = 1.
 Umgesetzt (Phase 3): `newRun(save)`, `reachableNodes`, `enterNode` (→ `stage`/`station`/`placeholder`), `stageSpecFor` (Seed aus Run-Seed + Akt + Knoten → Neuversuch = gleiche Strecke), `applyStageResult(run, result, save)` (Belohnungen über `run/rewards.js`, Abschleppen `RUN.towPenalty`, Boss → `setupAct` bzw. Sieg), `chooseStation`, `visitPlaceholder`, `giveUp`, `endRun(save, run)` (Meta-Auszahlung, Statistik, Meilensteine, `save.run = null`), Dev-Helfer. Zusätzliche Felder: `biome, bossIds, current: {node, type, attempts}, visited, path, durabilityBase, earned: {scrap, blueprints, cores, actScrap}, bossesBeaten, over: {won, reason, act}, research`. Die Run-Ausrüstung ist ab dem Start fest (`runLoadout`).
 
 ## 9. Kamera & Floating Origin
@@ -298,25 +306,51 @@ Schema **v3** (`SAVE_VERSION = 3`). `migrate()` ersetzt fehlende **und falsch ty
 - `tools/sim/` – Balance-Simulator: `bot.mjs` (Bot spielt Etappen mit echter Physik), `calibrate.mjs` (Zielmarken je Biom/Etage, `--apply`, Ergebnis `docs/BALANCE.md`); Ökonomie-Hochrechnung der Spielzeit-Meilensteine folgt in Phase 5/6.
 
 ## Anhang A – Regel-Schalter und ihre Auswertungsstelle
-Jede Regel wird an **genau einer** Stelle ausgewertet. Parameter stehen in `balance.RULES`, die Regeln selbst sammelt `items/statMods.js → collectRules` (Chassis, Teile; ab Phase 4 Items und Sets) und `garage/loadout.js` gibt sie an die Etappe (`stage.rules`, `vehicle.rules`).
+Jede Regel wird an **genau einer** Stelle ausgewertet. Parameter stehen in `balance.RULES`, die Regeln sammelt `items/inventory.js → applyInventory` (Chassis und Teile über `garage/loadout.js → collectRules`, dazu Items, Flüche und aktive Set-Boni) und die Etappe gibt sie weiter (`stage.rules`, `vehicle.rules`, Trigger-Engine). `setBonusDouble` wählt bei Set-Regeln die „…Double“-Parameter (nur wo die ruleSpec es beschreibt).
 
 | Regel | Quelle | Auswertung | Stand |
 |---|---|---|---|
-| `noOverheat` | Chassis Kühlschrank | `physics/vehicle.js → checkOverheat()`: Hitze bei heatMax gedeckelt, kein overheat-Ereignis, kein Stillstand, kein Schaden | Phase 2 ✔ |
+| `noOverheat` | Chassis Kühlschrank, Fluch Ewiger Eiszapfen | `physics/vehicle.js → checkOverheat()`: Hitze bei heatMax gedeckelt, kein overheat-Ereignis, kein Stillstand, kein Schaden | Phase 2 ✔ (Item: Phase 4 ✔) |
 | `heatIsResource` | Chassis Waschmaschine | `physics/vehicle.js → checkOverheat()` (Deckel, overheat ohne Stillstand/Schaden) + `updateResources()` (wieder scharf unter `RESOURCES.heatResourceRearm` × heatMax) | Phase 2 ✔ |
-| `lowGrip` | Chassis Raketenschlitten | `physics/vehicle.js → stepGround()`: Antrieb × `RULES.lowGrip.driveMul`, Rollreibung × `frictionMul`, Abheben ab takeoffMinSpeed × `takeoffMul`; Notbremse dauert `RULES.hardStop.lowGripTime` (`startBrake()`) | Phase 2 ✔ (Faktoren 0,5 laut Auftrag; ruleSpec nennt 0,4/0,6 und halbe Oberflächen-Faktoren → bei Bedarf nur `RULES.lowGrip` anpassen; Oberflächen kommen mit Phase 3) |
-| `collectScrapMass` | Chassis Mülltonne | `stage/stage.js → onHit()` (Schrottberg: Schaden × ⅓, Resttempo halb zwischen hitSpeedKeep und 1, danach pickup {kind:'scrap'}) und Konstruktor (Schrott-Pickups über `physics/objects.js`, Option `scrapPickups`); Anzeige der Ladung in `render/vehicleModel.js → setScrap()` | Phase 2 ✔ |
-| `boostHold` | Fähigkeit Boost | `physics/vehicle.js → updateResources()` (Schub, boostFuel/boostHeat/boostSelfDamage pro s, Ereignisse boost/boostSecond – auch beim Wechsel Gratis ↔ bezahlt); Eingabe in `stage/abilities.js`, abilityUse {boost} beim echten Start (`stage/stage.js` beim Ereignis boost {free:false}) | Phase 2 ✔ |
-| `parachute` | Fähigkeit Fallschirm | `physics/vehicle.js → stepAir()` (Sinktempo-Führung, Luftwiderstand × `RULES.parachute.dragMul`), `toggleParachute()` (nur in der Luft, erneut tippen = kappen); Buffs der Fähigkeit enden mit dem Schirm (`stage/abilities.js → parachuteClosed()`) | Phase 2 ✔ |
-| `hardStop` | Fähigkeit Notbremse | `physics/vehicle.js → stepGround()` / `hardStop()` (Bremsung, Antriebspause, in der Luft „scharf“ bis zur Landung) | Phase 2 ✔ |
-| `heatToThrust` | Fähigkeit Schleudergang | `stage/stage.js → heatToThrust()` (Hitze × Faktor als Sofort-Schub, Hitze 0, ab `RULES.heatToThrust.explodeAt` explosion-Ereignis) | Phase 2 ✔ |
-| `healOnCleanLanding` | Chassis Sofa | `items/triggerEngine.js` (landing-Ereignis der Chassis-Quelle) | offen – Phase 4 |
-| `groundSpeedStacks` | Chassis Rasenmäher | `items/triggerEngine.js` (Stapel der Chassis-Quelle) | offen – Phase 4 |
-| `setBonusDouble` | Chassis Badewanne | `items/inventory.js` (Aufbau der Set-Quellen) | offen – Phase 4 |
-| `tagBoost` | Chassis Kühlschrank | `items/inventory.js` (Aufbau der Item-Quellen) | offen – Phase 4 |
-| `firstHitBounces`, `heatIsFuel`, `fuelRegenOnFlip`, `overheatAfterburner` … | Items/Sets | laut ihrer `ruleSpec` | offen – Phase 4–6 |
+| `lowGrip` | Chassis Raketenschlitten | `physics/vehicle.js → stepGround()`: Antrieb × `RULES.lowGrip.driveMul`, Rollreibung × `frictionMul`, Abheben ab takeoffMinSpeed × `takeoffMul`; Notbremse dauert `RULES.hardStop.lowGripTime` (`startBrake()`) | Phase 2 ✔ (Faktoren 0,5; ruleSpec nennt 0,4/0,6 und halbe Oberflächen-Faktoren → bei Bedarf nur `RULES.lowGrip` anpassen) |
+| `collectScrapMass` | Chassis Mülltonne | `stage/stage.js → onHit()` + Konstruktor (Schrott-Pickups über `physics/objects.js`), Anzeige `render/vehicleModel.js → setScrap()` | Phase 2 ✔ |
+| `boostHold` | Fähigkeit Boost | `physics/vehicle.js → updateResources()`; Eingabe `stage/abilities.js` | Phase 2 ✔ |
+| `parachute` | Fähigkeit Fallschirm | `physics/vehicle.js → stepAir()`, `toggleParachute()` | Phase 2 ✔ |
+| `hardStop` | Fähigkeit Notbremse | `physics/vehicle.js → stepGround()` / `hardStop()` | Phase 2 ✔ |
+| `heatToThrust` | Fähigkeit Schleudergang | `stage/stage.js → heatToThrust()` | Phase 2 ✔ |
+| `healOnCleanLanding` | Chassis Sofa | `items/triggerEngine.js → chassisLandingRules()` (landing der Chassis-Quelle, vor allen Auslösern; `RULES.healOnCleanLanding`: 1× je 0,5 s, max. 15 je Etappe) | Phase 4 ✔ |
+| `groundSpeedStacks` | Chassis Rasenmäher | `items/triggerEngine.js → chassisLandingRules()` (Bruchlandung halbiert den groundTouch-Stapel, abgerundet auf volle Schritte); HUD-Drehzahl `stage.chassisStackFrac()` | Phase 4 ✔ |
+| `setBonusDouble` | Chassis Badewanne | `items/inventory.js → buildSetParts()` (Set-Stats ×2, Engine-Faktor 2, stack.max ×2, chance.p ×2 ≤ chanceMax) | Phase 4 ✔ |
+| `tagBoost` | Chassis Kühlschrank (+ Biom `tagBoost`) | `items/inventory.js → applyInventory()/buildItemParts()` (Faktor 1 + größter Wert der Item-Tags; Chassis und Biom addieren sich je Tag) | Phase 4 ✔ |
+| `overheatAfterburner` | Feuer-Set 6 | `physics/vehicle.js → checkOverheat()` (overheat ohne Sperre/Schaden, 2 s Nachbrenner-Boost ×1,5 ohne Hitze, alle 8 s) | Phase 4 ✔ |
+| `coldGlide` | Eis-Set 6 | `physics/vehicle.js → stepGround()` (unter 40 Hitze Rollreibung ×0,25, Oberflächen-Faktor 1) | Phase 4 ✔ |
+| `shockArc` | Elektro-Set 6 | `stage/stage.js → shockArc()` beim shock-Ereignis (Suche `physics/objects.js → arcStrike()`) | Phase 4 ✔ |
+| `spinToSpeed` | Gyro-Set 6 | `items/triggerEngine.js → spinToSpeed()` nach den landing-Auslösern der Set-Quelle | Phase 4 ✔ |
+| `mutualAttraction` | Magnet-Set 6 | `physics/vehicle.js → ruleForces()` (Ziel `physics/objects.js → nearestPickupAhead()`; Schrauben zählen als Pickups) | Phase 4 ✔ |
+| `wreckingBall` | Schrott-Set 6 | `physics/objects.js → hitObstacle()` (Rohereignis `wreck` → `stage.js → onWreck()`: collision mit damage 0, Schrott-Pickups) | Phase 4 ✔ |
+| `impactToThrust` | Hydraulik-Set 6 | `physics/vehicle.js → land()` (Aufprallschaden → Schub; Bruch: Aufprallteil × 0,5; holprig-Zuschlag bleibt) | Phase 4 ✔ |
+| `gapTrampoline` | Gummi-Set 6 | `physics/vehicle.js → checkFall()` / `trampoline()` | Phase 4 ✔ |
+| `boostOvercap` | Raketen-Set 6 | `physics/vehicle.js → thrustCap` (Boost-Schub und Sofort-Schub während eines Boosts) | Phase 4 ✔ |
+| `luckyEcho` | Glück-Set 6 | `items/triggerEngine.js → luckyEcho()` | Phase 4 ✔ |
+| `heatIsFuel` | Perpetuum Mobile | `physics/vehicle.js → updateResources()` (`heatFuelMode`, Notbetrieb aus dem Tank) | Phase 4 ✔ |
+| `flipsNeverCrash` | Schiffskompass | `physics/vehicle.js → land()` | Phase 4 ✔ |
+| `obstacleBounce` | Hüpfburg | `physics/objects.js → hitObstacle()` (wreckingBall hat Vorrang) | Phase 4 ✔ |
+| `boostHorizontal` | Wasserwaagen-Rakete | `physics/vehicle.js → stepAir()` | Phase 4 ✔ |
+| `perfectLaunchLowGrav` | Levitron | `physics/vehicle.js → launch()` + `gravity` (Luft-Schritt) | Phase 4 ✔ |
+| `allLandingsPerfect` | Hubstützen | `physics/vehicle.js → land()` (mit `noPerfectLanding` zusammen: normale Einstufung) | Phase 4 ✔ |
+| `doubleDamage` | Hubstützen | `physics/vehicle.js → damage()` – Abweichung von der ruleSpec (stage.js ctx.damage): jeder Haltbarkeitsverlust läuft über `vehicle.damage`, auch der aus `ctx.damage` | Phase 4 ✔ |
+| `boltsAreFuel` | Schraubenvergaser | `stage/stage.js` (setzt `vehicle.fuelBackup`; bezahlt über `ctx.addBolts(-1)`, Ergebnis `boltsSpent` → `applyStageResult`) | Phase 4 ✔ |
+| `boltHoardThrust` | Schraubenvergaser | `stage/stage.js → updateBoltHoard()` (beim Neuberechnen der Stats) | Phase 4 ✔ |
+| `shockRecharge` | Teslaspule | `items/triggerEngine.js → shockRecharge()` (greift nur, wenn eine Abklingzeit läuft) | Phase 4 ✔ |
+| `everyThirdTierUp` | Dreiblatt-Klee | `items/triggerEngine.js → tryTrigger()` (★3 → `RULES.everyThirdTierUp.beyondMax`) | Phase 4 ✔ |
+| `iceLanding` | Schlittschuhkufen | `physics/vehicle.js → land()` | Phase 4 ✔ |
+| `blackCatNap` | Fluch Schwarze Katze | `stage/stage.js → pickNap()` beim Zusammenstellen der Quellen | Phase 4 ✔ |
+| `noPerfectLanding` | Fluch Gummihuhn | `physics/vehicle.js → land()` | Phase 4 ✔ |
+| `obstacleMagnet` | Fluch Geisterbahn-Magnet | `physics/vehicle.js → ruleForces()` (Ziel `physics/objects.js → nearestObstacle()`) | Phase 4 ✔ |
+| `endlessSpin` | Fluch Spieluhr | `physics/vehicle.js → stepAir()` | Phase 4 ✔ |
+| `firstHitBounces`, `fuelRegenOnFlip` | – | in keinem Inhalt verwendet, keine ruleSpec → nicht umgesetzt | – |
 
-Schnittstellen für Phase 4: `stage.queue` (Ereignis-Warteschlange mit Kettentiefe, `items/eventQueue.js`), `stage.onEvent(name, data, depth)` (wird nach jedem Physik-Schritt für jedes Ereignis aufgerufen), `stage.ctx` (Effekt-Kontext nach §5, inkl. `ctx.depth`/`ctx.source`), `stage.mods` (`items/modState.js`: Buffs, Stapel, Zähler – die Etappe rechnet die Werte bei Änderung neu), `loadout.sources` (Auslöser von Chassis und Teilen).
+Schnittstellen: `stage.queue`, `stage.mods`, `stage.engine` (Trigger-Engine), `stage.ctx`, `stage.onEvent(name, data, depth)` (Beobachter für Tests), `stage.setup` (Ergebnis von `applyInventory`: Quellen, aktive Sets, Tag-Zählung).
 
 ## 4.11 Vollständiges Vokabular (verbindlich für alle Inhalte)
 
@@ -330,6 +364,6 @@ Schnittstellen für Phase 4: `stage.queue` (Ereignis-Warteschlange mit Kettentie
 
 **Bedingungen**: 4.4 + `nodeType, medal, chassis`.
 
-**Regeln**: `heatIsFuel, noOverheat, heatIsResource, setBonusDouble, groundSpeedStacks, collectScrapMass, healOnCleanLanding, lowGrip, firstHitBounces` + Regeln aus Legendär-/Fluch-Items. Jede neue Regel braucht im Datensatz ein Feld `ruleSpec: { <regel>: 'präzise Beschreibung der Mechanik für die Programmierung' }`.
+**Regeln**: `heatIsFuel, noOverheat, heatIsResource, setBonusDouble, groundSpeedStacks, collectScrapMass, healOnCleanLanding, lowGrip, firstHitBounces` + Regeln aus Legendär-/Fluch-Items und Set 6 (vollständige Liste mit Auswertungsstelle: Anhang A). Jede neue Regel braucht im Datensatz ein Feld `ruleSpec: { <regel>: 'präzise Beschreibung der Mechanik für die Programmierung' }`. Neue Inhaltsdateien prüft `node tools/validateContent.mjs` (auch Teil von `npm test`).
 
 **Skalierte Parameter-Schlüssel** (★-Stufen): `amount, pct, dur, radius, add, mul`. Stufenfaktor ★1/★2/★3 = 1,0/1,6/2,3 (`balance.ITEMS.tierMult`).

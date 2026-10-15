@@ -2,6 +2,8 @@ import { el, fmt, show } from './dom.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeById, FEATURE_INFO } from '../data/biomes.js';
 import { FX, RUN } from '../data/balance.js';
+import { choiceCardsHtml, entryRowHtml, itemCardHtml } from './items.js';
+import { itemById } from '../data/items.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MEDAL = { bronze: { icon: '🥉', name: 'Bronze' }, silver: { icon: '🥈', name: 'Silber' }, gold: { icon: '🥇', name: 'Gold' } };
@@ -92,7 +94,7 @@ export class RunScreens {
     const title = o.defeat ? (r.reason === 'wreck' ? 'TOTALSCHADEN!' : 'Run vorbei!')
       : o.cleared ? (r.kind === 'boss' ? 'BOSS BESIEGT!' : 'GESCHAFFT!')
         : r.reason === 'fall' ? 'Abgestürzt!' : 'Nicht geschafft';
-    const why = { stop: 'ausgerollt', fall: 'in die Schlucht gestürzt', time: 'Zeit abgelaufen', wreck: 'Totalschaden' }[r.reason] || '';
+    const why = { stop: 'ausgerollt', fall: 'in die Schlucht gestürzt', time: 'Zeit abgelaufen', wreck: 'Totalschaden', far: 'Ziel weit übertroffen' }[r.reason] || '';
     const slots = r.medalList.map((m, i) => `<div class="rm-slot m-${m}" data-medal="${m}" style="--i:${i}"><span>${MEDAL[m].icon}</span><small>${fmt(r.medals[m])} m</small></div>`).join('');
     const rw = o.rewards || { bolts: 0, scrap: 0, blueprints: 0, base: {} };
     const rows = [];
@@ -101,7 +103,7 @@ export class RunScreens {
     if (rw.blueprints) rows.push(['📘 Blaupausen', rw.blueprints, 'Auszahlung am Run-Ende']);
     if (o.cores) rows.push(['💠 Kerne', o.cores, 'erster Sieg über diesen Boss']);
     if (o.actBonus) rows.push(['🏁 Akt-Bonus ⚙', o.actBonus, '']);
-    if (r.crates) rows.push(['📦 Item-Kisten', r.crates, 'Items kommen in Phase 4']);
+    if (r.crates) rows.push(['📦 Item-Kisten', r.crates, o.cleared ? 'je Kiste eine Item-Auswahl' : 'nur bei Erfolg']);
     const tow = o.towed ? `<div class="rr-tow">🚛 Abschleppen: <b>−${fmt(o.towPenalty)} 🔧</b> (${pctTxt(RUN.towPenalty)} der max. Haltbarkeit)${o.defeat ? '' : ' – danach Neuversuch derselben Strecke'}</div>` : '';
     let btns;
     if (o.defeat) btns = '<button class="btn btn-primary" data-a="end">Run beenden ▶</button>';
@@ -142,6 +144,38 @@ export class RunScreens {
       if (k < 1) { if (this.onTick && Math.random() < 0.4) this.onTick('money'); requestAnimationFrame(tick); }
     };
     requestAnimationFrame(tick);
+  }
+
+  // ---------- Item-Auswahl ----------
+  // choice: { context, items, skipBolts }, d: { inventory, parts, slots, remaining }
+  itemChoice(choice, d, { onPick, onSkip, onInventory }) {
+    const title = { stage: '🎁 Beute!', elite: '☠️ Elite-Beute!', boss: '👑 Boss-Beute!', crate: '📦 Item-Kiste!' }[choice.context] || '🎁 Beute!';
+    const sub = { elite: 'mindestens Selten', boss: 'Episch oder Legendär', crate: 'aus der Kiste in der Strecke' }[choice.context] || 'Wähle ein Item';
+    const cards = choice.items.length ? choiceCardsHtml(choice, d) : '<p class="ri-desc">Der Pool ist leer – nimm die Schrauben.</p>';
+    this.present('choice', `
+      <h2>${title}</h2>
+      <div class="ri-sub">${esc(sub)}${d.remaining > 1 ? ` · noch ${d.remaining - 1} weitere Auswahl` : ''}</div>
+      <button class="ch-inv" data-a="inv">🎒 ${d.inventory.length}/${d.slots} ${d.inventory.length >= d.slots ? '· voll – Nehmen ersetzt ein Item' : ''}</button>
+      <div class="ch-cards">${cards}</div>
+      <div class="btn-row"><button class="btn btn-secondary" data-a="skip">Überspringen: +${fmt(choice.skipBolts)} 🔩</button></div>`);
+    this.card.querySelectorAll('[data-pick]').forEach((b) => { b.onclick = () => onPick(Number(b.dataset.pick)); });
+    this.bind('[data-a=skip]', onSkip);
+    this.bind('[data-a=inv]', onInventory);
+  }
+
+  // Voller Rucksack: Item ersetzen oder ablehnen. d: { itemId, inventory, skipBolts }
+  itemReplace(d, { onReplace, onBack, onReject }) {
+    const rows = d.inventory.map((e, i) => entryRowHtml(e, i, { actions: `<button class="btn btn-danger small-btn ir-rep" data-rep="${i}">Ersetzen</button>` })).join('');
+    this.present('replace', `
+      <h2>🎒 Rucksack voll</h2>
+      <p class="ri-desc">Welches Item soll <b>${esc((itemById(d.itemId) || {}).name)}</b> Platz machen?</p>
+      ${itemCardHtml(d.itemId, { cls: 'new' })}
+      <h4>Ersetzen</h4>
+      <div class="ch-rows">${rows}</div>
+      <div class="btn-row"><button class="btn btn-secondary" data-a="back">◀ Andere Wahl</button><button class="btn btn-secondary" data-a="reject">Ablehnen: +${fmt(d.skipBolts)} 🔩</button></div>`);
+    this.card.querySelectorAll('[data-rep]').forEach((b) => { b.onclick = () => onReplace(Number(b.dataset.rep)); });
+    this.bind('[data-a=back]', onBack);
+    this.bind('[data-a=reject]', onReject);
   }
 
   // ---------- Tankstelle ----------

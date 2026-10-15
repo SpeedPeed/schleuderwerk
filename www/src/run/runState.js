@@ -8,18 +8,31 @@
 // Run-Zustand:
 // { v, seed, ascension, chassisId, parts: {slot: {id, level}}, abilities, act, biome, bossIds: {act: id}, map,
 //   pos: {floor, node}, current: {node, type, attempts} | null, visited: [ids], path: [ids],
-//   durability, durabilityBase, bolts, inventory, reserve, runMods: {fuelMaxAdd, coolMul, durabilityMaxAdd},
-//   counters, history, stats, earned: {scrap, blueprints, cores, actScrap}, bossesBeaten: [acts], over }
-import { RUN, REWARDS } from '../data/balance.js';
+//   durability, durabilityBase, bolts, inventory: [{itemId, tier, hybrid?, hybridTier?}], reserve,
+//   pendingChoices: [{ context, items: [ids], skipBolts }], poolAll, runMods: {fuelMaxAdd, coolMul, durabilityMaxAdd},
+//   counters: { trig: {perRun-Zähler}, rolls, events }, history, stats, earned: {scrap, blueprints, cores, actScrap},
+//   bossesBeaten: [acts], over }
+//
+// Phase 4 – Items: Start-Item je Chassis (starterItem bzw. zufälliges base-Item des starterTag), nach jeder geschafften
+// Etappe eine Item-Auswahl (pendingChoices; Seltenheit je Etappe/Elite/Boss, run/rewards.js → rollItemChoices) plus je
+// eingesammelter Item-Kiste eine weitere; Überspringen gibt Schrauben, voller Rucksack → ersetzen oder ablehnen.
+// Run-Ereignisse (runStart, nodeEnter, stageClear, itemGained, shopEnter) laufen über die Trigger-Engine mit einem
+// ctx ohne Fahrzeug (emitRunEvent). Der Kodex im Spielstand (save.codex) merkt sich gesehene/besessene Items und Set-Boni.
+import { RUN, REWARDS, ITEMS as BAL_ITEMS } from '../data/balance.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeForAct } from '../data/biomes.js';
 import { SLOTS } from '../data/index.js';
+import { ITEMS, itemById } from '../data/items.js';
 import { makeRng, hashSeed } from '../core/rng.js';
 import { generateActMap, mapNode, isStageType, BOSS_FLOOR } from '../map/mapGen.js';
 import { generateStageSpec } from '../physics/trackGen.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { markMilestone } from '../garage/progression.js';
-import { stageRewards, placeholderReward, runPayout } from './rewards.js';
+import { computeStats } from '../items/statMods.js';
+import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts } from '../items/inventory.js';
+import { dispatchRunEvent } from '../items/triggerEngine.js';
+import { ModState } from '../items/modState.js';
+import { stageRewards, placeholderReward, runPayout, rollItemChoices, itemSkipBolts } from './rewards.js';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -44,8 +57,38 @@ export function runLoadout(run, save = null) {
   return buildLoadout(runLoadoutSave(run, save));
 }
 
-// Max. Haltbarkeit im Run (Garage-Wert beim Start + Run-Effekte)
-export const durabilityMax = (run) => Math.max(1, run.durabilityBase + (run.runMods.durabilityMaxAdd || 0));
+// Werte der Run-Ausrüstung inkl. Items, Set-Boni (Biom des aktuellen Akts) und Run-Effekten (wie in der Etappe,
+// ohne Buffs). Zwischengespeichert je Inventar/Akt/Run-Werte.
+const statCache = new WeakMap();
+export function runStats(run) {
+  const key = JSON.stringify([run.chassisId, run.parts, run.act, run.inventory, run.runMods]);
+  const c = statCache.get(run);
+  if (c && c.key === key) return c.stats;
+  const lo = runLoadout(run);
+  const setup = applyInventory(lo, run.inventory || [], { biome: biomeForAct(run.act) });
+  const rm = run.runMods || {};
+  const extra = [{ stats: { durabilityMax: { add: rm.durabilityMaxAdd || 0 }, fuelMax: { add: rm.fuelMaxAdd || 0 }, coolRate: { mul: rm.coolMul || 0 } } }];
+  const stats = computeStats({ ...setup.statInput, extra });
+  statCache.set(run, { key, stats, setup });
+  return stats;
+}
+
+// Max. Haltbarkeit im Run (Garage-Werte + Items + Run-Effekte, gleiche Rechnung wie in der Etappe)
+export const durabilityMax = (run) => Math.max(1, Math.round(runStats(run).durabilityMax * 10) / 10);
+
+// Item-Plätze des Runs (Stat itemSlots, Badewanne −1)
+export const itemSlots = (run) => Math.max(1, Math.round(runStats(run).itemSlots));
+
+// Alles, was eine Etappe des Runs braucht (main.js, Bot): Ausrüstung, Inventar, Run-Infos
+export function runStageSetup(run, save = null) {
+  return {
+    loadout: runLoadout(run, save),
+    inventory: run.inventory || [],
+    runInfo: { bolts: run.bolts, counters: (run.counters.trig ||= {}) },
+    runMods: run.runMods,
+    durability: run.durability,
+  };
+}
 
 // Neuen Run aus der aktuellen Garage-Auswahl. opts: { seed, ascension }
 export function newRun(save, opts = {}) {
@@ -73,8 +116,10 @@ export function newRun(save, opts = {}) {
     bolts: 0,
     inventory: [],
     reserve: [],
+    pendingChoices: [],
+    poolAll: !!BAL_ITEMS.devAllPools,
     runMods: { fuelMaxAdd: 0, coolMul: 0, durabilityMaxAdd: 0 },
-    counters: {},
+    counters: { trig: {}, rolls: 0, events: 0 },
     history: [],
     stats: {
       stages: 0, cleared: 0, tows: 0, medals: { bronze: 0, silver: 0, gold: 0 }, dist: 0, bestDist: 0,
@@ -86,6 +131,38 @@ export function newRun(save, opts = {}) {
     research: save && save.research ? [...save.research.done] : [],
   };
   setupAct(run, 1);
+  // Start-Item des Chassis
+  const start = starterItemFor(lo.chassis, run.seed);
+  if (start) giveItem(run, save, start);
+  run.durability = durabilityMax(run);
+  emitRunEvent(run, save, 'runStart', {});
+  run.durability = Math.min(run.durability, durabilityMax(run));
+  return run;
+}
+
+// Start-Item: chassis.starterItem, sonst ein zufälliges 'base'-Item des starterTag (deterministisch aus dem Seed)
+export function starterItemFor(chassis, seed) {
+  if (!chassis) return null;
+  if (chassis.starterItem && itemById(chassis.starterItem)) return chassis.starterItem;
+  const tag = chassis.starterTag;
+  const list = ITEMS.filter((it) => it.pool === 'base' && it.rarity !== 'cursed' && it.tags[0] === tag);
+  const any = list.length ? list : ITEMS.filter((it) => it.pool === 'base' && it.tags.includes(tag));
+  if (!any.length) return null;
+  return makeRng(hashSeed(`${seed}:start-item`)).pick(any).id;
+}
+
+// Fehlende Felder älterer Runs (Phase 3) ergänzen, unbekannte Items verwerfen
+export function normalizeRun(run) {
+  if (!isObj(run)) return run;
+  if (!Array.isArray(run.inventory)) run.inventory = [];
+  run.inventory = run.inventory.filter(isValidEntry).map((e) => ({ ...e, tier: Math.max(1, Math.min(3, e.tier | 0 || 1)) }));
+  if (!Array.isArray(run.pendingChoices)) run.pendingChoices = [];
+  run.pendingChoices = run.pendingChoices.filter((p) => isObj(p) && Array.isArray(p.items)).map((p) => ({ ...p, items: p.items.filter((id) => itemById(id)) }));
+  if (!isObj(run.counters)) run.counters = {};
+  if (!isObj(run.counters.trig)) run.counters.trig = {};
+  run.counters.rolls = run.counters.rolls | 0;
+  run.counters.events = run.counters.events | 0;
+  run.poolAll = !!run.poolAll;
   return run;
 }
 
@@ -144,15 +221,18 @@ export function enterNode(run, id) {
   if (run.current && run.current.node !== id) return { ok: false, reason: 'busy' };
   if (!run.current && !canEnter(run, id)) return { ok: false, reason: 'unreachable' };
   const node = mapNode(run.map, id);
+  const events = [];
   if (!run.current) {
     run.current = { node: id, type: node.type, attempts: 0 };
     run.pos = { floor: node.floor, node: id };
     run.path.push(id);
     run.stats.nodes++;
+    events.push(emitRunEvent(run, null, 'nodeEnter', { type: node.type }));
+    if (node.type === 'dealer') events.push(emitRunEvent(run, null, 'shopEnter', {}));
   }
-  if (isStageType(node.type)) return { ok: true, node, kind: 'stage', spec: stageSpecFor(run, node) };
-  if (node.type === 'station') return { ok: true, node, kind: 'station', options: stationOptions() };
-  return { ok: true, node, kind: 'placeholder', reward: placeholderReward(node.type) };
+  if (isStageType(node.type)) return { ok: true, node, kind: 'stage', spec: stageSpecFor(run, node), events };
+  if (node.type === 'station') return { ok: true, node, kind: 'station', options: stationOptions(), events };
+  return { ok: true, node, kind: 'placeholder', reward: placeholderReward(node.type), events };
 }
 
 // Knoten abschließen (Boss → nächster Akt bzw. Sieg)
@@ -182,7 +262,8 @@ export function applyStageResult(run, result, save = null) {
   if (result.stunts) { s.flips += result.stunts.flips || 0; s.loops += result.stunts.loops || 0; }
   const rw = stageRewards(run.act, kind, result);
   out.rewards = rw;
-  run.bolts += rw.bolts;
+  // Schrauben, die in der Etappe als Treibstoff verbrannt wurden (Regel boltsAreFuel), gehen vom Run-Stand ab
+  run.bolts = Math.max(0, run.bolts + rw.bolts - Math.max(0, result.boltsSpent || 0));
   s.boltsEarned += rw.bolts;
   run.earned.scrap += rw.scrap;
   run.earned.blueprints += rw.blueprints;
@@ -210,7 +291,16 @@ export function applyStageResult(run, result, save = null) {
   }
   s.cleared++;
   s.medals[out.medal] = (s.medals[out.medal] || 0) + 1;
+  out.events = emitRunEvent(run, save, 'stageClear', { medal: out.medal, kind });
+  const act = run.act;
   completeNode(run);
+  // Item-Auswahl: 1 nach der Etappe (Kontext = Knotenart) + 1 je Item-Kiste (nicht nach dem letzten Boss)
+  const lastBoss = kind === 'boss' && act >= RUN.acts;
+  if (!lastBoss) {
+    queueChoice(run, save, kind, act);
+    for (let i = 0; i < Math.max(0, result.crates || 0); i++) queueChoice(run, save, 'crate', act);
+    out.choices = run.pendingChoices.length;
+  }
   if (kind === 'boss') {
     out.actComplete = true;
     run.bossesBeaten.push(run.act);
@@ -234,6 +324,138 @@ export function applyStageResult(run, result, save = null) {
     }
   }
   return out;
+}
+
+// ---------- Items ----------
+
+// Run-Kontext der Trigger-Engine: ctx ohne Fahrzeug, Effekte wirken auf den Run-Zustand
+function runCtx(run, save, rng, log) {
+  const st = runStats(run);
+  const ctx = {
+    vehicle: null,
+    rng,
+    source: null,
+    depth: 0,
+    chassisId: run.chassisId,
+    addBolts: (n) => {
+      const v = n > 0 ? n * st.boltGain : n;
+      run.bolts = Math.max(0, run.bolts + v);
+      if (v > 0) run.stats.boltsEarned += v;
+      log.bolts += v;
+    },
+    addScrap: (n) => { run.earned.scrap += Math.max(0, n) * st.scrapGain; },
+    heal: (n) => { run.durability = Math.min(durabilityMax(run), run.durability + Math.max(0, n)); },
+    damage: (n) => { run.durability = Math.max(0, run.durability - Math.max(0, n)); },
+    popup: (t) => log.popups.push(t),
+    fx: () => {},
+    luck: () => st.luck,
+    hpFrac: () => run.durability / durabilityMax(run),
+    maxDurability: () => durabilityMax(run),
+    maxHp: (n) => {
+      const before = durabilityMax(run);
+      run.runMods.durabilityMaxAdd += n;
+      const gain = durabilityMax(run) - before;
+      if (gain > 0) run.durability += gain;
+      run.durability = Math.min(run.durability, durabilityMax(run));
+    },
+    maxFuel: (n) => { run.runMods.fuelMaxAdd += n; },
+    upgradeItem: () => {
+      const i = upgradeRandom(run.inventory, rng);
+      if (i >= 0) log.upgraded.push(i);
+      return i >= 0;
+    },
+    // Etappen-Effekte (Buffs, Stapel, Zähler) haben im Run keine Wirkung über das Ereignis hinaus
+    addBuff: () => {}, addStack: () => {}, charge: (k, n, at) => log.mods.charge(k, n, at),
+    freeBoost: () => {}, shield: () => {}, slowmo: () => {}, refill: () => {}, magnet: () => {},
+    onTriggered: (src) => log.triggered.push({ id: src.id, kind: src.kind, name: src.name, icon: src.icon, slot: src.slot }),
+  };
+  return ctx;
+}
+
+// Run-Ereignis über die Trigger-Engine verteilen (runStart, nodeEnter, stageClear, itemGained, shopEnter).
+// Ergebnis: { triggered: [{ id, name, icon, slot }], bolts, popups, upgraded: [slot] }
+export function emitRunEvent(run, save, name, data = {}) {
+  normalizeRun(run);
+  const log = { triggered: [], bolts: 0, popups: [], upgraded: [], mods: new ModState() };
+  if (!run.inventory.length) return log;
+  const rng = makeRng(hashSeed(`${run.seed}:ereignis:${run.counters.events++}`));
+  const setup = applyInventory(runLoadout(run), run.inventory, { biome: biomeForAct(run.act) });
+  const sources = setup.sources.filter((s) => s.kind === 'item' || s.kind === 'set' || s.kind === 'chassis');
+  dispatchRunEvent({ sources, ctx: runCtx(run, save, rng, log), rules: setup.rules, runCounters: run.counters.trig }, name, data);
+  delete log.mods;
+  return log;
+}
+
+// Kodex: Item gesehen (1) / besessen (2); aktive Set-Boni
+function codexItem(save, id, level) {
+  if (!save || !save.codex) return;
+  const c = save.codex.items;
+  c[id] = Math.max(typeof c[id] === 'number' ? c[id] : 0, level);
+}
+export function updateCodexSets(run, save) {
+  if (!save || !save.codex) return;
+  runStats(run);
+  for (const s of statCache.get(run).setup.sets) save.codex.sets[s.id] = 1;
+}
+
+// Aufbau des Inventars für die Anzeige (Karte, Inventar-Ansicht): { items, sets, counts, slots }
+export function inventoryView(run) {
+  runStats(run);
+  const setup = statCache.get(run).setup;
+  return { items: setup.items, sets: setup.sets, counts: setup.counts, slots: itemSlots(run), tagBoost: setup.tagBoost };
+}
+
+// Item direkt ins Inventar (Start-Item, Dev-Menü). replace: Platz, der ersetzt wird. Ergebnis wie addEntry
+export function giveItem(run, save, itemId, { tier = 1, replace = null, force = false } = {}) {
+  normalizeRun(run);
+  const slots = force ? Infinity : itemSlots(run);
+  const res = addEntry(run.inventory, makeEntry(itemId, tier), slots, replace);
+  if (!res.ok) return res;
+  codexItem(save, itemId, 2);
+  updateCodexSets(run, save);
+  res.events = emitRunEvent(run, save, 'itemGained', { itemId });
+  run.durability = Math.min(run.durability, durabilityMax(run));
+  return res;
+}
+
+// Neue Auswahl würfeln und anhängen (context: 'stage' | 'elite' | 'boss' | 'crate')
+export function queueChoice(run, save, context, act = run.act) {
+  normalizeRun(run);
+  const rng = makeRng(hashSeed(`${run.seed}:auswahl:${run.counters.rolls++}`));
+  const count = Math.max(1, Math.round(runStats(run).itemChoices));
+  const items = rollItemChoices({
+    rng, context, act, count, research: run.research || [], all: !!run.poolAll || !!BAL_ITEMS.devAllPools,
+    owned: run.inventory.flatMap((e) => entryParts(e).map((p) => p.def.id)),
+  });
+  const choice = { context, items, skipBolts: itemSkipBolts(act) };
+  run.pendingChoices.push(choice);
+  for (const id of items) codexItem(save, id, 1);
+  return choice;
+}
+
+export const pendingChoice = (run) => (run && run.pendingChoices && run.pendingChoices.length ? run.pendingChoices[0] : null);
+
+// Item der obersten Auswahl nehmen. replace: Inventar-Platz (bei vollem Rucksack Pflicht).
+// Ergebnis: { ok, reason?: 'full'|'none'|'index', itemId, slot, replaced?, events }
+export function pickItem(run, save, index, replace = null) {
+  const ch = pendingChoice(run);
+  if (!ch) return { ok: false, reason: 'none' };
+  const itemId = ch.items[index];
+  if (!itemId) return { ok: false, reason: 'index' };
+  const res = giveItem(run, save, itemId, { replace });
+  if (!res.ok) return { ...res, itemId };
+  run.pendingChoices.shift();
+  return { ...res, itemId };
+}
+
+// Auswahl überspringen (oder bei vollem Rucksack ablehnen): + Schrauben
+export function skipChoice(run) {
+  const ch = pendingChoice(run);
+  if (!ch) return { ok: false, reason: 'none' };
+  run.pendingChoices.shift();
+  run.bolts += ch.skipBolts || 0;
+  run.stats.boltsEarned += ch.skipBolts || 0;
+  return { ok: true, bolts: ch.skipBolts || 0 };
 }
 
 // Tankstelle: Wahl für den Run (Zahlen aus data/nodes.js → station.params)
@@ -322,5 +544,17 @@ export function devNextAct(run) {
 
 export function devSetDurability(run, n) {
   run.durability = Math.max(0, Math.min(durabilityMax(run), Number(n) || 0));
+}
+
+// Item hinzufügen (auch über die Slot-Grenze hinaus) bzw. ★ eines Platzes erhöhen
+export function devAddItem(run, save, itemId, tier = 1) {
+  return giveItem(run, save, itemId, { tier, force: true });
+}
+
+export function devTierUp(run, slot) {
+  const e = run.inventory[slot];
+  if (!e || (e.tier || 1) >= 3) return false;
+  e.tier = (e.tier || 1) + 1;
+  return true;
 }
 

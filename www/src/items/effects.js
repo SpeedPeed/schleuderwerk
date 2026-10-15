@@ -32,7 +32,9 @@ export const EFFECTS = {
   // Sofort-Schub in Blickrichtung (unterliegt der weichen Tempo-Grenze)
   thrust(fx, ctx, t) { if (ctx.vehicle) ctx.vehicle.thrust(num(fx.amount) * t); },
   // Impuls nach oben (am Boden: abheben, in der Luft: Doppelsprung)
-  jump(fx, ctx, t) { if (ctx.vehicle) ctx.vehicle.jump(num(fx.amount) * t); },
+  // (in der Luft hebt nur die Fähigkeit Hüpfer das Fallen ganz auf; Item-Sprünge sind Impulse – sonst ließe sich mit
+  //  Salto-Sprüngen endlos schweben, siehe ITEMS.effectJumpCancelFall)
+  jump(fx, ctx, t) { if (ctx.vehicle) ctx.vehicle.jump(num(fx.amount) * t, ctx.source && ctx.source.kind === 'ability' ? 1 : ITEMS.effectJumpCancelFall); },
   // Gratis-Boost ohne Treibstoff (löst boost {free:true} aus)
   boost(fx, ctx, t) { call(ctx, 'freeBoost', num(fx.dur) * t, fx.source || (ctx.source && ctx.source.id) || 'fx'); },
   // Schub nach vorn + kleiner Sprung, löst explosion {amount} aus
@@ -40,7 +42,7 @@ export const EFFECTS = {
     const a = num(fx.amount) * t;
     if (ctx.vehicle) {
       ctx.vehicle.thrust(a);
-      ctx.vehicle.jump(a * ITEMS.explosionJump);
+      ctx.vehicle.jump(a * ITEMS.explosionJump, ITEMS.effectJumpCancelFall);
     }
     call(ctx, 'fx', 'explosion', { amount: a });
     call(ctx, 'emit', 'explosion', { amount: a });

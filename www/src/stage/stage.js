@@ -13,6 +13,8 @@ import { EventQueue } from '../items/eventQueue.js';
 import { ModState } from '../items/modState.js';
 import { isEvent } from '../items/events.js';
 import { computeStats, baseStats } from '../items/statMods.js';
+import { TriggerEngine } from '../items/triggerEngine.js';
+import { applyInventory, entryParts } from '../items/inventory.js';
 
 // Ruheposition des Autos in der Schleuder
 export const REST = { x: LAUNCH.restX, y: PLATEAU_H + LAUNCH.restHeight, angle: LAUNCH.restAngleDeg * DEG };
@@ -24,7 +26,7 @@ function warnEvent(name) {
   warnedEvents.add(name);
   console.warn(`Unbekanntes Ereignis „${name}“ (Effekt emit) – verworfen`);
 }
-const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, end: NOOP, event: NOOP };
+const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, end: NOOP, event: NOOP, triggered: NOOP, chain: NOOP };
 
 // Eine Etappe: Abschuss → Flug/Fahrt → Ende. Reine Logik ohne DOM und three.js.
 // Alles Sichtbare geht über `hooks` nach außen (Popups, Sound, Effekte, Ereignisse, Ende).
@@ -33,20 +35,31 @@ const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, 
 //
 // Ereignisse: Physik und Objekte schreiben Rohereignisse in this.ev; handle() reagiert darauf (Popups, Schaden,
 // Tricks) und reiht die Trigger-Ereignisse (Namen nach ARCHITEKTUR.md 4.2) in this.queue ein. Die Warteschlange
-// wird nach jedem Physik-Schritt abgearbeitet: hooks.event(name, data) und – ab Phase 4 – this.onEvent
-// (Trigger-Engine, (name, data, depth)).
+// wird nach jedem Physik-Schritt abgearbeitet: hooks.event(name, data, depth), die Trigger-Engine (this.engine,
+// items/triggerEngine.js) und this.onEvent (Tests). Rohereignisse, die Effekte beim Abarbeiten auslösen (Heilung,
+// Schaden, Abprall, Überhitzung …), gehören zur Kette und werden sofort mit Tiefe + 1 weitergegeben; ein Gratis-Boost
+// meldet sein boost-Ereignis im nächsten Physik-Schritt mit der Tiefe des auslösenden Effekts + 1.
+// Items: `inventory` (Run-Inventar) wird über items/inventory.js → applyInventory auf die Ausrüstung angewendet
+// (Stats, Regeln, Set-Boni, Trigger-Quellen). Jede Auslösung geht an hooks.triggered(source, depth, info) (HUD),
+// ab Kettentiefe ITEMS.chainPopupDepth an hooks.chain(n).
 //
 // Regeln, die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A): collectScrapMass (Kollision, Pickups),
-// heatToThrust (Fähigkeit Schleudergang).
+// heatToThrust (Fähigkeit Schleudergang), shockArc (Elektro-Set 6, beim shock-Ereignis), boltsAreFuel (Schrauben als
+// Treibstoff über vehicle.fuelBackup), boltHoardThrust (Schraubenhort beim Neuberechnen der Stats), blackCatNap
+// (Fluch: ein Item ruht, beim Zusammenstellen der Quellen).
 //
 // Phase 3: Die Strecke kommt aus einer StageSpec (physics/trackGen.js) mit Zielmarke und Medaillen
 // (spec.medals: bronze = Ziel, silver, gold). Endgründe: 'stop' (steht), 'wreck' (Haltbarkeit 0), 'fall'
-// (Schluchtsturz, + FEATURES.gap.fallDamage), 'time' (STAGE.maxTime). Ergebnis nach ARCHITEKTUR.md §7.
+// (Schluchtsturz, + FEATURES.gap.fallDamage), 'time' (STAGE.maxTime), 'far' (Gold × STAGE.farMul erreicht, Phase 4).
+// Ergebnis nach ARCHITEKTUR.md §7.
 export class Stage {
   // biome (alt: world): Biom aus data/biomes.js. spec: StageSpec (sonst einfache Etappe Etage 0 des Bioms).
   // track: fertige Strecke (sonst aus spec). loadout: garage/loadout.js buildLoadout; alternativ nur `stats` (Tests).
   // durability: Start-Haltbarkeit (aus dem Run); sonst voll. runMods: { fuelMaxAdd, coolMul, durabilityMaxAdd } (Run).
-  constructor({ biome, world, spec = null, track = null, loadout = null, stats = null, seed = 1, hooks = {}, durability, runMods = {} }) {
+  // inventory: Run-Inventar [{ itemId, tier, hybrid? }]. runInfo: { bolts (Run-Schrauben beim Start), counters (perRun-
+  // Zähler der Trigger, wird verändert) } – null bei Testfahrten.
+  // farEnd: Ende 'far' bei Gold × STAGE.farMul (Dev-Testfahrten schalten es ab).
+  constructor({ biome, world, spec = null, track = null, loadout = null, stats = null, seed = 1, hooks = {}, durability, runMods = {}, inventory = null, runInfo = null, farEnd = true }) {
     this.rng = makeRng(seed >>> 0);
     this.biome = biome || world || (track && track.biome) || BIOMES[0];
     this.world = this.biome;   // alter Name (Phase 1–2)
@@ -58,8 +71,22 @@ export class Stage {
     // Ausrüstung und Werte: Garage-Werte + Welt-Physik + zeitweise Modifikatoren (Buffs, Stapel)
     const lo = loadout || { stats: stats || baseStats(), rules: {}, abilities: ['boost'], sources: [], statInput: null };
     this.loadout = lo;
-    this.rules = lo.rules || {};
-    this.statInput = lo.statInput || { base: lo.stats };
+    this.runInfo = runInfo;
+    this.farEnd = farEnd;
+    this.runBolts = runInfo ? Math.max(0, runInfo.bolts || 0) : 0;
+    this.boltsSpent = 0;
+    this.bolts = 0;
+    // Items und Set-Boni (Phase 4). Fluch blackCatNap: ein anderes Item ruht in dieser Etappe (zählt für Sets weiter)
+    this.inventory = inventory || [];
+    this.nappedSlot = this.pickNap(this.inventory);
+    const setup = applyInventory({ ...lo, statInput: lo.statInput || { base: lo.stats } }, this.inventory, {
+      biome: bio, exclude: new Set(this.nappedSlot >= 0 ? [this.nappedSlot] : []),
+    });
+    this.setup = setup;
+    this.rules = setup.rules;
+    this.statInput = setup.statInput;
+    this.boltHoard = 0;
+    this.hoardMods = { stats: { boostThrust: { mul: 0 } } };
     this.worldMods = { stats: { rollFriction: { xmul: bio.physics?.rollFriction ?? 1 }, landTolDeg: { add: bio.physics?.landTolAdd || 0 } } };
     this.runMods = { stats: {
       durabilityMax: { add: runMods.durabilityMaxAdd || 0 },
@@ -67,12 +94,22 @@ export class Stage {
       coolRate: { mul: runMods.coolMul || 0 },
     } };
     this.mods = new ModState();
+    this.updateBoltHoard(false);
     this.stats = this.computeStats();
 
     this.ev = [];
     this.vehicle = new Vehicle(this.stats, bio.gravity, this.rules);
     this.vehicle.reset(REST.x, REST.y, REST.angle);
     this.vehicle.ev = this.ev;
+    // Regel boltsAreFuel (Schraubenvergaser): leerer Tank wird mit Run-Schrauben bezahlt
+    if (this.rules.boltsAreFuel) {
+      const per = RULES.boltsAreFuel.fuelPerBolt;
+      this.vehicle.fuelBackup = {
+        available: () => this.availableBolts() >= 1,
+        fuel: () => Math.floor(this.availableBolts()) * per,
+        pay: () => { if (this.availableBolts() < 1) return 0; this.ctx.addBolts(-1); return per; },
+      };
+    }
     if (durability !== undefined) this.vehicle.durability = Math.max(0, Math.min(durability, this.stats.durabilityMax));
     this.startDurability = this.vehicle.durability;
 
@@ -106,8 +143,13 @@ export class Stage {
     this.abilities = new AbilityBar(lo.abilities || []);
     this.queue = new EventQueue();
     this.eventCounts = {};
-    this.onEvent = null;           // Phase 4: Trigger-Engine (name, data, depth)
+    this.onEvent = null;           // zusätzlicher Beobachter (Tests): (name, data, depth)
+    this.emitDepth = 0;            // Tiefe für Ereignisse aus Rohereignissen (beim Abarbeiten der Kette > 0)
     this.ctx = this.makeCtx();
+    this.engine = new TriggerEngine({ sources: setup.sources, ctx: this.ctx, rules: this.rules, queue: this.queue, mods: this.mods, runCounters: runInfo ? runInfo.counters : null });
+    this.triggerCount = 0;
+    this.maxChain = 0;             // längste Kette (Glieder = Tiefe + 1)
+    this.arcReadyAt = -Infinity;   // shockArc
 
     this.phase = 'aim';
     this.launch = new Launch(this.rng.fork('launch'), this.stats);
@@ -144,7 +186,35 @@ export class Stage {
 
   // ---------- Werte ----------
   computeStats() {
-    return computeStats({ ...this.statInput, extra: [this.worldMods, this.runMods], buffs: this.mods.mods() });
+    return computeStats({ ...this.statInput, extra: [this.worldMods, this.runMods, this.hoardMods], buffs: this.mods.mods() });
+  }
+
+  // Fluch blackCatNap (Schwarze Katze): gleichverteilt eines der ANDEREN Items wählen (nicht von Glück beeinflusst)
+  pickNap(inventory) {
+    let cat = -1;
+    inventory.forEach((e, i) => {
+      for (const { def } of entryParts(e)) if ((def.rules && def.rules.blackCatNap) || (def.curse && def.curse.rules && def.curse.rules.blackCatNap)) cat = cat < 0 ? i : cat;
+    });
+    if (cat < 0) return -1;
+    const others = [];
+    inventory.forEach((e, i) => { if (i !== cat && entryParts(e).length) others.push(i); });
+    if (!others.length) return -1;
+    const r = this.rng.fork('katze');
+    return others[Math.floor(r.next() * others.length) % others.length];
+  }
+
+  // Schrauben, über die die Etappe verfügen kann (Run-Stand + in der Etappe gesammelte − verbrannte)
+  availableBolts() { return this.runBolts + this.bolts - this.boltsSpent; }
+
+  // Regel boltHoardThrust (Schraubenhort): boostThrust +1 % je 5 Schrauben (max. +30 %), nicht mit ★ skaliert
+  updateBoltHoard(recompute = true) {
+    if (!this.rules.boltHoardThrust) return;
+    const B = RULES.boltHoardThrust;
+    const v = Math.min(B.max, Math.floor(Math.max(0, this.availableBolts()) / B.per) * B.mul);
+    if (Math.abs(v - this.boltHoard) < 1e-9) return;
+    this.boltHoard = v;
+    this.hoardMods.stats.boostThrust.mul = v;
+    if (recompute) this.mods.dirty = true;
   }
 
   // Werte neu berechnen (Buffs/Stapel geändert, Dev-Menü, Run-Effekte)
@@ -174,16 +244,72 @@ export class Stage {
   }
 
   // ---------- Ereignisse ----------
-  // Trigger-Ereignis einreihen (Namen nach ARCHITEKTUR.md 4.2)
-  emit(name, data = {}, depth = 0) { this.queue.push(name, data, depth); }
+  // Trigger-Ereignis einreihen (Namen nach ARCHITEKTUR.md 4.2). Ohne Tiefe: die der laufenden Kette (emitDepth)
+  emit(name, data = {}, depth = this.emitDepth) { this.queue.push(name, data, depth); }
 
+  // Warteschlange abarbeiten (1× pro Physik-Schritt): Zähler, Hooks, Trigger-Engine, Regel shockArc,
+  // Rohereignisse aus Effekten mit Tiefe + 1
   flushEvents() {
     if (!this.queue.length) return;
-    this.queue.drain((name, data, depth) => {
+    const eng = this.engine;
+    eng.beginFlush();
+    const n = this.queue.drain((name, data, depth) => {
       this.eventCounts[name] = (this.eventCounts[name] || 0) + 1;
-      this.hooks.event(name, data);
+      this.hooks.event(name, data, depth);
+      eng.dispatch(name, data, depth);
       if (this.onEvent) this.onEvent(name, data, depth);
+      if (name === 'shock' && this.rules.shockArc && this.phase === 'fly') this.shockArc();
+      if (this.ev.length) this.handleRaw(depth + 1);
     });
+    eng.endFlush(n);
+    const links = eng.maxDepth + 1;
+    if (links > this.maxChain) this.maxChain = links;
+    if (eng.maxDepth >= ITEMS.chainPopupDepth) this.hooks.chain(links);
+  }
+
+  // Rohereignisse, die beim Abarbeiten entstanden sind, als Teil der Kette verarbeiten
+  handleRaw(depth) {
+    const prev = this.emitDepth;
+    this.emitDepth = depth;
+    const ev = this.ev;
+    for (let i = 0; i < ev.length; i++) this.handle(ev[i]);
+    ev.length = 0;
+    this.emitDepth = prev;
+  }
+
+  // Auslösung einer Quelle (Trigger-Engine → ctx.onTriggered)
+  onTriggered(src, depth, info) {
+    this.triggerCount++;
+    this.hooks.triggered(src, depth, info);
+  }
+
+  // Regel shockArc (Elektro-Set 6): Lichtbogen zerstört das nächste Hindernis voraus und holt Pickups im Umkreis
+  shockArc() {
+    const A = RULES.shockArc;
+    if (this.time < this.arcReadyAt) return;
+    this.arcReadyAt = this.time + A.cooldown;
+    const v = this.vehicle;
+    const res = this.objects.arcStrike(v.x, v.y, this.rules.setBonusDouble ? A.rangeDouble : A.range, this.ev);
+    if (res.target) {
+      this.hooks.fx('shock', res.target.x, res.target.y);
+      this.hooks.fx('smash', res.target.x, res.target.y, { type: 'scrap' });
+      this.hooks.popup('LICHTBOGEN! ⚡', 'good');
+    }
+  }
+
+  // Drehzahl-Anzeige des Rasenmähers (groundSpeedStacks): Stapel / max (0…1) oder null
+  chassisStackFrac() {
+    if (!this.rules.groundSpeedStacks || !this.loadout.chassis) return null;
+    const c = this.loadout.chassis;
+    for (const t of c.triggers || []) {
+      if (t.on !== 'groundTouch') continue;
+      for (const fx of t.do || []) {
+        if (fx.fx !== 'stack' || !fx.max) continue;
+        const st = this.mods.stackOf(fx.key || `${c.id}:${fx.stat}`);
+        return st ? Math.min(1, Math.abs(st.mul || st.add) / fx.max) : 0;
+      }
+    }
+    return null;
   }
 
   // Schnittstelle der Effekte zur Welt (ARCHITEKTUR.md §5)
@@ -195,6 +321,8 @@ export class Stage {
       rng: st.rng.fork('fx'),
       source: null,
       depth: 0,
+      chassisId: st.loadout.chassis ? st.loadout.chassis.id : null,
+      onTriggered: (src, depth, info) => st.onTriggered(src, depth, info),
       addBolts: (n) => st.addBolts(n),
       addScrap: (n) => { st.scrapBonus += n; },
       heal: (n) => st.vehicle.heal(n, st.ev),
@@ -207,7 +335,12 @@ export class Stage {
         if (!isEvent(name)) { warnEvent(name); return; }
         st.emit(name, data, (ctx.depth || 0) + 1);
       },
-      freeBoost: (dur, source) => st.vehicle.startFreeBoost(dur, source),
+      // Gratis-Boost: sein boost-Ereignis (nächster Physik-Schritt) gehört zur Kette des auslösenden Effekts
+      freeBoost: (dur, source) => {
+        const v = st.vehicle;
+        v.startFreeBoost(dur, source);
+        v.freeBoostDepth = Math.max(v.freeBoostDepth || 0, (ctx.depth || 0) + 1);
+      },
       addBuff: (stat, mod, dur) => st.mods.addBuff(stat, mod, dur, ctx.source),
       addStack: (key, stat, mod, max) => st.mods.addStack(key, stat, mod, max),
       charge: (key, n, at) => st.mods.charge(key, n, at),
@@ -227,9 +360,16 @@ export class Stage {
     return ctx;
   }
 
+  // Schrauben + (× boltGain) bzw. − (n < 0: verbrennen, Regel boltsAreFuel – nie unter 0)
   addBolts(n) {
+    if (n < 0) {
+      this.boltsSpent += Math.min(-n, Math.max(0, this.availableBolts()));
+      this.updateBoltHoard();
+      return;
+    }
     if (!(n > 0)) return;
     this.bolts += n * this.stats.boltGain;
+    this.updateBoltHoard();
   }
 
   // ---------- Abschuss ----------
@@ -265,7 +405,7 @@ export class Stage {
     const L = this.launch;
     const perfect = L.perfect;
     const speed = this.stats.launchSpeed * L.power * (perfect ? 1 + this.stats.launchPerfectBonus : 1);
-    this.vehicle.launch(speed, L.angle);
+    this.vehicle.launch(speed, L.angle, perfect);
     this.phase = 'fly';
     this.perfectLaunch = perfect;
     this.emit('launch', { power: L.power, perfect, angle: L.angle });
@@ -402,7 +542,7 @@ export class Stage {
       this.acc -= P.dt;
       this.abilities.update(P.dt, this);
       ctl.boost = this.abilities.boostHeld;
-      this.mods.update(P.dt);
+      this.engine.update(P.dt);   // Abklingzeiten der Trigger, Buffs altern
       if (this.mods.dirty) this.recomputeStats();
       this.updateEnv();
       v.step(P.dt, ctl, this.track, ev, this.env, this.objects);
@@ -491,6 +631,11 @@ export class Stage {
       if (this.stopTimer > STAGE.stopTime) this.finish('stop');
     } else this.stopTimer = 0;
     if (this.time > STAGE.maxTime) this.finish('time');
+    // Ziel weit übertroffen (Gold × STAGE.farMul) → Etappe endet, statt endlos weiterzulaufen
+    else if (this.farEnd && this.medals && this.medals.gold && v.maxX >= this.medals.gold * STAGE.farMul) {
+      this.hooks.popup('ZIEL WEIT ÜBERTROFFEN! 🏁', 'big');
+      this.finish('far');
+    }
   }
 
   // Haltbarkeit aufgebraucht → Totalschaden (Etappe endet kurz danach)
@@ -591,13 +736,16 @@ export class Stage {
         if (e.amount >= R.damagePopupMin && e.source !== 'crash') h.popup(`−${Math.round(e.amount)} 🔧`, 'bad');
         break;
       case 'bounce':
-        h.popup('PLONK! Abgeprallt', 'good');
+        h.popup(e.source === 'gap' ? 'TRAMPOLIN! 🤸' : e.source === 'huepfburg' ? 'HÜPFBURG! 🏰' : 'PLONK! Abgeprallt', 'good');
         h.sfx('bounce');
         break;
       case 'boost':
         if (e.free) h.popup('GRATIS-BOOST!', 'good');
-        this.emit('boost', e);
+        this.emit('boost', { free: e.free, source: e.source }, Math.max(this.emitDepth, e.depth || 0));
         if (!e.free) this.abilities.boostStarted(this);   // abilityUse {boost} erst beim echten Start
+        return;
+      case 'wreck':
+        this.onWreck(e);
         return;
     }
     if (isEvent(e.type)) this.emit(e.type, e);
@@ -657,6 +805,17 @@ export class Stage {
     h.popup('⚡ STROMSCHLAG!', 'bad');
     h.fx('shock', this.vehicle.x, this.vehicle.y);
     h.haptic('heavy');
+  }
+
+  // Regel wreckingBall (Schrott-Set 6): Hindernis durchbrochen – collision ohne Schaden, Schrott fällt heraus
+  onWreck(e) {
+    const h = this.hooks;
+    this.emit('collision', { kind: e.obstacle.type, damage: 0, wrecked: true, x: e.x, y: e.y });
+    for (let i = 0; i < (e.scrap || 0); i++) this.collectScrap(e.x, e.y, TESTDRIVE.scrapPickupValue);
+    h.popup('ABRISSBIRNE! 💥', 'big');
+    h.sfx('crash', 0.6);
+    h.fx('smash', e.x, e.y, { type: e.obstacle.type });
+    h.shake(FX.shake.hit * 0.5);
   }
 
   onHit(e) {
@@ -753,6 +912,10 @@ export class Stage {
       height,
       tricks: this.tricks,
       bolts: Math.floor(this.bolts),
+      boltsSpent: Math.ceil(this.boltsSpent),
+      itemTriggers: this.triggerCount,
+      maxChain: this.maxChain,
+      napped: this.nappedSlot,
       scrap: Math.round(this.scrap + this.scrapBonus),
       blueprints: this.blueprints,
       crates: this.crates,

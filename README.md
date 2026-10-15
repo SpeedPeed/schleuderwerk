@@ -24,9 +24,9 @@ Der Spielstand liegt im Browser des Handys. In der App (kommt im nächsten Schri
 
 ## Steuerung
 
-**Garage** (Startbildschirm): ◀ ▶ = Chassis wählen (gesperrte zeigen ihre Bedingungen) · Slot-Zeile antippen = Teile-Auswahl (Werte-Vergleich, Kaufen ⚙, Ausrüsten, Verbessern) · „▲ ⚙“ = Teil eine Stufe verbessern · Fähigkeiten-Chip antippen = Fähigkeit für den Slot wählen · **RUN STARTEN ▶** = Run beginnen (Karte Akt 1) bzw. **RUN FORTSETZEN ▶** / „Aufgeben“ bei laufendem Run · ⚙ = Einstellungen (Export/Import). Geheim: in den Einstellungen 7× schnell auf die Versionsnummer tippen = Dev-Menü.
+**Garage** (Startbildschirm): ◀ ▶ = Chassis wählen (gesperrte zeigen ihre Bedingungen) · Slot-Zeile antippen = Teile-Auswahl (Werte-Vergleich, Kaufen ⚙, Ausrüsten, Verbessern) · „▲ ⚙“ = Teil eine Stufe verbessern · Fähigkeiten-Chip antippen = Fähigkeit für den Slot wählen · **RUN STARTEN ▶** = Run beginnen (Karte Akt 1) bzw. **RUN FORTSETZEN ▶** / „Aufgeben“ bei laufendem Run · 📖 = Kompendium (entdeckte Items und Set-Boni) · ⚙ = Einstellungen (Export/Import). Geheim: in den Einstellungen 7× schnell auf die Versionsnummer tippen = Dev-Menü.
 
-**Karte** (Run): erreichbare Knoten pulsieren – antippen. Etappen zeigen erst ein Intro (Ziel, Medaillen, Gefahren, Wetter) → **LOS ▶**. 🔧 oben links = zurück in die Garage (der Run bleibt gespeichert).
+**Karte** (Run): erreichbare Knoten pulsieren – antippen. Etappen zeigen erst ein Intro (Ziel, Medaillen, Gefahren, Wetter) → **LOS ▶**. 🔧 oben links = zurück in die Garage (der Run bleibt gespeichert). Die Item-Leiste unter der Haltbarkeit antippen = Inventar mit Set-Übersicht. Nach jeder geschafften Etappe: **1 Item aus 3 wählen** (oder Schrauben), je eingesammelter 📦 Item-Kiste eine weitere Auswahl.
 
 **Etappe**
 
@@ -57,9 +57,12 @@ www/                        ← das komplette Spiel (wird in die App gepackt)
     main.js                 Start, Spielzustände (Garage → Karte → Etappe → Auswertung → Run-Ende), Hauptschleife
     core/                   rng.js (Zufall mit Seed, makeRng), math.js (clamp, lerp, approach, dimLevels, softcap …)
     data/                   NUR Daten: balance.js (ALLE globalen Zahlen: BASE_STATS, SOFTCAPS, GARAGE, RESOURCES …),
-                            chassis.js, parts.js, abilities.js, biomes.js (3 Akte), nodes.js (Knotentypen), index.js (Zugriff + Adapter)
+                            chassis.js, parts.js, abilities.js, biomes.js (3 Akte), nodes.js (Knotentypen), index.js (Zugriff + Adapter),
+                            tags.js (10 Tags + Set-Boni), items.js (88 Items) aus den geprüften Inhaltsdateien content/content_*.js,
+                            research.js, textEvents.js, ascension.js, cosmetics.js (Inhalte für Phase 5/6)
     items/                  statMods.js (Stat-Pipeline mit Soft-Caps), effects.js (alle Effekte), events.js (Ereignis-Namen),
-                            eventQueue.js (Warteschlange mit Kettentiefe), modState.js (Buffs, Stapel, Zähler)
+                            eventQueue.js (Warteschlange mit Kettentiefe), modState.js (Buffs, Stapel, Zähler),
+                            triggerEngine.js (Auslöser, Limits, Ketten), conditions.js (Bedingungen), inventory.js (Slots, ★, Sets, Hybride)
     garage/                 loadout.js (Garage → Fahrzeugwerte), garage.js (kaufen/ausrüsten/verbessern), progression.js (Spielzeit, Meilensteine)
     physics/                vehicle.js (Fahrzeug: Teilschritte, Tempo-Grenzen, Landung, Treibstoff/Hitze/Haltbarkeit),
                             trackGen.js (Etappen-Spezifikation), track.js (Strecke), objects.js (Pickups, Hindernisse, Zonen, „swept“ Kollision)
@@ -74,10 +77,12 @@ www/                        ← das komplette Spiel (wird in die App gepackt)
     audio/sfx.js            alle Sounds per Web Audio erzeugt
     save/save.js            Spielstand v3 (localStorage, Migration, Export/Import „SW3:…“)
     platform/               input.js (Multi-Touch, Fähigkeits-Knöpfe + Tastatur), platform.js (Vibration, Display wach, Pause)
-tests/                      node --test: Mathe/Zufall, Physik, Kamera, Stat-Pipeline, Garage, Spielstand, Ressourcen, Effekte
+tests/                      node --test: Mathe/Zufall, Physik, Kamera, Stat-Pipeline, Garage, Spielstand, Ressourcen, Effekte,
+                            Trigger-Engine, Regeln, Items/Inventar/Auswahl
+tools/validateContent.mjs   Prüfer der Inhaltsdaten (Vokabular, Querverweise, Texte)
 tools/serve.py              kleiner Webserver zum Testen am Handy
 tools/smoke.mjs             Playwright-Rauchtest (Garage, Run über 3 Akte, alle Streckenbausteine, Hochformat)
-tools/sim/                  Balance-Simulator: bot.mjs (Bot), calibrate.mjs (Zielmarken → docs/BALANCE.md)
+tools/sim/                  Balance-Simulator: bot.mjs (Bot), calibrate.mjs (Zielmarken → docs/BALANCE.md), items.mjs (Item-Wirkung, ganze Runs)
 docs/                       ARCHITEKTUR.md, V2-DESIGN.md, PHASEN.md (was ist neu, wie testen), BALANCE.md (Zielmarken)
 ```
 

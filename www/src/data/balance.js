@@ -263,6 +263,7 @@ export const REWARDS = {
   boltsToScrap: 0.1,       // übrige Schrauben → 10 % als Schrott am Run-Ende
   actScrap: { 1: 40, 2: 80, 3: 140 }, // Akt abgeschlossen: Bonus-Schrott
   placeholderBolts: { event: 10, treasure: 20, dealer: 0, workbench: 0, blackmarket: 0 }, // Platzhalter bis Phase 5
+  itemSkipBolts: { 1: 8, 2: 12, 3: 16 }, // Item-Auswahl „Überspringen“ (oder voller Rucksack abgelehnt): Schrauben je Akt
 };
 
 // ---------- Items, Effekte, Ereignis-Warteschlange ----------
@@ -274,6 +275,26 @@ export const ITEMS = {
   chanceMax: 0.95,         // … höchstens 95 %
   overFuelMax: 1.5,        // fuel {over:true}: Tank bis höchstens 150 % von fuelMax
   explosionJump: 0.4,      // Explosion: Sprung = amount × 0,4 (Schub nach vorn = amount)
+  effectJumpCancelFall: 0, // Sprung-Impuls aus Item-Effekten (jump, explosion) in der Luft: so viel der Fallgeschwindigkeit wird
+                           // aufgehoben (0 = reiner Impuls; die Fähigkeit Hüpfer hebt das Fallen ganz auf). Phase 4: mit 1
+                           // ließ sich per Salto-Sprung (Jo-Jo) + Explosionen endlos schweben (Bot: ×16 der Zielweite)
+  chainPopupDepth: 3,      // HUD: ab dieser Kettentiefe „KETTENREAKTION ×n!“ (n = Kettenglieder = Tiefe + 1)
+  chainPopupGap: 0.8,      // … höchstens alle 0,8 s (außer die Kette wird länger)
+  feedSize: 3,             // HUD: so viele letzte Auslösungen in der Feed-Zeile
+  feedTime: 2.5,           // … so lange (s) bleibt eine Zeile stehen
+  // Item-Auswahl nach einer Etappe (run/runState.js → rollItemChoices). Gewichte je Seltenheit und Kontext;
+  // verfluchte Items kommen nie in eine Auswahl (Schwarzmarkt/Schatz in Phase 5). Fehlen Items einer Seltenheit im
+  // Pool, wird über die übrigen Seltenheiten des Kontexts verteilt; ist der Kontext leer, über alle nicht verfluchten.
+  rarityWeights: {
+    stage: { common: 0.62, rare: 0.29, epic: 0.08, legendary: 0.01 },
+    elite: { rare: 0.66, epic: 0.29, legendary: 0.05 },   // Elite: mindestens Selten (data/nodes.js elite.params.minRarity)
+    boss: { epic: 0.72, legendary: 0.28 },                 // Boss: Episch/Legendär
+    crate: { common: 0.5, rare: 0.36, epic: 0.12, legendary: 0.02 }, // 📦 Item-Kiste aus der Strecke
+  },
+  // Pro Akt werden die selteneren Stufen häufiger (Faktor auf das Gewicht; Akt 1 = 1)
+  rarityActMul: { 2: { rare: 1.25, epic: 1.5, legendary: 1.5 }, 3: { rare: 1.5, epic: 2, legendary: 2 } },
+  ownedWeight: 0,          // Items, die schon im Inventar sind, erscheinen nicht erneut (Werkbank-Fusion kommt in Phase 5)
+  devAllPools: false,      // Dev-Menü: alle Items im Pool (unabhängig von der Forschung)
 };
 
 // ---------- Regel-Schalter (Parameter; Auswertungsstellen siehe ARCHITEKTUR.md Anhang A) ----------
@@ -283,6 +304,29 @@ export const RULES = {
   hardStop: { time: 0.25, lowGripTime: 0.5, drivePause: 0.5, armTime: 3 }, // Notbremse
   heatToThrust: { min: 1, explodeAt: 70 },                           // Schleudergang
   collectScrapMass: { damageMul: 1 / 3, pickups: 6, minAlt: 0.6, maxAlt: 1.5, pickupEvery: [40, 90], maxPieces: 12 }, // Mülltonne
+  // ---- Phase 4: Regeln aus Chassis, Items und Set-Boni (Texte: ruleSpec beim Inhalt; „…Double“ = mit setBonusDouble) ----
+  healOnCleanLanding: { interval: 0.5, maxPerStage: 15 },             // Sofa: Heilung je Landung (Menge = Regelwert)
+  groundSpeedStacks: { crashMul: 0.5 },                              // Rasenmäher: Bruchlandung halbiert den Drehzahl-Stapel
+  everyThirdTierUp: { every: 3, beyondMax: 3.0 },                    // Dreiblatt-Klee: jede 3. Auslösung eine ★ höher (★3 → 3,0)
+  luckyEcho: { p: 0.15, pMax: 0.5, pDouble: 0.3, pMaxDouble: 0.7, cooldown: 1 }, // Glück-Set 6: Echo-Chance (+ Glück × luckPerPoint)
+  shockRecharge: { cooldown: 3 },                                    // Teslaspule: Stromschlag-Abklingzeiten zurücksetzen, max. 1× je 3 s
+  spinToSpeed: { perFlip: 4, perFlipDouble: 8, cleanMul: 0.5, maxFlips: 5 }, // Gyro-Set 6: Schub je Salto bei der Landung
+  shockArc: { range: 8, rangeDouble: 12, cooldown: 0.5 },            // Elektro-Set 6: Lichtbogen
+  overheatAfterburner: { cooldown: 8, dur: 2, thrustMul: 1.5 },      // Feuer-Set 6: Nachbrenner statt Überhitzung
+  coldGlide: { heatBelow: 40, frictionMul: 0.25 },                   // Eis-Set 6: Rollreibung × 0,25 unter 40 Hitze
+  impactToThrust: { perPoint: 0.8, max: 12, crashMul: 0.5, perPointDouble: 1.6, maxDouble: 24, crashMulDouble: 0.25 }, // Hydraulik-Set 6
+  gapTrampoline: { perStage: 1, perStageDouble: 2, angleDeg: 30, minVy: 16, minVx: 12, beyond: 3 }, // Gummi-Set 6
+  heatIsFuel: { heatPerFuel: 1 },                                    // Perpetuum Mobile: 1 Treibstoff = 1 Hitze
+  perfectLaunchLowGrav: { gravityMul: 0.65, maxTime: 5 },            // Levitron
+  iceLanding: { heatBelow: 50, maxGain: 15 },                        // Schlittschuhkufen
+  obstacleBounce: { vy: 7, vx: 4, rehit: 1 },                        // Hüpfburg
+  doubleDamage: { mul: 2 },                                          // Hubstützen
+  boltsAreFuel: { fuelPerBolt: 4 },                                  // Schraubenvergaser: 1 Schraube je angefangene 4 Treibstoff
+  boltHoardThrust: { per: 5, mul: 0.01, max: 0.3 },                  // Schraubenvergaser: boostThrust +1 % je 5 Schrauben
+  obstacleMagnet: { range: 6, accel: 7 },                            // Geisterbahn-Magnet (Fluch)
+  mutualAttraction: { rangeMul: 3, accel: 8, accelDouble: 16 },      // Magnet-Set 6
+  wreckingBall: { minSpeed: 16, minSpeedDouble: 12, speedKeep: 0.85, scrap: 2, scrapDouble: 4 }, // Schrott-Set 6
+  boostOvercap: { capMul: 1.4, capMulDouble: 1.8 },                  // Raketen-Set 6
 };
 
 // ---------- Abschuss (Halten / Loslassen) ----------
@@ -404,6 +448,8 @@ export const SPAWN = {
 export const STAGE = {
   maxFrameDt: 0.05,        // längere Bildpausen werden gekürzt
   maxTime: 240,
+  farMul: 2,               // Phase 4: Etappe endet (Grund 'far'), sobald die Gold-Marke × farMul erreicht ist – Item-Kreisläufe
+                           // (z. B. Gyro-Set 6: Salto → Landung → Schub → Sprung …) liefen sonst bis maxTime
   stopSpeed: 2,            // darunter gilt das Auto als gestoppt …
   stopTime: 0.6,           // … nach so vielen Sekunden
   wreckDelay: 0.8,

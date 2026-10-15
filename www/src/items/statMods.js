@@ -110,7 +110,10 @@ export function resolveParts(parts) {
 const tierOf = (t) => ITEMS.tierMult[Math.max(0, Math.min(ITEMS.tierMult.length - 1, (t || 1) - 1))];
 
 // Sammler aus allen Quellen aufbauen.
-// input: { chassis, parts:{slot:{id, level}}, research?:[{stats}], items?:[{item, tier}], sets?:[{stats}], buffs?:[{stats}], extra?:[{stats}] }
+// input: { chassis, parts:{slot:{id, level}}, research?:[{stats}], items?:[{item, tier} | {item, scale}],
+//          sets?:[{stats, scale?}], buffs?:[{stats}], extra?:[{stats}] }
+// Items: scale (aus items/inventory.js: ★-Faktor × tagBoost × Hybrid) ersetzt den reinen ★-Faktor; der Fluch-Teil
+// (item.curse.stats) wirkt immer unskaliert. Sets: scale = 2 mit der Regel setBonusDouble.
 export function buildAcc(input = {}) {
   const acc = emptyAcc();
   applyChassis(acc, input.chassis);
@@ -118,7 +121,7 @@ export function buildAcc(input = {}) {
   for (const r of input.research || []) applyMods(acc, r && r.stats);
   for (const it of input.items || []) {
     const item = it.item || it;
-    applyMods(acc, item.stats, tierOf(it.tier));
+    applyMods(acc, item.stats, typeof it.scale === 'number' ? it.scale : tierOf(it.tier));
     if (item.curse) applyMods(acc, item.curse.stats);
   }
   for (const s of input.sets || []) applyMods(acc, s && s.stats, s && s.scale ? s.scale : 1);
@@ -149,7 +152,8 @@ export function mergeRules(into, rules) {
   return into;
 }
 
-// Alle Regel-Schalter von Chassis und Teilen (später: Items, Sets)
+// Alle Regel-Schalter von Chassis und Teilen (+ Items/Sets, falls angegeben; im Run baut items/inventory.js → applyInventory
+// die vollständigen Regeln inkl. Hybriden und ausgeschlossener Items)
 export function collectRules(input = {}) {
   const r = {};
   mergeRules(r, input.chassis && input.chassis.rules);
@@ -163,7 +167,8 @@ export function collectRules(input = {}) {
   return r;
 }
 
-// Quellen mit Auslösern für die Trigger-Engine (Phase 4): { id, kind, triggers, tier, stats }
+// Quellen mit Auslösern von Chassis und Teilen (+ einfache Item-/Set-Listen) für die Trigger-Engine: { id, kind, triggers, tier, stats }.
+// Im Run ergänzt items/inventory.js → applyInventory die Item- und Set-Quellen (mit Skalierung, Hybriden, setBonusDouble).
 export function collectSources(input = {}) {
   const out = [];
   const c = input.chassis;

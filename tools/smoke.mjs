@@ -8,6 +8,9 @@
 //   der Gewittersteppe (Regen, Pause-Menü „Run aufgeben“) → Niederlage per Dev (Haltbarkeit 1, verfehlt) → Run-Ende
 //   mit Meta-Belohnung → Garage → neuer Run, Seite neu laden → RUN FORTSETZEN → Dev-Testfahrten über alle
 //   Boss-Strecken mit Bildschirmfotos jedes Streckenbausteins → Weitflug (Floating Origin, Boden-Pfeil).
+// Phase 4: Item-Auswahl nach jeder geschafften Etappe (Karten, Nehmen, voller Rucksack → Ersetzen), Item-Leiste auf der
+//   Karte, Inventar mit Set-Übersicht, Dev-Menü „Item hinzufügen“ (Suche), Kettenreaktion in der Etappe (Item-Symbol
+//   hüpft, „KETTENREAKTION ×n!“), Kompendium in der Garage.
 // Geprüft wird außerdem:
 //   - keine Konsolenfehler / pageerrors
 //   - das Fahrzeug liegt in JEDEM 100-ms-Sample im Bild (window.__game.carScreen())
@@ -130,7 +133,9 @@ async function main() {
     // ---------- Dev-Menü: 7× auf die Versionsnummer in den Einstellungen ----------
     await page.tap('#garage [data-id=settings]');
     await sleep(300);
-    for (let i = 0; i < 7; i++) { await page.tap('#settings [data-id=version]'); await sleep(60); }
+    // Klicks direkt im Seitenkontext: mit Software-WebGL (≈ 10 Bilder/s) braucht jedes page.tap() bis zu 1,2 s –
+    // länger als CONTROLS.devTapGap, dann zählt das Spiel die Taps nicht als „schnell hintereinander“.
+    await g(() => { const v = document.querySelector('#settings [data-id=version]'); for (let i = 0; i < 7; i++) v.click(); });
     await sleep(200);
     check(await g(() => window.__game.devMenu.isOpen), 'Dev-Menü öffnet nach 7 Taps auf die Versionsnummer');
     await shot('02-devmenu');
@@ -246,6 +251,40 @@ async function main() {
       await waitRunResult();
     };
     const pressRun = async (a) => { await page.tap(`#runui [data-a=${a}]`); await sleep(350); };
+    // Item-Auswahl(en) nach einer geschafften Etappe: erste Karte nehmen (voller Rucksack: ersten Platz ersetzen)
+    let choiceShots = 0;
+    const handleChoices = async () => {
+      let n = 0;
+      for (let i = 0; i < 8; i++) {
+        const kind = await g(() => window.__game.runScreens.open && window.__game.runScreens.kind);
+        if (kind === 'choice') {
+          if (choiceShots === 0) {
+            await sleep(400);
+            await shot('12-item-auswahl');
+            const cards = await g(() => ({ n: document.querySelectorAll('#runui .icard').length, tags: document.querySelectorAll('#runui .icard .tag-chip').length, sets: document.querySelectorAll('#runui .ic-set').length, skip: document.querySelector('#runui [data-a=skip]').textContent }));
+            check(cards.n === 3 && cards.tags >= 3 && cards.sets >= 3 && /Überspringen: \+\d+/.test(cards.skip), `Item-Auswahl: ${cards.n} Karten mit Tags und Set-Fortschritt, „${cards.skip}“`);
+          }
+          choiceShots++;
+          const inv0 = await g(() => window.__game.run.inventory.length);
+          await page.locator('#runui [data-pick="0"]').scrollIntoViewIfNeeded();
+          await page.tap('#runui [data-pick="0"]');
+          await sleep(350);
+          if ((await g(() => window.__game.runScreens.kind)) !== 'replace') {
+            const inv1 = await g(() => window.__game.run.inventory.length);
+            if (n === 0 && choiceShots === 1) check(inv1 === inv0 + 1, `Item genommen (Inventar ${inv0} → ${inv1})`);
+          }
+          n++;
+        } else if (kind === 'replace') {
+          await shot('15-rucksack-voll');
+          await page.locator('#runui [data-rep="0"]').scrollIntoViewIfNeeded();
+          await page.tap('#runui [data-rep="0"]');
+          await sleep(350);
+        } else break;
+      }
+      return n;
+    };
+    // „Weiter“ im Ergebnis + Item-Auswahl
+    const pressNext = async () => { await pressRun('next'); return handleChoices(); };
     // Knoten auf der Karte antippen → Intro → LOS
     const enterStageNode = async (shotName) => {
       const reach = await g(() => window.__game.reachable());
@@ -367,7 +406,7 @@ async function main() {
     if (r1.tow) {
       check(await page.locator('#runui [data-a=retry]').isVisible(), 'Neuversuch-Knopf');
       await pressRun('map');
-    } else await pressRun('next');
+    } else await pressNext();
     await waitState('map', 5000);
     check(true, 'zurück auf der Karte');
 
@@ -376,8 +415,25 @@ async function main() {
     const sk = await g(() => ({ got: document.querySelectorAll('#runui .rm-slot.got').length, hist: window.__game.run.history.slice(-1)[0] }));
     check(sk.hist.medal === 'gold' && sk.got === 3, `Dev: Etappe übersprungen mit Gold (${sk.got} Medaillen leuchten)`);
     await shot('24-ergebnis-gold');
-    await pressRun('next');
+    const nChoices = await pressNext();
+    check(nChoices >= 1 && choiceShots >= 1, `Item-Auswahl nach geschaffter Etappe (${nChoices})`);
     await waitState('map', 5000);
+    await sleep(300);
+    // Karte: Item-Leiste → Inventar mit Set-Übersicht
+    const bar = await g(() => ({ icons: document.querySelectorAll('#map .mi-bar .ib-slot:not(.empty)').length, inv: window.__game.run.inventory.length, txt: document.querySelector('#map [data-id=icount]').textContent }));
+    check(bar.icons === bar.inv && bar.inv >= 2, `Item-Leiste auf der Karte (${bar.icons} Symbole, „${bar.txt}“)`);
+    await page.tap('#map [data-id=items]');
+    await sleep(400);
+    await shot('13-inventar');
+    const invRows = await g(() => document.querySelectorAll('#itemsheet .irow').length);
+    check(invRows === bar.inv, `Inventar-Ansicht: ${invRows} Items mit Details`);
+    await page.tap('#itemsheet [data-tab=sets]');
+    await sleep(300);
+    await shot('14-set-uebersicht');
+    const so = await g(() => ({ tags: document.querySelectorAll('#itemsheet .so-tag').length, lv: document.querySelectorAll('#itemsheet .so-lv').length }));
+    check(so.tags === 10 && so.lv === 30, `Set-Übersicht: 10 Tags × Stufen 2/4/6 (${so.tags}/${so.lv})`);
+    await page.tap('#itemsheet [data-id=close]');
+    await sleep(200);
     await devSkip('skipMiss');
     const towed = await g(() => ({ tow: !!document.querySelector('#runui .rr-tow'), cur: window.__game.run.current }));
     check(towed.tow && towed.cur && towed.cur.attempts === 1, 'Dev: verfehlt → Abschleppen + Neuversuch');
@@ -385,7 +441,7 @@ async function main() {
     await pressRun('map');
     await waitState('map', 5000);
     await devSkip('skipBronze');
-    await pressRun('next');
+    await pressNext();
     await waitState('map', 5000);
     const bossMsg = await devTap('boss');
     await closeDev();
@@ -401,6 +457,9 @@ async function main() {
     await devSkip('skipGold');
     await shot('27-boss-besiegt');
     await pressRun('next');
+    const bossLoot = await g(() => window.__game.runScreens.kind === 'choice' && window.__game.run.pendingChoices[0].context);
+    check(bossLoot === 'boss', `Boss-Beute: Auswahl vor dem Akt-Übergang (${bossLoot})`);
+    await handleChoices();
     await page.waitForFunction(() => window.__game.runScreens.kind === 'act', null, { timeout: 5000 });
     await sleep(400);
     await shot('28-akt-uebergang');
@@ -424,7 +483,7 @@ async function main() {
     await driveToEnd(60000, '31-gluewueste', 600);
     await waitRunResult();
     await shot('32-ergebnis-gluewueste');
-    if (await page.locator('#runui [data-a=next]').count()) await pressRun('next'); else await pressRun('map');
+    if (await page.locator('#runui [data-a=next]').count()) await pressNext(); else await pressRun('map');
     await waitState('map', 5000);
 
     // ---------- Akt 3: echte Etappe in der Gewittersteppe ----------
@@ -434,8 +493,50 @@ async function main() {
     await sleep(400);
     await shot('40-karte-akt3');
     check((await g(() => window.__game.run.biome)) === 'gewittersteppe', `Dev: ${actMsg}`);
+    // Dev-Menü: Items per Suche hinzufügen – Kette Fahrraddynamo (Salto → Stromschlag) → Blitzableiter (→ Gratis-Boost)
+    // → Teslaspule (Gratis-Boost → Stromschlag) erzwingt eine Kettenreaktion
+    await openDev();
+    for (const [q, id] of [['dynamo', 'gyro_fahrraddynamo'], ['blitzab', 'elektro_blitzableiter'], ['tesla', 'elektro_teslaspule']]) {
+      await page.locator('#devmenu [data-id=isearch]').scrollIntoViewIfNeeded();
+      await page.fill('#devmenu [data-id=isearch]', q);
+      await sleep(100);
+      const sel = await g(() => document.querySelector('#devmenu [data-id=ilist]').value);
+      check(sel === id, `Dev: Suche „${q}“ findet ${sel}`);
+      await page.tap('#devmenu [data-a=iadd]');
+      await sleep(150);
+    }
+    const devInv = await g(() => window.__game.run.inventory.map((e) => e.itemId));
+    check(['gyro_fahrraddynamo', 'elektro_blitzableiter', 'elektro_teslaspule'].every((id) => devInv.includes(id)), `Dev: Items hinzugefügt (${devInv.length} im Inventar)`);
+    await page.locator('#devmenu [data-a=itier]').scrollIntoViewIfNeeded();
+    const t0 = await g(() => window.__game.run.inventory[0].tier);
+    await page.tap('#devmenu [data-a=itier]');
+    check((await g(() => window.__game.run.inventory[0].tier)) === Math.min(3, t0 + 1), 'Dev: ★ erhöhen');
+    await page.tap('#devmenu [data-id=ilog]');
+    check(await g(() => document.querySelector('#devmenu [data-id=ilog]').checked), 'Dev: Ketten-Log an');
+    await closeDev();
+    await g(() => window.__game.openMap());
+    await sleep(300);
     await enterStageNode();
+    const hudItems = await g(() => document.querySelectorAll('#hud .hud-items .ib-slot').length);
+    check(hudItems === devInv.length, `HUD: Item-Leiste (${hudItems} Symbole)`);
     check(await launchByTouch(60, false), 'Abschuss in der Gewittersteppe');
+    // Salto per Pfeil links → Kettenreaktion; Item-Symbol hüpft
+    await g(() => { const s = window.__game.stage, v = s.vehicle; v.y = s.track.heightAt(v.x) + 60; v.vy = 4; v.w = 0; });
+    await page.keyboard.down('ArrowLeft');
+    let chainOk = false, hop = false;
+    const tc = Date.now();
+    while (Date.now() - tc < 5000 && !chainOk) {
+      const st = await g(() => ({ chain: !document.querySelector('#hud [data-id=chain]').classList.contains('hidden'), hop: !!document.querySelector('#hud .ib-slot.hop'), text: document.querySelector('#hud [data-id=chain]').textContent }));
+      hop = hop || st.hop;
+      if (st.chain) { chainOk = true; await shot('33-kettenreaktion'); log(`HUD: ${st.text}`); }
+      await sleep(40);
+    }
+    await page.keyboard.up('ArrowLeft');
+    const chainInfo = await g(() => ({ max: window.__game.stage.maxChain, trig: window.__game.stage.triggerCount, feed: document.querySelectorAll('#hud .hud-feed div').length }));
+    check(chainOk && /KETTENREAKTION ×\d+!/.test(await g(() => document.querySelector('#hud [data-id=chain]').textContent)), `Kettenreaktions-Popup (Kette mit ${chainInfo.max} Gliedern, ${chainInfo.trig} Auslösungen)`);
+    check(hop, 'Item-Symbol im HUD hüpft beim Auslösen');
+    check(chainInfo.feed >= 1, `Feed-Zeile der letzten Auslösungen (${chainInfo.feed})`);
+    await g(() => window.__game.setChainLog(false));
     const rainOn = await g(() => window.__game.stage.weather.rain);
     check(rainOn, 'Regen in der Gewittersteppe');
     await page.tap('#hud [data-id=pause]');
@@ -447,7 +548,7 @@ async function main() {
     await driveToEnd(60000, '41-gewittersteppe', 1200);
     await waitRunResult();
     await shot('42-ergebnis-gewitter');
-    if (await page.locator('#runui [data-a=next]').count()) await pressRun('next'); else await pressRun('map');
+    if (await page.locator('#runui [data-a=next]').count()) await pressNext(); else await pressRun('map');
     await waitState('map', 5000);
 
     // ---------- Niederlage: Haltbarkeit 1, Etappe verfehlt → Run-Ende ----------
@@ -471,6 +572,17 @@ async function main() {
     await sleep(300);
     const st2 = await page.locator('#garage [data-id=start]').textContent();
     check(/RUN STARTEN/.test(st2), 'zurück in der Garage, neuer Run möglich');
+    // Kompendium: entdeckte Items + Set-Boni, unentdeckte als „???“
+    await page.tap('#garage [data-id=codex]');
+    await sleep(400);
+    await shot('52-kompendium');
+    const cx = await g(() => ({ known: document.querySelectorAll('#itemsheet .icard:not(.unknown)').length, unknown: document.querySelectorAll('#itemsheet .icard.unknown').length, title: document.querySelector('#itemsheet [data-id=title]').textContent }));
+    check(cx.known >= 4 && cx.unknown > 0 && cx.known + cx.unknown === 88, `Kompendium: ${cx.title} (${cx.known} entdeckt, ${cx.unknown} „???“)`);
+    await page.tap('#itemsheet [data-tab=sets]');
+    await sleep(300);
+    await shot('53-kompendium-sets');
+    await page.tap('#itemsheet [data-id=close]');
+    await sleep(200);
 
     // ---------- Fortsetzen nach Neustart ----------
     await page.tap('#garage [data-id=start]');

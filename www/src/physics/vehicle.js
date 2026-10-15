@@ -25,9 +25,16 @@ export function countFlips(rotAccum) {
 // inklusive Treibstoff, Hitze und Haltbarkeit. Alle Werte kommen aus dem Stat-Objekt (items/statMods.js).
 // Ereignisse (Namen nach ARCHITEKTUR.md 4.2) werden in ein Array geschrieben – keine Rückrufe im Physikschritt.
 //
-// Regel-Schalter (rules), die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A):
-//   noOverheat (Kühlschrank), heatIsResource (Waschmaschine), lowGrip (Raketenschlitten),
-//   Fähigkeiten-Regeln boostHold (Boost), parachute (Fallschirm), hardStop (Notbremse).
+// Regel-Schalter (rules), die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A, Parameter balance.RULES):
+//   noOverheat (Kühlschrank, Eiszapfen), heatIsResource (Waschmaschine), lowGrip (Raketenschlitten),
+//   Fähigkeiten-Regeln boostHold (Boost), parachute (Fallschirm), hardStop (Notbremse),
+//   Phase 4: overheatAfterburner (Feuer-Set 6), coldGlide (Eis-Set 6), impactToThrust (Hydraulik-Set 6),
+//   gapTrampoline (Gummi-Set 6), heatIsFuel (Perpetuum Mobile), flipsNeverCrash (Schiffskompass),
+//   boostHorizontal (Wasserwaagen-Rakete), perfectLaunchLowGrav (Levitron), allLandingsPerfect + doubleDamage
+//   (Hubstützen), iceLanding (Schlittschuhkufen), noPerfectLanding (Gummihuhn), obstacleMagnet (Geisterbahn-Magnet),
+//   endlessSpin (Spieluhr), mutualAttraction (Magnet-Set 6), boostOvercap (Raketen-Set 6).
+//   setBonusDouble wählt bei Set-Regeln die „…Double“-Parameter.
+// Schrauben als Treibstoff (boltsAreFuel) entscheidet die Etappe: sie setzt `fuelBackup` ({ available(), pay() }).
 // Streckenbausteine (Phase 3): Oberflächen-Reibung (track.frictionAt: Schlamm/Sand), Looping (geskriptet, stepLoop),
 // Schluchtsturz (Ereignis 'fall', sobald das Fahrzeug FEATURES.gap.fallDepth unter der Kante ist),
 // Zusatzbeschleunigung env.ax/ay (Magnetkran).
@@ -86,17 +93,33 @@ export class Vehicle {
       loop: null,            // laufender Looping { lx, cx, cy, r, phi, v, dir }
       loops: 0,              // vollständig durchfahrene Loopings
       fell: false,           // Schluchtsturz gemeldet
+      // Regeln (Phase 4)
+      clock: 0,              // Fahrzeug-Zeit (s) für Abklingzeiten der Regeln
+      afterburn: 0,          // overheatAfterburner: Restdauer des Nachbrenners (s)
+      afterburnReadyAt: -Infinity,
+      lowGrav: 0,            // perfectLaunchLowGrav: Restdauer der verringerten Schwerkraft (s)
+      trampolines: 0,        // gapTrampoline: schon genutzte Rettungen in dieser Etappe
+      freeBoostDepth: 0,     // Kettentiefe des Effekts, der den Gratis-Boost gestartet hat (für das boost-Ereignis)
+      ruleAx: 0,             // Zusatzbeschleunigung aus Regeln (obstacleMagnet, mutualAttraction)
+      ruleAy: 0,
+      ruleAirOnlyAx: 0,
+      ruleAirOnlyAy: 0,
     });
   }
 
-  launch(speed, angle) {
+  launch(speed, angle, perfect = false) {
     this.vx = speed * Math.cos(angle);
     this.vy = speed * Math.sin(angle);
     this.angle = angle;
     this.onGround = false;
     this.startAir();
     this.w = 0;
+    // Regel perfectLaunchLowGrav (Levitron): verringerte Schwerkraft bis zur ersten Bodenberührung (max. maxTime)
+    if (perfect && this.rules.perfectLaunchLowGrav) this.lowGrav = RULES.perfectLaunchLowGrav.maxTime;
   }
+
+  // Schwerkraft im Luft-Schritt (Regel perfectLaunchLowGrav)
+  get gravity() { return this.lowGrav > 0 ? this.g * RULES.perfectLaunchLowGrav.gravityMul : this.g; }
 
   startAir() {
     this.airTime = 0;
@@ -109,6 +132,50 @@ export class Vehicle {
 
   get softCap() { return this.stats.speedSoftCap || P.speedSoftCap; }
 
+  // Weiche Grenze für Boost-Schub und Sofort-Schub (Regel boostOvercap: während eines Boosts × capMul)
+  get thrustCap() {
+    const r = this.rules;
+    if (r.boostOvercap && this.boosting) return this.softCap * (r.setBonusDouble ? RULES.boostOvercap.capMulDouble : RULES.boostOvercap.capMul);
+    return this.softCap;
+  }
+
+  // Beschleunigung des Boosts (m/s²) bei Tempo sp – inkl. Nachbrenner (overheatAfterburner)
+  boostAccel(sp) {
+    const st = this.stats;
+    const ab = this.afterburn > 0 && this.boostFree ? RULES.overheatAfterburner.thrustMul : 1;
+    return (st.boostThrust / st.mass) * thrustFactor(Math.max(0, sp), this.thrustCap) * ab;
+  }
+
+  // ---------- Treibstoff (inkl. Schrauben als Treibstoff, Regel boltsAreFuel – Etappe setzt fuelBackup) ----------
+  get backupFuel() { return this.fuelBackup && this.fuelBackup.available() ? this.fuelBackup.fuel() : 0; }
+
+  // verfügbarer Treibstoff (Tank + Schrauben-Reserve)
+  get fuelAvailable() { return this.fuel + this.backupFuel; }
+
+  // Treibstoff verbrauchen; reicht der Tank nicht, wird mit Schrauben nachgefüllt (je Schraube ein 4er-Block)
+  consumeFuel(a) {
+    if (!(a > 0)) return;
+    if (this.fuel < a && this.fuelBackup) {
+      let guard = 0;
+      while (this.fuel < a && this.fuelBackup.available() && guard++ < 100) {
+        const f = this.fuelBackup.pay();
+        if (!(f > 0)) break;
+        this.fuel += f;
+      }
+    }
+    this.fuel = Math.max(0, this.fuel - a);
+  }
+
+  // heatIsFuel: läuft der Verbrauch gerade als Hitze? (sonst Notbetrieb aus dem Tank: Überhitzungssperre oder
+  // Hitze bei noOverheat/heatIsResource am Maximum)
+  get heatFuelMode() {
+    const r = this.rules;
+    if (!r.heatIsFuel) return false;
+    if (this.stall > 0) return false;
+    if ((r.noOverheat || r.heatIsResource) && this.heat >= this.stats.heatMax - 1e-9) return false;
+    return true;
+  }
+
   // Sammelradius inkl. zeitweisem Magnetfeld
   get magnetRadius() { return Math.max(this.stats.magnet, this.magnetFx > 0 ? this.magnetFxRadius : 0); }
 
@@ -116,8 +183,13 @@ export class Vehicle {
   get fuelFrac() { return this.stats.fuelMax > 0 ? Math.min(1, this.fuel / this.stats.fuelMax) : 0; }
   get durabilityFrac() { return this.stats.durabilityMax > 0 ? this.durability / this.stats.durabilityMax : 0; }
 
-  // Kann ein Boost mit Treibstoff starten? (Fähigkeit „boost“, Regel boostHold)
-  get canBoost() { return this.fuel > 0 && this.stall <= 0; }
+  // Kann ein Boost mit Treibstoff starten? (Fähigkeit „boost“, Regel boostHold; heatIsFuel: ohne Treibstoff bzw. im
+  // Notbetrieb trotz Überhitzungssperre aus dem Tank)
+  get canBoost() {
+    if (this.heatFuelMode) return true;
+    if (this.stall > 0 && !this.rules.heatIsFuel) return false;
+    return this.fuel > 0 || this.backupFuel > 0;
+  }
 
   // Ein fester Physik-Schritt, zerlegt in Teilschritte von höchstens maxStepDist Metern.
   // ctl: { tilt: -1 | 0 | 1 (+1 = Nase hoch), boost: bool (Boost-Fähigkeit gehalten) }
@@ -127,6 +199,7 @@ export class Vehicle {
   step(dt, ctl, track, ev, env = NO_ENV, collider = null) {
     this.ev = ev;
     this.updateResources(dt, ctl, ev, env);
+    this.ruleForces(collider);
     const n = substepsFor(this.speed, dt);
     const h = dt / n;
     this.substeps = n;
@@ -142,13 +215,68 @@ export class Vehicle {
     this.checkFall(track, ev);
   }
 
-  // Schluchtsturz: mehr als FEATURES.gap.fallDepth unter der Kante → Ereignis 'fall' (einmal)
+  // Schluchtsturz: mehr als FEATURES.gap.fallDepth unter der Kante → Ereignis 'fall' (einmal).
+  // Regel gapTrampoline (Gummi-Set 6): die ersten 1 (bzw. 2 mit setBonusDouble) Stürze je Etappe werden zum Trampolin.
   checkFall(track, ev) {
     if (this.fell || !track.gapAt) return;
     const g = track.gapAt(this.x);
     if (g && this.y < g.yr - FEATURES.gap.fallDepth) {
+      const T = RULES.gapTrampoline;
+      if (this.rules.gapTrampoline && this.trampolines < (this.rules.setBonusDouble ? T.perStageDouble : T.perStage)) {
+        this.trampolines++;
+        this.trampoline(g);
+        ev.push({ type: 'bounce', source: 'gap', x: this.x, y: this.y });
+        return;
+      }
       this.fell = true;
       ev.push({ type: 'fall', x: this.x, y: this.y, gap: g });
+    }
+  }
+
+  // Trampolin aus der Schlucht: ballistische Bahn bis hinter die gegenüberliegende Kante (ohne Luftwiderstand gerechnet,
+  // deshalb mit etwas Reserve)
+  trampoline(g) {
+    const T = RULES.gapTrampoline;
+    const G = this.g;
+    const prevVx = Math.max(0, this.onGround ? this.s * Math.cos(this.angle) : this.vx);
+    this.loop = null;
+    this.onGround = false;
+    const dh = Math.max(0, g.yr + P.rideHeight - this.y);
+    const vy = Math.max(T.minVy, Math.sqrt(2 * G * dh) * 1.15 + 1);
+    const tFlight = (vy + Math.sqrt(Math.max(0, vy * vy - 2 * G * dh))) / G;
+    const need = (g.far + T.beyond - this.x) / Math.max(0.1, tFlight);
+    this.vx = Math.max(need * 1.2, T.minVx, prevVx);
+    this.vy = vy;
+    this.angle = T.angleDeg * DEG;
+    this.w = 0;
+    this.startAir();
+    this.limitSpeed();
+  }
+
+  // Zusatzkräfte aus Regeln (1× pro Physik-Schritt): obstacleMagnet (Hindernisse ziehen an, Luft + Boden),
+  // mutualAttraction (nur Luft: nächster Pickup vor der Kiste zieht nach vorn/oben, unterliegt der weichen Grenze)
+  ruleForces(collider) {
+    this.ruleAx = 0; this.ruleAy = 0; this.ruleAirOnlyAx = 0; this.ruleAirOnlyAy = 0;
+    const r = this.rules;
+    if (!collider || !(r.obstacleMagnet || r.mutualAttraction)) return;
+    if (r.obstacleMagnet && collider.nearestObstacle) {
+      const M = RULES.obstacleMagnet;
+      const o = collider.nearestObstacle(this.x, this.y, M.range);
+      if (o) {
+        const dx = o.x - this.x, dy = o.y - this.y, d = Math.hypot(dx, dy) || 1;
+        this.ruleAx += (M.accel * dx) / d;
+        this.ruleAy += (M.accel * dy) / d;
+      }
+    }
+    if (r.mutualAttraction && !this.onGround && !this.loop && collider.nearestPickupAhead) {
+      const A = RULES.mutualAttraction;
+      const p = collider.nearestPickupAhead(this.x, this.y, A.rangeMul * this.stats.magnet);
+      if (p) {
+        const dx = p.x - this.x, dy = p.y - this.y, d = Math.hypot(dx, dy) || 1;
+        const a = (r.setBonusDouble ? A.accelDouble : A.accel) * thrustFactor(this.speed, this.softCap);
+        this.ruleAirOnlyAx = Math.max(0, (a * dx) / d);
+        this.ruleAirOnlyAy = Math.max(0, (a * dy) / d);
+      }
     }
   }
 
@@ -156,15 +284,20 @@ export class Vehicle {
   updateResources(dt, ctl, ev, env) {
     const st = this.stats;
     const rules = this.rules;
+    this.clock += dt;
     if (this.stall > 0) this.stall = Math.max(0, this.stall - dt);
     // Gratis-Boost läuft im Überhitzungs-Stillstand nicht ab (sonst verpufft er ungenutzt)
     else if (this.freeBoost > 0) this.freeBoost = Math.max(0, this.freeBoost - dt);
+    if (this.afterburn > 0 && this.freeBoost <= 0) this.afterburn = 0;
+    if (this.lowGrav > 0) this.lowGrav = Math.max(0, this.lowGrav - dt);
     if (this.magnetFx > 0) this.magnetFx = Math.max(0, this.magnetFx - dt);
     if (this.drivePause > 0) this.drivePause = Math.max(0, this.drivePause - dt);
     if (this.brakeArmed > 0) this.brakeArmed = Math.max(0, this.brakeArmed - dt);
     if (this.parachute > 0) this.parachute = Math.max(0, this.parachute - dt);
 
     // Boost: Gratis-Boost (Effekt) oder Boost-Fähigkeit mit Treibstoff; Überhitzung sperrt beides
+    // (heatIsFuel: der Verbrauch wird zu Hitze, siehe heatFuelMode)
+    const heatFuel = this.heatFuelMode;
     const wasBoosting = this.boosting;
     const free = this.freeBoost > 0 && this.stall <= 0;
     const paid = !free && !!ctl.boost && this.canBoost;
@@ -173,7 +306,8 @@ export class Vehicle {
       // Start eines Boosts – auch der nahtlose Wechsel Gratis ↔ bezahlt zählt als neuer Boost
       if (!wasBoosting) { this.boostTime = 0; this.boostSeconds = 0; }
       this.boostFree = free;
-      ev.push({ type: 'boost', free, source: free ? this.freeBoostSource || 'fx' : 'boost' });
+      ev.push({ type: 'boost', free, source: free ? this.freeBoostSource || 'fx' : 'boost', depth: free ? this.freeBoostDepth : 0 });
+      if (free) this.freeBoostDepth = 0;
     }
     let fuelUse = 0;
     let heatGain = 0;
@@ -182,7 +316,8 @@ export class Vehicle {
       const secs = Math.floor(this.boostTime);
       if (secs > this.boostSeconds) { this.boostSeconds = secs; ev.push({ type: 'boostSecond' }); }
       if (paid) fuelUse += st.boostFuel * dt;
-      heatGain += st.boostHeat * dt;
+      // Nachbrenner (overheatAfterburner) erzeugt keine Hitze; heatIsFuel: negative Boost-Hitze zählt als 0
+      if (!(this.afterburn > 0 && free)) heatGain += (heatFuel && paid ? Math.max(0, st.boostHeat) : st.boostHeat) * dt;
       if (st.boostSelfDamage > 0) {
         this.selfDmgAcc += st.boostSelfDamage * dt;
         if (this.selfDmgAcc >= R.selfDamageStep) {
@@ -193,16 +328,18 @@ export class Vehicle {
     }
 
     // Antrieb: am Boden automatisch, solange Treibstoff da ist (oder der Antrieb keinen braucht)
-    this.driving = (this.onGround || !!this.loop) && st.driveAccel > 0 && this.stall <= 0 && this.drivePause <= 0 && this.brake <= 0
-      && (this.fuel > 0 || st.driveFuel <= 0);
+    const stalled = this.stall > 0 && !rules.heatIsFuel;
+    this.driving = (this.onGround || !!this.loop) && st.driveAccel > 0 && !stalled && this.drivePause <= 0 && this.brake <= 0
+      && (this.fuel > 0 || st.driveFuel <= 0 || heatFuel || this.backupFuel > 0);
     if (this.driving) {
       fuelUse += st.driveFuel * dt;
       heatGain += st.driveHeat * dt;
     }
 
-    // Treibstoff
-    if (fuelUse > 0) this.fuel = Math.max(0, this.fuel - fuelUse);
-    if (this.fuel <= 0) {
+    // Treibstoff (heatIsFuel: Verbrauch als Hitze, 1 Treibstoff = RULES.heatIsFuel.heatPerFuel Hitze)
+    if (heatFuel) { heatGain += fuelUse * RULES.heatIsFuel.heatPerFuel; fuelUse = 0; }
+    if (fuelUse > 0) this.consumeFuel(fuelUse);
+    if (this.fuel <= 0 && this.backupFuel <= 0) {
       if (!this.fuelWasEmpty) { this.fuelWasEmpty = true; ev.push({ type: 'fuelEmpty' }); }
     } else this.fuelWasEmpty = false;
 
@@ -225,6 +362,17 @@ export class Vehicle {
       if (this.overheatArmed) { this.overheatArmed = false; ev.push({ type: 'overheat' }); }
       return;
     }
+    // Feuer-Set 6 (overheatAfterburner): Nachbrenner statt Sperre und Schaden (max. 1× je cooldown s)
+    const A = RULES.overheatAfterburner;
+    if (rules.overheatAfterburner && this.clock >= this.afterburnReadyAt) {
+      ev.push({ type: 'overheat', afterburner: true });
+      this.afterburnReadyAt = this.clock + A.cooldown;
+      this.heat = Math.min(R.overheatResetHeat, st.heatMax);
+      this.freeBoost = Math.max(this.freeBoost, A.dur);
+      this.freeBoostSource = 'set_feuer';
+      this.afterburn = A.dur;
+      return;
+    }
     ev.push({ type: 'overheat' });
     this.stall = R.overheatStall;
     this.heat = Math.min(R.overheatResetHeat, st.heatMax);
@@ -243,7 +391,7 @@ export class Vehicle {
     const tilt = ctl.tilt || 0;
     if (tilt !== 0) {
       this.w += tilt * st.airControl * st.flipSpeed * dt;
-    } else {
+    } else if (!this.rules.endlessSpin) {   // Fluch endlessSpin: keine Dämpfung, kein Ausrichten
       this.w *= Math.exp(-P.tiltDamp * dt);
       const sp = Math.hypot(this.vx, this.vy);
       if (sp > P.autoLevelMinSpeed && Math.abs(this.w) < P.autoLevelMaxSpin) {
@@ -263,17 +411,22 @@ export class Vehicle {
     const rvx = this.vx - env.wind;
     const rsp = Math.hypot(rvx, this.vy);
     let ax = -k * rsp * rvx;
-    let ay = -k * rsp * this.vy - this.g + env.lift(this.x, this.y - P.rideHeight - track.heightAt(this.x)) + (env.ay || 0);
-    ax += env.ax || 0;
+    let ay = -k * rsp * this.vy - this.gravity + env.lift(this.x, this.y - P.rideHeight - track.heightAt(this.x)) + (env.ay || 0);
+    ax += (env.ax || 0) + this.ruleAx + this.ruleAirOnlyAx;
+    ay += this.ruleAy + this.ruleAirOnlyAy;
     if (Math.abs(aoa) < Math.PI / 2) {
       const L = Math.min(this.g * P.maxLiftG, (st.lift * sp * sp * Math.sin(2 * aoa)) / m);
       ax += L * (-this.vy / sp);
       ay += L * (this.vx / sp);
     }
     if (this.boosting) {
-      const T = (st.boostThrust / m) * thrustFactor(sp, this.softCap);
-      ax += T * Math.cos(this.angle);
-      ay += T * Math.sin(this.angle);
+      const T = this.boostAccel(sp);
+      // Regel boostHorizontal (Wasserwaagen-Rakete): Schub in der Luft immer waagrecht nach vorn
+      if (this.rules.boostHorizontal) ax += T;
+      else {
+        ax += T * Math.cos(this.angle);
+        ay += T * Math.sin(this.angle);
+      }
     }
     const x0 = this.x, y0 = this.y;
     this.vx += ax * dt;
@@ -327,15 +480,31 @@ export class Vehicle {
     const impact = Math.max(0, -vn);
     const airTime = this.airTime;
 
+    const real = airTime >= R.minLandingAir;
+    const rules = this.rules;
     let quality;
     if (diff <= st.perfectLandDeg) quality = 'perfect';
     else if (diff <= st.landTolDeg) quality = 'clean';
     else if (diff <= P.bumpyLandDeg) quality = 'bumpy';
     else quality = 'crash';
+    // Regeln der Landungs-Einstufung: allLandingsPerfect (Hubstützen) und noPerfectLanding (Gummihuhn) heben sich auf
+    const allPerfect = !!rules.allLandingsPerfect && !rules.noPerfectLanding;
+    const noPerfect = !!rules.noPerfectLanding && !rules.allLandingsPerfect;
+    if (allPerfect && real) quality = 'perfect';
+    if (noPerfect && quality === 'perfect') quality = 'clean';
+    // flipsNeverCrash (Schiffskompass): mit mindestens einem Salto wird aus einer Bruchlandung eine holprige
+    if (rules.flipsNeverCrash && quality === 'crash' && flips >= 1) quality = 'bumpy';
 
     const keep = quality === 'bumpy' ? P.bumpySpeedKeep : quality === 'crash' ? P.crashSpeedKeep : P.cleanSpeedKeep;
     this.s = vt * keep;
+    // iceLanding (Schlittschuhkufen): unter 50 Hitze kein Tempoverlust durch den Aufprall
+    const I = RULES.iceLanding;
+    if (rules.iceLanding && quality !== 'crash' && this.heat < I.heatBelow) {
+      const sp = Math.hypot(this.vx, this.vy);
+      this.s = (vt >= 0 ? 1 : -1) * Math.min(sp, Math.abs(vt) + I.maxGain);
+    }
     this.onGround = true;
+    this.lowGrav = 0;
     this.vx = this.s * c;
     this.vy = this.s * s;
     this.angle = g;
@@ -343,7 +512,6 @@ export class Vehicle {
     this.parachute = 0;
 
     ev.push({ type: 'groundTouch', impact, x: this.x, y: this.y });
-    const real = airTime >= R.minLandingAir;
     if (real) {
       const e = { type: 'landing', quality, impact, airTime, flips, x: this.x, y: this.y };
       ev.push(e);
@@ -352,7 +520,19 @@ export class Vehicle {
 
     // Aufprallschaden: Normaltempo über impactThreshold, plus Zuschlag für holprige/Bruchlandungen; Abprall dämpft
     const bounce = st.bounce || 0;
-    let dmg = impact > st.impactThreshold ? (impact - st.impactThreshold) * R.dmgPerMps : 0;
+    let impactDmg = impact > st.impactThreshold ? (impact - st.impactThreshold) * R.dmgPerMps : 0;
+    // impactToThrust (Hydraulik-Set 6): Aufprallschaden wird zu Schub (Bruchlandung: nur verringert)
+    let impactThrust = 0;
+    if (rules.impactToThrust && impactDmg > 0) {
+      const T = RULES.impactToThrust;
+      const dbl = !!rules.setBonusDouble;
+      if (quality === 'crash') impactDmg *= dbl ? T.crashMulDouble : T.crashMul;
+      else {
+        impactThrust = Math.min(dbl ? T.maxDouble : T.max, impactDmg * (dbl ? T.perPointDouble : T.perPoint));
+        impactDmg = 0;
+      }
+    }
+    let dmg = impactDmg;
     if (real && quality === 'crash') dmg += R.crashLandingDamage;
     else if (real && quality === 'bumpy') dmg += R.bumpyLandingDamage;
     dmg *= 1 - bounce;
@@ -372,6 +552,7 @@ export class Vehicle {
       this.startAir();
       ev.push({ type: 'takeoff', ramp: false, bounce: true });
     }
+    if (impactThrust > 0) this.thrust(impactThrust);
   }
 
   stepGround(dt, track, ev, env) {
@@ -383,12 +564,15 @@ export class Vehicle {
     // Abschnitt, von dem sie kommt – sonst „klebt“ sie an einer Schluchtkante und fährt die Wand hinunter)
     const g0 = Math.atan(track.slopeAt(this.x - (this.s >= 0 ? 1e-4 : -1e-4)));
     let s = this.s;
-    if (this.boosting) s += (st.boostThrust / m) * thrustFactor(Math.max(0, s), this.softCap) * dt;
+    if (this.boosting) s += this.boostAccel(s) * dt;
     if (this.driving) s += this.driveAccelNet(lowGrip) * thrustFactor(Math.max(0, s), this.softCap) * dt;
     s -= this.g * Math.sin(g0) * dt;
-    if (env.ax || env.ay) s += ((env.ax || 0) * Math.cos(g0) + (env.ay || 0) * Math.sin(g0)) * dt;
-    const surf = track.frictionAt ? track.frictionAt(this.x) : 1;
-    const f = st.rollFriction * surf * (lowGrip ? LG.frictionMul : 1) * Math.cos(g0) * dt;
+    const eax = (env.ax || 0) + this.ruleAx, eay = (env.ay || 0) + this.ruleAy;
+    if (eax || eay) s += (eax * Math.cos(g0) + eay * Math.sin(g0)) * dt;
+    // coldGlide (Eis-Set 6): unter 40 Hitze Rollreibung × 0,25, Schlamm/Sand bremsen nicht
+    const cold = !!this.rules.coldGlide && this.heat < RULES.coldGlide.heatBelow;
+    const surf = cold ? 1 : track.frictionAt ? track.frictionAt(this.x) : 1;
+    const f = st.rollFriction * surf * (lowGrip ? LG.frictionMul : 1) * (cold ? RULES.coldGlide.frictionMul : 1) * Math.cos(g0) * dt;
     s = Math.abs(s) <= f ? 0 : s - Math.sign(s) * f;
     const rs = s - env.wind * Math.cos(g0);
     s -= (st.drag / m) * rs * Math.abs(rs) * dt;
@@ -461,7 +645,7 @@ export class Vehicle {
     let thrust = 0;
     if (L.dir > 0) {
       if (this.driving) thrust += this.driveAccelNet() * thrustFactor(L.v, this.softCap);
-      if (this.boosting) thrust += (st.boostThrust / st.mass) * thrustFactor(L.v, this.softCap);
+      if (this.boosting) thrust += this.boostAccel(L.v);
     }
     L.v += (-g * Math.cos(L.phi) * L.dir + thrust - FEATURES.loop.frictionDecel) * dt;
     if (L.v <= 0) { L.dir = -L.dir; L.v = -L.v; }
@@ -538,7 +722,8 @@ export class Vehicle {
   // opts.pierce: ignoriert Schild und Panzerung (Überhitzung, Flüche). Ergebnis: tatsächlicher Schaden.
   damage(amount, source, ev = this.ev, opts = {}) {
     if (!(amount > 0)) return 0;
-    const a = amount * (opts.pierce ? 1 : 1 - this.stats.armor);
+    // doubleDamage (Hubstützen): jeder Haltbarkeitsverlust nach Panzerung × RULES.doubleDamage.mul
+    const a = amount * (opts.pierce ? 1 : 1 - this.stats.armor) * (this.rules.doubleDamage ? RULES.doubleDamage.mul : 1);
     if (!opts.pierce && this.shields > 0 && a >= R.shieldMinDamage) {
       this.shields--;
       ev.push({ type: 'bounce', source });
@@ -580,7 +765,7 @@ export class Vehicle {
 
   cool(a) { if (a > 0) this.heat = Math.max(0, this.heat - a); }
 
-  useFuel(a) { if (a > 0) this.fuel = Math.max(0, this.fuel - a); }
+  useFuel(a) { this.consumeFuel(a); }
 
   // Treibstoff +; over: bis ITEMS.overFuelMax × fuelMax (sonst bis fuelMax; mehr Vorhandenes bleibt)
   addFuel(a, over = false) {
@@ -598,10 +783,10 @@ export class Vehicle {
     this.freeBoost = Math.max(this.freeBoost, dur);
   }
 
-  // Sofort-Schub in Blickrichtung (unterliegt der weichen Tempo-Grenze)
+  // Sofort-Schub in Blickrichtung (unterliegt der weichen Tempo-Grenze; boostOvercap während eines Boosts)
   thrust(dv) {
     if (!dv) return;
-    dv *= thrustFactor(this.speed, this.softCap);
+    dv *= thrustFactor(this.speed, this.thrustCap);
     if (this.loop) this.loop.v = Math.max(0, this.loop.v + dv * this.loop.dir);
     else if (this.onGround) this.s += dv;
     else {
@@ -611,8 +796,9 @@ export class Vehicle {
     this.limitSpeed();
   }
 
-  // Impuls nach oben: am Boden abheben, in der Luft Doppelsprung (Fallen wird aufgehoben)
-  jump(dv) {
+  // Impuls nach oben: am Boden abheben, in der Luft Doppelsprung. cancelFall: Anteil einer Fallgeschwindigkeit, der
+  // aufgehoben wird (1 = Fallen ganz aufgehoben – Fähigkeit Hüpfer; Item-Effekte: ITEMS.effectJumpCancelFall)
+  jump(dv, cancelFall = 1) {
     if (!(dv > 0) || this.loop) return;
     if (this.onGround) {
       const g0 = this.angle;
@@ -624,12 +810,35 @@ export class Vehicle {
       this.startAir();
       this.ev.push({ type: 'takeoff', ramp: false, jump: true });
     } else {
-      this.vy = Math.max(this.vy, 0) + dv;
+      this.vy = (this.vy < 0 ? this.vy * (1 - cancelFall) : this.vy) + dv;
     }
     this.limitSpeed();
   }
 
   addSpin(w) { if (!this.onGround) this.w += w; }
+
+  // Tempo um einen Faktor ändern (Abrissbirne wreckingBall: Hindernis durchbrochen)
+  scaleSpeed(k) {
+    if (this.loop) this.loop.v *= k;
+    else if (this.onGround) this.s *= k;
+    else { this.vx *= k; this.vy *= k; }
+  }
+
+  // Abprall an einem Hindernis (Hüpfburg obstacleBounce): nach oben mindestens vy, nach vorn + vx (weiche Grenze)
+  obstacleBounce(vy, vx) {
+    if (this.loop) { this.loop.v *= P.hitSpeedKeep; return; }
+    if (this.onGround) {
+      this.vx = this.s * Math.cos(this.angle);
+      this.vy = this.s * Math.sin(this.angle);
+      this.onGround = false;
+      this.y += P.jumpLift;
+      this.w = 0;
+      this.startAir();
+    }
+    this.vy = Math.max(this.vy, vy);
+    this.vx += vx * thrustFactor(this.speed, this.softCap);
+    this.limitSpeed();
+  }
 
   // Tempo-Schub entlang der Bewegung (z. B. Boost-Ring) – unterliegt der weichen Tempo-Grenze
   addSpeed(dv) {

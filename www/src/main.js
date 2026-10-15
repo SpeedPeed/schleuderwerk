@@ -34,7 +34,10 @@ import { Popups } from './ui/popups.js';
 import { DevMenu } from './ui/devMenu.js';
 import { MapScreen } from './ui/map.js';
 import { RunScreens } from './ui/runScreens.js';
+import { ItemSheet } from './ui/items.js';
 import { confirmDialog, infoDialog } from './ui/dom.js';
+import { itemById, itemPools } from './data/items.js';
+import { setChainLog } from './items/triggerEngine.js';
 
 // ---------- Grundaufbau ----------
 let save = loadSave();
@@ -146,11 +149,14 @@ const garage = new GarageScreen(uiRoot, {
   onStart: () => { sfx.click(); save.run ? openMap() : startRun(); },
   onGiveUp: () => giveUpRun(),
   onDenied: (t) => { sfx.denied(); popups.show(t, 'info'); },
+  onCompendium: () => { sfx.click(); itemSheet.openCompendium({ codex: save.codex }); },
 });
 const mapScreen = new MapScreen(uiRoot, {
   onNode: (id) => selectNode(id),
   onGarage: () => { sfx.click(); openGarage(); },
+  onInventory: () => { sfx.click(); openInventory(); },
 });
+const itemSheet = new ItemSheet(uiRoot, {});
 const runScreens = new RunScreens(uiRoot, {
   onTick: (kind, i) => { if (kind === 'medal') sfx.medal(i); else sfx.money(); },
 });
@@ -209,6 +215,10 @@ const devMenu = new DevMenu(uiRoot, {
   onNextAct: () => devNextAct(),
   onSetDurability: (n) => devSetDurability(n),
   onTestDrive: (id) => { menus.closeSettings(); startTestDrive(id); },
+  onAddItem: (id) => devAddItem(id),
+  onTierUp: (slot) => devTierUp(slot),
+  onAllPool: () => devAllPool(),
+  onChainLog: (on) => setChainLog(on),
 });
 
 function applySettings() {
@@ -346,15 +356,18 @@ const hooks = {
   haptic: (k) => platform.haptic(k),
   fx: (kind, x, y, o) => emitFx(kind, x, y, o),
   end: (r) => endStage(r),
+  // Trigger-Engine: Item-Symbol hüpft, Feed-Zeile; ab Kettentiefe 3 „KETTENREAKTION ×n!“
+  triggered: (src, depth, info) => hud.itemTriggered(src, depth, info),
+  chain: (n) => { hud.chain(n); sfx.trick(n); platform.haptic('light'); },
 };
 
 // ---------- Etappe ----------
 // Gemeinsamer Start einer Etappe (Run oder Testfahrt)
-function beginStage(newSpec, loadout, { seed, durability, runMods } = {}) {
+function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = null, runInfo = null, farEnd = true } = {}) {
   setVehicle(loadout.chassis.id, partIds(loadout));
   carModel.rotation.y = 0;
   setTrack(newSpec, biomeById(newSpec.biome));
-  stage = new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods });
+  stage = new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods, inventory, runInfo, farEnd });
   featuresView.build(track, stage.objects);
   rain.setActive(!!stage.weather.rain);
   state = 'stage';
@@ -374,7 +387,13 @@ function beginStage(newSpec, loadout, { seed, durability, runMods } = {}) {
     weather: stage.weather,
     abilities: stage.abilities.slots.map((s) => s.def),
     goal: { target: stage.target, medals: stage.medals, medalList: stage.medalList },
+    items: inventory ? { inventory, napped: stage.nappedSlot } : null,
   });
+  if (stage.nappedSlot >= 0 && inventory) {
+    const e = inventory[stage.nappedSlot];
+    const d = e && itemById(e.itemId);
+    if (d) popups.show(`🐈‍⬛ ${d.icon} ${d.name} schläft diese Etappe`, 'info');
+  }
   for (const m of ['bronze', 'silver', 'gold']) {
     const x = stage.medalList.includes(m) ? stage.medals[m] : undefined;
     flags[m].visible = x !== undefined;
@@ -395,7 +414,7 @@ function startTestDrive(biomeId, opts = {}) {
   const sp = generateStageSpec({ biome: b, kind: opts.kind || 'stage', floor: opts.floor ?? 0, bossId: opts.bossId || null, rng: makeRng(seed) });
   mode = 'test';
   garage.closePicker(true);
-  beginStage(sp, loadout, { seed });
+  beginStage(sp, loadout, { seed, farEnd: false });   // Testfahrt: kein Ende bei „Ziel weit übertroffen“ (Weitflug-Test)
 }
 
 // Etappe des aktuellen Run-Knotens starten (auch Neuversuch: gleiche Strecke, neuer Abschuss)
@@ -405,8 +424,8 @@ function startRunStage() {
   const node = mapNode(run.map, run.current.node);
   const sp = runLogic.stageSpecFor(run, node);
   mode = 'run';
-  const lo = runLogic.runLoadout(run, save);
-  beginStage(sp, lo, { seed: hashSeed(`${run.seed}:${node.id}:${run.current.attempts}`), durability: run.durability, runMods: run.runMods });
+  const su = runLogic.runStageSetup(run, save);
+  beginStage(sp, su.loadout, { seed: hashSeed(`${run.seed}:${node.id}:${run.current.attempts}`), durability: run.durability, runMods: run.runMods, inventory: su.inventory, runInfo: su.runInfo });
 }
 
 function endStage(r) {
@@ -444,19 +463,97 @@ function showRunResult(r) {
   later(() => {
     hud.show(false);
     if (o.cleared) { sfx.record(); platform.haptic('success'); }
+    reportRunEvents(o.events);
     runScreens.stageResult(r, o, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
       onNext: () => {
         sfx.click();
-        if (o.won) finishRun();
-        else if (o.nextAct) {
-          runScreens.actTransition({ act: run.act, biome: run.biome, prevBiome: r.biome }, { onNext: () => { sfx.click(); openMap(); } });
-        } else openMap();
+        if (o.won) { finishRun(); return; }
+        // erst die Item-Auswahl(en), dann Akt-Übergang bzw. Karte
+        showChoices(() => {
+          if (o.nextAct) runScreens.actTransition({ act: run.act, biome: run.biome, prevBiome: r.biome }, { onNext: () => { sfx.click(); openMap(); } });
+          else openMap();
+        });
       },
       onRetry: () => { sfx.click(); startRunStage(); },
       onMap: () => { sfx.click(); openMap(); },
       onEnd: () => { sfx.click(); finishRun(); },
     });
   });
+}
+
+// ---------- Items im Run ----------
+// Ausgelöste Run-Ereignisse (stageClear, nodeEnter, itemGained …) kurz anzeigen
+function reportRunEvents(logs) {
+  for (const log of [].concat(logs || [])) {
+    if (!log) continue;
+    for (const t of log.triggered || []) popups.show(`${t.icon || '•'} ${t.name}`, 'info');
+    if (log.bolts > 0) popups.show(`+${fmtN(log.bolts)} 🔩`, 'good');
+    for (const i of log.upgraded || []) {
+      const e = save.run && save.run.inventory[i];
+      const d = e && itemById(e.itemId);
+      if (d) popups.show(`★ ${d.icon} ${d.name} → ★${e.tier}`, 'big');
+    }
+  }
+}
+
+// Offene Item-Auswahlen nacheinander zeigen, danach then()
+function showChoices(then) {
+  const run = save.run;
+  const ch = run && runLogic.pendingChoice(run);
+  if (!ch) { then(); return; }
+  const info = () => ({ inventory: run.inventory, parts: run.parts, slots: runLogic.itemSlots(run), remaining: run.pendingChoices.length });
+  runScreens.itemChoice(ch, info(), {
+    onPick: (i) => {
+      const res = runLogic.pickItem(run, save, i);
+      if (!res.ok && res.reason === 'full') { sfx.click(); showReplace(ch, i, then); return; }
+      if (res.ok) gotItem(res);
+      writeSave(save);
+      showChoices(then);
+    },
+    onSkip: () => {
+      const r = runLogic.skipChoice(run);
+      writeSave(save);
+      sfx.money();
+      if (r.ok && r.bolts) popups.show(`+${fmtN(r.bolts)} 🔩`, 'good');
+      showChoices(then);
+    },
+    onInventory: () => { sfx.click(); openInventory(); },
+  });
+}
+
+// Voller Rucksack: ersetzen oder ablehnen
+function showReplace(ch, index, then) {
+  const run = save.run;
+  runScreens.itemReplace({ itemId: ch.items[index], inventory: run.inventory, skipBolts: ch.skipBolts }, {
+    onReplace: (slot) => {
+      const res = runLogic.pickItem(run, save, index, slot);
+      if (res.ok) gotItem(res);
+      writeSave(save);
+      showChoices(then);
+    },
+    onBack: () => { sfx.click(); showChoices(then); },
+    onReject: () => {
+      const r = runLogic.skipChoice(run);
+      writeSave(save);
+      if (r.ok && r.bolts) popups.show(`+${fmtN(r.bolts)} 🔩`, 'good');
+      showChoices(then);
+    },
+  });
+}
+
+function gotItem(res) {
+  const d = itemById(res.itemId);
+  sfx.buy();
+  platform.haptic('success');
+  if (d) popups.show(`${d.icon} ${d.name}${res.replaced ? ' (ersetzt)' : ''}`, 'big');
+  reportRunEvents(res.events);
+}
+
+function openInventory() {
+  const run = save.run;
+  if (!run) return;
+  const v = runLogic.inventoryView(run);
+  itemSheet.openInventory({ inventory: run.inventory, slots: v.slots, counts: v.counts, tagBoost: v.tagBoost, napped: -1 });
 }
 
 function later(fn) {
@@ -498,6 +595,8 @@ function openMap() {
   popups.clear();
   const G = CAMERA.garage;
   camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
+  // offene Item-Auswahl (z. B. nach einem Neustart der App)
+  if (runLogic.pendingChoice(run)) showChoices(() => { runScreens.hide(); mapScreen.render(run); });
 }
 
 // Knoten auf der Karte gewählt
@@ -525,6 +624,7 @@ function selectNode(id) {
   const e = runLogic.enterNode(run, id);
   if (!e.ok) return;
   writeSave(save);
+  reportRunEvents(e.events);
   if (e.kind === 'station') {
     runScreens.station(e.options, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run) }, {
       onChoose: (choice) => {
@@ -683,6 +783,34 @@ function devNextAct() {
   return `Akt ${run.act}: ${biomeById(run.biome).name}`;
 }
 
+function devAddItem(id) {
+  const run = save.run;
+  if (!run) return 'Kein Run aktiv';
+  const res = runLogic.devAddItem(run, save, id);
+  writeSave(save);
+  if (state === 'map') mapScreen.render(run);
+  const d = itemById(id);
+  return res.ok ? `${d.icon} ${d.name} hinzugefügt (${run.inventory.length} Items${state === 'stage' ? ', wirkt ab der nächsten Etappe' : ''})` : `Nicht möglich (${res.reason})`;
+}
+
+function devTierUp(slot) {
+  const run = save.run;
+  if (!run) return 'Kein Run aktiv';
+  if (!runLogic.devTierUp(run, slot)) return 'Kein Item auf diesem Platz oder schon ★3';
+  writeSave(save);
+  if (state === 'map') mapScreen.render(run);
+  const e = run.inventory[slot];
+  return `${itemById(e.itemId).name} → ★${e.tier}`;
+}
+
+function devAllPool() {
+  const pools = itemPools();
+  save.research.done = [...new Set([...save.research.done, ...pools])];
+  if (save.run) { save.run.poolAll = true; save.run.research = [...new Set([...(save.run.research || []), ...pools])]; }
+  writeSave(save);
+  return `${pools.length} Item-Pools freigeschaltet – alle Items können angeboten werden`;
+}
+
 function devSetDurability(n) {
   const run = save.run;
   if (!run || !isFinite(n)) return 'Kein Run aktiv';
@@ -703,6 +831,9 @@ platform.onBackButton(async () => {
   const modal = uiRoot.querySelector('.modal');
   if (modal) { (modal.querySelector('.btn-secondary') || modal.querySelector('.btn-primary'))?.click(); return; }
   if (devMenu.isOpen) { devMenu.close(); return; }
+  if (itemSheet.isOpen) { itemSheet.close(); return; }
+  if (runScreens.open && runScreens.kind === 'replace') { runScreens.card.querySelector('[data-a=back]')?.click(); return; }
+  if (runScreens.open && runScreens.kind === 'choice') return;   // Auswahl nur über die Knöpfe beenden
   if (menus.settingsOpen) { menus.closeSettings(); return; }
   if (state === 'garage' && garage.pickerOpen) { garage.closePicker(); return; }
   if (state === 'stage') { paused ? resumeGame() : pauseGame(); return; }
@@ -990,6 +1121,12 @@ window.__game = {
   devToBoss,
   devNextAct,
   devSetDurability,
+  devAddItem,
+  devAllPool,
+  runLogic,
+  hud,
+  itemSheet,
+  setChainLog,
   reachable: () => (save.run ? runLogic.reachableNodes(save.run).map((n) => ({ id: n.id, type: n.type, floor: n.floor })) : []),
   loadout: () => buildLoadout(save),
   abilityById,

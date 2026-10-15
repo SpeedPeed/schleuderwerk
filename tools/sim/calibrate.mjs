@@ -21,6 +21,7 @@ import { generateStageSpec } from '../../www/src/physics/trackGen.js';
 import { makeRng } from '../../www/src/core/rng.js';
 import { lerp } from '../../www/src/core/math.js';
 import { simSave, makeSimStage, playStage } from './bot.mjs';
+const ITEMS_MARK = '<!-- items -->';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const args = process.argv.slice(2);
@@ -121,7 +122,7 @@ lines.push(`> Erzeugt von \`node tools/sim/calibrate.mjs\` (${N} Etappen je Zeil
 lines.push('');
 lines.push('## Verfahren');
 lines.push('');
-lines.push('- Ein Bot (`tools/sim/bot.mjs`) spielt headless mit der echten Etappen-Logik (`stage/stage.js`, Strecke aus `physics/trackGen.js`): Abschuss meist im grünen Bereich (60 %), Winkel 30–42°, richtet die Kiste vor jeder Landung aus, boostet in der Luft nach vorn (Reserve 35 % Treibstoff, Hitze < 72 %), nimmt vor Schluchten Anlauf, springt mit dem Hüpfer über Hindernisse, geschlossene Pressen und an Schluchtkanten, gibt bei Blitzwarnungen Gas. Keine Items (kommen in Phase 4).');
+lines.push('- Ein Bot (`tools/sim/bot.mjs`) spielt headless mit der echten Etappen-Logik (`stage/stage.js`, Strecke aus `physics/trackGen.js`): Abschuss meist im grünen Bereich (60 %), Winkel 30–42°, richtet die Kiste vor jeder Landung aus, boostet in der Luft nach vorn (Reserve 35 % Treibstoff, Hitze < 72 %), nimmt vor Schluchten Anlauf, springt mit dem Hüpfer über Hindernisse, geschlossene Pressen und an Schluchtkanten, gibt bei Blitzwarnungen Gas. Ohne Items – ihre Wirkung misst `tools/sim/items.mjs` (Abschnitt „Items“ unten).');
 lines.push('- **Start-Loadout** = neuer Spielstand (Seifenkiste, Startteile Stufe 0, Boost + Hüpfer). **Gutes Loadout** = dieselben Startteile auf Stufe 10.');
 lines.push('- Jede Etappe beginnt mit voller Haltbarkeit (Schaden = Anteil der max. Haltbarkeit in dieser einen Etappe).');
 lines.push('- Zielmarken je Etage = Median-Distanz ÷ Soll-Verhältnis (linear von Etage 0 bis 5), danach innerhalb eines Akts nie fallend, Boss ≥ 1,1 × Etage 5, auf 5 m gerundet. Mehrere Durchgänge, weil die Bausteine bis zur Gold-Marke verteilt werden.');
@@ -160,7 +161,11 @@ lines.push(`- Gutes Loadout, Akt 2, Etage 0: Median ×${fmtR(a2.ratio)} (Soll �
 const normal = table.filter((r) => r.kind === 'stage' && r.floor <= 1 && r.loadout === 'start' && r.act === 1);
 lines.push(`- Schaden einer normalen Etappe (Akt 1, Etage 0–1, Start-Loadout, Bot ohne grobe Fehler): Median ${normal.map((r) => fmtPct(r.dmg)).join(' / ')} (Soll ≤ 4 %).`);
 lines.push('');
-fs.writeFileSync(path.join(ROOT, 'docs', 'BALANCE.md'), lines.join('\n'));
+// Abschnitt „Items“ (tools/sim/items.mjs, hinter der Marke) bleibt erhalten
+const balFile = path.join(ROOT, 'docs', 'BALANCE.md');
+const prev = fs.existsSync(balFile) ? fs.readFileSync(balFile, 'utf8') : '';
+const mark = prev.indexOf(ITEMS_MARK);
+fs.writeFileSync(balFile, lines.join('\n') + (mark >= 0 ? `\n${prev.slice(mark)}` : ''));
 console.log(`\ndocs/BALANCE.md geschrieben (${secs} s)`);
 
 // Zielmarken in data/biomes.js übernehmen

@@ -25,7 +25,7 @@ function diffRows(a, b, max = 8) {
 // Garage: Währungen, 3D-Vorschau (oben, durchsichtig), Chassis-Wahl, Werte-Übersicht, 7 Teile-Slots,
 // Fähigkeiten und der Start-Knopf (RUN STARTEN bzw. RUN FORTSETZEN + Aufgeben). Teile- und Fähigkeits-Auswahl als
 // Unterblatt. Läuft ein Run, zeigt eine Zeile Akt/Biom/Haltbarkeit (die Run-Ausrüstung ist ab dem Start fest).
-// h: { onAction(name, ...args) → Ergebnis {ok}, onPreview(override|null), onSettings(), onStart(), onGiveUp() }
+// h: { onAction(name, ...args) → Ergebnis {ok}, onPreview(override|null), onSettings(), onStart(), onGiveUp(), onCompendium() }
 export class GarageScreen {
   constructor(root, h) {
     this.h = h;
@@ -36,6 +36,7 @@ export class GarageScreen {
           <span title="Blaupausen">📘 <b data-id="bp">0</b></span>
           <span title="Kerne">💠 <b data-id="cores">0</b></span>
         </div>
+        <button class="icon-btn" data-id="codex" aria-label="Kompendium">📖</button>
         <button class="icon-btn" data-id="settings" aria-label="Einstellungen">⚙</button>
       </div>
       <div class="g-preview" data-id="preview"><div class="g-title">GARAGE</div>
@@ -76,6 +77,7 @@ export class GarageScreen {
     this.el.querySelectorAll('[data-id]').forEach((e) => { this.q[e.dataset.id] = e; });
     const q = this.q;
     q.settings.onclick = () => h.onSettings();
+    q.codex.onclick = () => h.onCompendium && h.onCompendium();
     q.start.onclick = () => { if (!q.start.disabled) h.onStart(); };
     q.cprev.onclick = () => this.browse(-1);
     q.cnext.onclick = () => this.browse(1);

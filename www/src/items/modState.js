@@ -1,6 +1,6 @@
 // Zeitweise Stat-Modifikatoren einer Etappe: Buffs (mit Dauer), Stapel (bis Etappenende) und Zähler (charge).
 // Wird von den Effekten (items/effects.js) über ctx befüllt; die Etappe holt mods() und rechnet die Stats neu,
-// sobald `dirty` gesetzt ist. Die Trigger-Engine (Phase 4) nutzt denselben Zustand (statMods()).
+// sobald `dirty` gesetzt ist. Die Trigger-Engine (items/triggerEngine.js) nutzt denselben Zustand (statMods()).
 // Reine Logik ohne three.js und DOM.
 
 export class ModState {
@@ -39,14 +39,18 @@ export class ModState {
     return true;
   }
 
-  // Stapel um einen Faktor verkleinern (z. B. halbieren)
-  scaleStack(key, f) {
+  // Stapel um einen Faktor verkleinern (z. B. halbieren). step (optional): auf volle Schritte abrunden (Betrag)
+  scaleStack(key, f, step = 0) {
     const s = this.stacks.get(key);
     if (!s) return;
-    s.add *= f;
-    s.mul *= f;
+    const q = (v) => (step > 0 ? Math.sign(v) * Math.floor(Math.abs(v * f) / step + 1e-9) * step : v * f);
+    s.add = q(s.add);
+    s.mul = q(s.mul);
     this.dirty = true;
   }
+
+  // Wert eines Stapels { add, mul } oder null
+  stackOf(key) { return this.stacks.get(key) || null; }
 
   // Zähler: +n; erreicht er `at`, wird er auf 0 gesetzt und true zurückgegeben
   charge(key, n = 1, at = 1) {

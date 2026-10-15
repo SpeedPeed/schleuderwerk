@@ -34,7 +34,13 @@ fx('jump', () => {
   const t = flying();
   t.v.vy = -10;
   run({ fx: 'jump', amount: 9 }, t.ctx);
-  near(t.v.vy, 9, 1e-9, 'Doppelsprung hebt Fallen auf');
+  near(t.v.vy, -1, 1e-9, 'Item-Sprung in der Luft: reiner Impuls (ITEMS.effectJumpCancelFall = 0)');
+  t.v.vy = -10;
+  const prev = t.ctx.source;
+  t.ctx.source = { id: 'sprung', kind: 'ability' };
+  run({ fx: 'jump', amount: 9 }, t.ctx);
+  t.ctx.source = prev;
+  near(t.v.vy, 9, 1e-9, 'Fähigkeit Hüpfer: Doppelsprung hebt Fallen auf');
   // am Boden: abheben
   t.v.onGround = true;
   t.v.s = 10;

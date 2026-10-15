@@ -259,3 +259,86 @@ Prüfpunkte: Start-Loadout Akt 1 Etage 0 Median **×1,30**, Akt-1-Boss **×0,80*
 - Händler, Werkbank, Schwarzmarkt, Ereignis und Schatz sind Platzhalter (Phase 5). Schrottstufen (`ascension`) sind vorbereitet (`mods` in `generateStageSpec`, `eliteWeightAdd` in der Karte), aber noch nicht wählbar.
 - Ohne Items sind Elite-Etappen (Ziel ×1,3) und die Bosse mit dem Start-Loadout bewusst schwer; ein Run endet meist in Akt 1–2.
 - Ein Abbruch per App-Schließen mitten in einer Etappe zählt nicht als Versuch (der Knoten startet beim Fortsetzen neu).
+
+## Phase 4 – Trigger-Engine, Tags, Set-Boni, Items
+
+Spielbar ist jetzt der Kern des Roguelites: **Start-Item je Chassis → nach jeder geschafften Etappe 1 aus 3 Items (oder Schrauben) → Items lösen in der Etappe Effekte aus, Ketten-Reaktionen, Set-Boni bei 2/4/6 Items eines Tags.** Händler, Werkbank (Fusion/Hybride), Schwarzmarkt, Ereignisse und das Forschungslabor folgen in Phase 5.
+
+### Was ist neu
+
+**Inhalte** (`www/src/data/`)
+- Die geprüften Inhaltsdateien liegen unverändert in `data/content/content_*.js` (6 Dateien, 88 Items, 10 Tags). `data/tags.js` (10 Tags mit Set-Boni 2/4/6) und `data/items.js` (eine Liste aller 88 Items, Seltenheiten mit Farbe) führen sie nur zusammen. Dazu kommen – ebenfalls unverändert – `research.js`, `textEvents.js`, `ascension.js`, `cosmetics.js` (Verwendung ab Phase 5/6; der Inhalts-Prüfer braucht sie für Querverweise).
+- `tools/validateContent.mjs` = der mitgelieferte Prüfer mit angepassten Pfaden (`node tools/validateContent.mjs` → „Keine Fehler.“, `--json` für Maschinen). Er läuft in `npm test` mit.
+
+**Trigger-Engine** (`items/triggerEngine.js`, `items/conditions.js`)
+- Verteilt jedes Ereignis der Etappe an die Auslöser von Chassis, Teilen, Set-Boni und Items (Reihenfolge in dieser Folge). Warteschlange (FIFO) und Buffs/Stapel/Zähler sind die Bausteine aus Phase 2 (`stage.queue`, `stage.mods`) – nichts doppelt.
+- Kettentiefe: Ereignisse aus Effekten bekommen Tiefe + 1; über Tiefe 8 wird verworfen, höchstens 64 Ereignisse je Abarbeitung. Rohereignisse, die Effekte auslösen (Heilung, Schaden, Abprall, Überhitzung, eingesammelte Pickups), und Gratis-Boosts gehören zur Kette – so entsteht z. B. *Salto → Stromschlag → Gratis-Boost → Kühlung → Tempo*.
+- Limits je Auslöser: Abklingzeit, je Etappe, je Run (Zähler im Run). Alle 20 Bedingungen (`heatAbove` … `chassis`), Glück erhöht `chance`. Run-Ereignisse (runStart, nodeEnter, stageClear, itemGained, shopEnter) laufen über dieselbe Engine ohne Fahrzeug.
+- Die vorbereiteten Auslöser von Chassis und Teilen wirken jetzt: Rasenmäher-Drehzahl (HUD-Leiste ⚙️), Sofa heilt bei sauberen Landungen, Hupe, Topfdeckel-Schild, Thermoskanne, Gasflasche, Elektromotor, Trockeneis, Schneeschaufel, Glücksbringer, Mülltonne, Raketenschlitten, Waschmaschine.
+
+**Alle Regeln** (ARCHITEKTUR Anhang A, Zahlen in `balance.js → RULES`): Chassis (healOnCleanLanding, groundSpeedStacks, setBonusDouble, tagBoost), Set 6 je Tag (Nachbrenner, Eiszeit, Lichtbogen, Drehimpuls, Magnet-Anziehung, Abrissbirne, Aufprall→Schub, Schlucht-Trampolin, Raketen-Übertempo, Glücks-Echo), Legendäre (Perpetuum Mobile – Hitze statt Treibstoff, Schiffskompass, Hüpfburg, Wasserwaagen-Rakete, Levitron, Hubstützen, Schraubenvergaser, Teslaspule, Dreiblatt-Klee, Schlittschuhkufen) und Flüche (Schwarze Katze, Ewiger Eiszapfen, Gummihuhn, Geisterbahn-Magnet, Spieluhr). Biome: Glutwüste Feuer-Items +25 %, Gewittersteppe Elektro-Items +25 %, Kühlschrank Eis-Items +50 %.
+
+**Inventar** (`items/inventory.js`): Item-Plätze (6, Badewanne 5), Stufen ★1–3 (Faktor 1,0/1,6/2,3), Tag-Zählung (Items mit zwei Tags und Hybride zählen für beide Tags, Garage-Teile mit Tag zählen 1), aktive Set-Boni 2/4/6, Stat-Beiträge in der Stat-Pipeline, Beschreibungen mit eingesetzten Werten (`{dur}` → „0,8 s“ bei ★1, „1,3 s“ bei ★2). Fusion (2 gleiche → ★+1) und Hybride (2 Tags, je ×0,75) sind als Funktionen fertig – die Werkbank dafür kommt in Phase 5.
+
+**Run** (`run/runState.js`, `run/rewards.js`)
+- Start-Item: ein zufälliges Grund-Item des Chassis-Tags (Seifenkiste Magnet, Einkaufswagen Glück, Sofa Gyro …).
+- Nach jeder geschafften Etappe eine Auswahl: Etappe meist Gewöhnlich/Selten, **Elite mindestens Selten**, **Boss Episch/Legendär** (Gewichte `balance.ITEMS.rarityWeights`, in Akt 2/3 seltenere Items häufiger). Je eingesammelter 📦 Item-Kiste eine weitere Auswahl. Statt eines Items: **„Überspringen: +8/12/16 🔩“**. Voller Rucksack → ein Item ersetzen oder ablehnen (Schrauben).
+- Pool: nur Grund-Items (`pool: 'base'`, 20 Stück) und Items, deren Forschung erledigt ist – bis zum Labor (Phase 5) per Dev-Menü „Alle Items in den Pool“. Verfluchte Items kommen nie in die Auswahl (Schwarzmarkt, Phase 5).
+- Kodex: angebotene Items gelten als entdeckt, aktivierte Set-Boni ebenso (`save.codex`). Offene Auswahlen überleben einen App-Neustart.
+
+**Oberfläche**
+- **Item-Auswahl**: Karten mit Symbol, Name, Seltenheitsfarbe, Tags, ★, Beschreibung mit Werten, Fluch-Text und welche Set-Boni das Item voranbringt („⚡ Elektro: Set 2 aktiv!“ bzw. „1/2 bis Set 2“).
+- **Karte**: Item-Leiste unter der Haltbarkeit → Tippen öffnet das **Inventar** (Items mit Details, Reiter **Set-Boni**: alle 10 Tags mit Zähler, Balken und Stufen 2/4/6, die aktiven hervorgehoben, Biom-Verstärkung).
+- **HUD**: Item-Leiste links; das Symbol hüpft bei jeder Auslösung („×2“ bei Glücks-Echo, „★+1“ beim Dreiblatt-Klee). Rechts eine Feed-Zeile der letzten Auslösungen. Ab Kettentiefe 3 erscheint groß **„KETTENREAKTION ×n!“**.
+- **Garage**: 📖 **Kompendium** – entdeckte Items mit Werten, unentdeckte als „???“, Set-Boni (unentdeckte Stufen „???“).
+- Etappe endet zusätzlich bei **Gold × 2** („Ziel weit übertroffen“), damit Item-Kreisläufe nicht bis zur Zeitgrenze laufen.
+
+**Dev-Menü**: Abschnitt „Items (Run)“: Suche + Liste aller 88 Items → **➕ Item hinzufügen** (auch über die Plätze hinaus), **★ erhöhen** für einen Inventar-Platz, **🎲 Alle Items in den Pool**, **🔗 Ketten-Log** (jede Auslösung eingerückt nach Tiefe in der Browser-Konsole).
+
+### Balance-Check (`node tools/sim/items.mjs`, Ergebnis `docs/BALANCE.md` → „Items“)
+Bot mit gutem Loadout (Startteile Stufe 10); mit Salto-Items dreht er zusätzlich Saltos.
+
+| | ohne Items | 6 zufällige Items | beste Synergie (Elektro-Kette / Raketen-Set 6) |
+|---|---|---|---|
+| Akt 2, Etappen geschafft | 39 % | 69 % | 100 % |
+| Akt 3, Etappen geschafft | 22 % | 52 % | 100 % |
+| Akt-3-Boss geschafft | 0 % | 37 % | 67 % / 100 % |
+| ganze Runs: Sieg | 13 % | 25 % (65 % scheitern in Akt 2–3) | 30 % (Synergie-Auswahl, Abschleppen Median 1,5 statt 4) |
+
+Ergebnis: Items verschieben die Weite stark (zufällig ×1,1–1,6, Synergie ×1,4–3); gute Synergie-Builds schaffen die Akt-3-Ziele, zufällige mittelmäßige Builds scheitern meist in Akt 2–3, ohne Items scheitern 88 % der Runs. Die Zielmarken bleiben unverändert.
+
+**Nachjustiert** (nur `balance.js`):
+- `ITEMS.effectJumpCancelFall = 0` (neu): Sprünge aus Item-Effekten (Jo-Jo, Explosionen) sind in der Luft reine Impulse; nur die Fähigkeit Hüpfer hebt das Fallen ganz auf. Vorher ließ sich per Salto-Sprung endlos schweben (Gyro-Set: ×16 der Zielweite).
+- `STAGE.farMul = 2` (neu): Etappe endet bei Gold × 2 (Grund `far`). Kreisläufe wie Gyro-Set 6 (Salto → Landung → Schub → Sprung …) liefen sonst bis zur Zeitgrenze (bis zu 165 s).
+- Item-Auswahl: Gewichte, Akt-Faktoren, Überspringen-Schrauben, Regel-Parameter `RULES.*` sind neu in `balance.js`.
+
+**Tests**: `npm test` (192 Tests) – zusätzlich `triggerEngine` (Kettentiefe 8, 64 Ereignisse je Abarbeitung, cooldown/perStage/perRun, charge + stack, chance mit Glück, ★-Faktor, alle Bedingungen, Run-Kontext, **Pflicht-Kette Elektro + Gyro + Kühlung in einer echten Etappe**), `rules` (jede Regel mindestens einmal), `items` (Inhalts-Prüfer ohne Fehler, Tag-Zählung/Sets/Hybride, Stat-Beiträge, Badewanne + voller Rucksack, Fusion/Hybrid, Platzhalter aller 88 Items in ★1–3, Auswahl-Gewichte und Pool, Start-Item je Chassis, Auswahl nach der Etappe + Kisten + Überspringen + Kodex + Speichern, Run-Ereignisse, **alle 88 Items ★3 gleichzeitig 60 s in einer Etappe je Biom**: keine Ausnahme, ≤ 64 Ereignisse je Abarbeitung, alle Werte endlich, Ende bei Gold × 2).
+
+### So testest du Phase 4
+
+**Am PC (automatisch)**
+1. `npm test` → „# fail 0“.
+2. `npm run smoke` → „RAUCHTEST BESTANDEN“. Neu in `/tmp/sw-smoke/`: `12-item-auswahl.png`, `13-inventar.png`, `14-set-uebersicht.png`, `33-kettenreaktion.png`, `52-kompendium.png`, `53-kompendium-sets.png` (ggf. `15-rucksack-voll.png`).
+3. Optional: `node tools/validateContent.mjs` (Inhalte), `node tools/sim/items.mjs` (≈ 1 min, schreibt den Abschnitt „Items“ in `docs/BALANCE.md`).
+
+**Am PC (von Hand)**
+1. `python tools/serve.py`, `http://localhost:8137` (F12 → Handy-Ansicht 412 × 915).
+2. **RUN STARTEN ▶** → oben auf der Karte steht schon das Start-Item in der Item-Leiste. Antippen → Inventar, Reiter „Set-Boni“.
+3. Eine Etappe schaffen (oder Dev-Menü „Etappe: 🥇 Gold“) → **Weiter ▶** → Item-Auswahl: eine Karte „Nehmen“ oder „Überspringen“.
+4. Kette ausprobieren: Dev-Menü → Suche „dynamo“ → ➕, „blitzab“ → ➕, „tesla“ → ➕, „🔗 Ketten-Log“ an, F12-Konsole öffnen. Eine Etappe starten, in der Luft ← halten bis zum Salto: Stromschlag → Gratis-Boost → … – die Symbole links hüpfen, rechts läuft der Feed, „KETTENREAKTION ×4!“ erscheint, in der Konsole steht die Kette eingerückt.
+5. Garage → 📖 Kompendium: angebotene Items sind entdeckt, der Rest „???“.
+6. Chassis-Regeln: Sofa (heilt bei sauberer Landung, „+3“), Rasenmäher (Drehzahl-Leiste unten links füllt sich bei jeder Bodenberührung), Badewanne (5 Plätze, Set-Boni doppelt), Kühlschrank (Eis-Items +50 %).
+
+**Am Handy**
+1. Wie bisher `python tools/serve.py` und die Handy-Adresse öffnen.
+2. Item-Auswahl: Karten scrollen, „Nehmen“ antippen; 🎒-Knopf oben zeigt das Inventar. Ist der Rucksack voll, erscheint die Liste zum Ersetzen.
+3. In der Etappe: links die Item-Symbole (hüpfen beim Auslösen), rechts oben die letzten Auslösungen. Saltos (linke Hälfte halten) lösen viele Items aus.
+4. Zurück-Taste: schließt Inventar/Kompendium; in der Item-Auswahl nichts (bewusst wählen), beim Ersetzen zurück zur Auswahl.
+
+### Abweichungen / offene Punkte
+- `doubleDamage` (Hubstützen) wird in `physics/vehicle.js → damage()` ausgewertet statt in `stage.js ctx.damage` – dort laufen alle Haltbarkeitsverluste zusammen (auch die aus `ctx.damage`).
+- `mutualAttraction`: Schrauben zählen als Pickups (sonst wirkt die Regel kaum). `shockRecharge` greift nur, wenn gerade eine Stromschlag-Abklingzeit läuft (sonst würde die 3-s-Sperre verschenkt). Bei einem Item mit zwei verstärkten Tags (`tagBoost`) gilt der größere Wert.
+- Werte in ruleSpec-Texten, die von `balance.js` abweichen (Spiel nutzt `balance.js`): Überhitzungsschaden „5“ (overheatAfterburner, heatIsFuel) – `RESOURCES.overheatDamage` = 3; boostHold „fuel 20“ – `BASE_STATS.boostFuel` = 16; collectScrapMass „15 → 5“ – `RESOURCES.obstacleDamage` = 5 (→ 1,7); lowGrip 0,4/0,6 – `RULES.lowGrip` = 0,5.
+- `firstHitBounces`/`fuelRegenOnFlip` (nur als Beispiele in ARCHITEKTUR 4.10/4.11) kommen in keinem Inhalt vor und sind nicht umgesetzt.
+- Der Feuer-Set-Kreislauf (Überhitzen als Waffe) wird vom Bot nicht gespielt (er boostet nur unter 72 % Hitze) – in der Messung wirkt das Feuer-Set deshalb kaum.
+- Werkbank-Oberfläche, Händler, Schwarzmarkt (verfluchte Items), Ereignisse, Labor/Forschung für die Item-Pools: Phase 5.

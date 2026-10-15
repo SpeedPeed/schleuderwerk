@@ -1,13 +1,16 @@
 // Spiel-Bot für den Balance-Simulator (headless, echte Etappen-Logik aus www/src).
-// Spielt wie eine geübte Person ohne Items: guter Abschuss (meist im grünen Bereich), richtet die Kiste vor der
+// Spielt wie eine geübte Person: guter Abschuss (meist im grünen Bereich), richtet die Kiste vor der
 // Landung am Boden aus, boostet in der Luft (mit Reserve), springt mit dem Hüpfer über Hindernisse, geschlossene
 // Pressen und an Schluchtkanten, gibt bei Blitzwarnungen Gas.
+// Option tricks (Phase 4, Items): dreht Rückwärtssaltos, solange bis zur Landung genug Zeit bleibt (Saltos lösen viele
+// Item-Ketten aus), und richtet die Kiste danach wie gewohnt aus. Inventar über makeSimStage({ inventory }).
 import { Stage } from '../../www/src/stage/stage.js';
 import { Track } from '../../www/src/physics/track.js';
 import { buildLoadout } from '../../www/src/garage/loadout.js';
 import { defaultSave } from '../../www/src/save/save.js';
 import { makeRng } from '../../www/src/core/rng.js';
 import { FEATURES, PHYSICS, GARAGE } from '../../www/src/data/balance.js';
+import { wrapAngle } from '../../www/src/core/math.js';
 
 // Eingabe-Attrappe (wie platform/input.js)
 export function botInput(n = 4) {
@@ -32,18 +35,18 @@ export function simSave(kind = 'start') {
 }
 
 // Etappe zur Spezifikation bauen
-export function makeSimStage({ spec, biome, save, seed = 1, durability, runMods, hooks = {} }) {
+export function makeSimStage({ spec, biome, save, seed = 1, durability, runMods, hooks = {}, inventory = null, runInfo = null }) {
   const track = new Track(spec, biome);
   let result = null;
   const stage = new Stage({
-    biome, spec, track, loadout: buildLoadout(save), seed, durability, runMods,
+    biome, spec, track, loadout: buildLoadout(save), seed, durability, runMods, inventory, runInfo,
     hooks: { ...hooks, end: (r) => { result = r; if (hooks.end) hooks.end(r); } },
   });
   return { stage, get result() { return result; } };
 }
 
 // Eine Etappe mit dem Bot spielen. Ergebnis: Etappen-Ergebnis (stage.finish)
-export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1 } = {}) {
+export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1, tricks = false, trickTime = 1.7 } = {}) {
   const r = makeRng(`bot:${seed}`);
   const input = botInput(stage.abilities.length);
   const bar = stage.abilities;
@@ -55,6 +58,7 @@ export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1
   stage.launchNow(power, r.range(30, 42), perfect);
   const dt = 1 / 60;
   let jumpCd = 0;
+  let flipFrom = null;      // tricks: Drehung zu Beginn des laufenden Saltos
   while (!getResult() && stage.time < maxTime) {
     const v = stage.vehicle;
     const st = stage.stats;
@@ -65,9 +69,23 @@ export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1
     if (!v.onGround && !v.loop) {
       // Landung vorbereiten: Nase auf die Hangneigung am Landepunkt
       const lead = Math.min(0.6, Math.max(0.15, (v.y - stage.track.heightAt(v.x)) / 40));
-      const d = Math.atan(stage.track.slopeAt(v.x + v.vx * lead)) - v.angle;
+      const d = wrapAngle(Math.atan(stage.track.slopeAt(v.x + v.vx * lead)) - v.angle);
       const u = d * 3 - v.w * 0.45;
       input.st.tilt = u > 0.15 ? 1 : u < -0.15 ? -1 : 0;
+      // Saltos: ein ganzer Rückwärtssalto wird nur begonnen, wenn bis zur Landung genug Zeit bleibt (ballistisch
+      // geschätzt); danach übernimmt das Ausrichten (Kulanz 25° + Abbremsen)
+      if (tricks) {
+        const h = Math.max(0, v.y - PHYSICS.rideHeight - stage.track.heightAt(v.x + v.vx * 0.5));
+        const g = stage.biome.gravity;
+        const tLand = (v.vy + Math.sqrt(Math.max(0, v.vy * v.vy + 2 * g * h))) / g;
+        if (flipFrom === null && tLand > trickTime) flipFrom = v.rotAccum;
+        if (flipFrom !== null) {
+          if (v.rotAccum - flipFrom < Math.PI * 2 - 0.9) input.st.tilt = 1;
+          else flipFrom = null;
+        }
+      }
+    } else if (flipFrom !== null) flipFrom = null;
+    if (!v.onGround && !v.loop) {
       // Boost nach vorn (nicht steil nach oben – das kostet nur Landeschaden)
       const fwd = Math.abs(v.angle) < 0.35 || (v.angle < 0 && v.angle > -0.6);
       boost = fwd && v.fuel > st.fuelMax * 0.35 && v.vy > -4 && v.heat < st.heatMax * 0.72;

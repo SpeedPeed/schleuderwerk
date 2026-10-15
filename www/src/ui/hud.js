@@ -1,12 +1,14 @@
 import { el, fmt, show } from './dom.js';
-import { KOMBO, RESOURCES, SOFTCAPS } from '../data/balance.js';
+import { KOMBO, RESOURCES, SOFTCAPS, ITEMS } from '../data/balance.js';
 import { DEG } from '../core/math.js';
+import { itemBarHtml, esc } from './items.js';
 
 // Höchstens so viele Fähigkeits-Slots wie die Soft-Caps erlauben, plus die Spezialfähigkeit des Chassis
 export const MAX_ABILITY_BUTTONS = SOFTCAPS.abilitySlots.max + 1;
 
 // Anzeige während der Etappe: Distanz, Höhe, Schrauben, Treibstoff/Hitze/Haltbarkeit, Fähigkeits-Knöpfe,
-// Kombo, Boden-Pfeil und die Kraftleiste beim Zielen.
+// Kombo, Boden-Pfeil und die Kraftleiste beim Zielen. Phase 4: Item-Leiste (Symbole hüpfen beim Auslösen),
+// Feed-Zeile der letzten Auslösungen, „KETTENREAKTION ×n!“ ab Kettentiefe ITEMS.chainPopupDepth, Drehzahl (Rasenmäher).
 export class Hud {
   constructor(root, { onPause }) {
     const abBtns = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) =>
@@ -30,12 +32,16 @@ export class Hud {
           <b class="goal-car" data-id="gcar"></b>
         </div>
       </div>
+      <div class="hud-items" data-id="items"></div>
+      <div class="hud-feed" data-id="feed"></div>
+      <div class="hud-chain hidden" data-id="chain"></div>
       <div class="combo hidden" data-id="combo"><div class="combo-mult" data-id="mult">×1,0</div><div class="combo-pts" data-id="pts">0</div></div>
       <div class="ground-ind hidden" data-id="ground">Boden ↓ 0 m</div>
       <div class="res-bars" data-id="bars">
         <div class="rbar rb-fuel"><b>⛽</b><div class="rb-track"><div class="rb-fill" data-id="fuel"></div></div></div>
         <div class="rbar rb-heat" data-id="heatrow"><b>🌡</b><div class="rb-track"><div class="rb-fill" data-id="heat"></div><em data-id="stall">ÜBERHITZT</em></div></div>
         <div class="rbar rb-dur" data-id="durrow"><b>🔧</b><div class="rb-track"><div class="rb-fill" data-id="dur"></div><em class="rb-num" data-id="durnum">100</em></div></div>
+        <div class="rbar rb-rpm hidden" data-id="rpmrow"><b>⚙️</b><div class="rb-track"><div class="rb-fill" data-id="rpm"></div><em class="rb-num">Drehzahl</em></div></div>
       </div>
       ${abBtns}
       <div class="aim hidden" data-id="aim">
@@ -55,6 +61,52 @@ export class Hud {
     this.q.pause.addEventListener('pointerdown', (e) => { e.stopPropagation(); onPause(); });
     this.last = {};
     this.abilityCount = 0;
+    this.feed = [];          // { text, t }
+    this.chainShown = { n: 0, t: -1e9 };
+  }
+
+  // Item ausgelöst (Trigger-Engine): Symbol hüpfen lassen, Feed-Zeile. info: { echo, tierUp, recharge, rule }
+  itemTriggered(src, depth, info = null) {
+    const now = performance.now() / 1000;
+    if (src.kind === 'item' && src.slot !== undefined) {
+      const icon = this.q.items.querySelector(`.ib-slot[data-slot="${src.slot}"]`);
+      if (icon) {
+        icon.classList.remove('hop', 'echo', 'tierup');
+        void icon.offsetWidth;
+        icon.classList.add('hop');
+        if (info && info.echo) icon.classList.add('echo');
+        if (info && info.tierUp) icon.classList.add('tierup');
+      }
+    }
+    if (info && info.recharge) return;
+    const extra = info && info.echo ? ' ×2 🍀' : info && info.tierUp ? ' ★+1 🍀' : '';
+    const label = `${src.icon || '•'} ${src.name || src.id}${extra}`;
+    const f = this.feed;
+    if (f.length && f[f.length - 1].label === label && now - f[f.length - 1].t < 0.5) { f[f.length - 1].n++; f[f.length - 1].t = now; }
+    else f.push({ label, n: 1, t: now, depth });
+    while (f.length > ITEMS.feedSize) f.shift();
+    this.renderFeed();
+  }
+
+  renderFeed() {
+    this.q.feed.innerHTML = this.feed.map((e) => `<div style="--d:${Math.min(4, e.depth)}">${e.depth > 0 ? '↳ '.repeat(Math.min(2, e.depth)) : ''}${esc(e.label)}${e.n > 1 ? ` ×${e.n}` : ''}</div>`).join('');
+  }
+
+  // Kettenreaktion ab ITEMS.chainPopupDepth: „KETTENREAKTION ×n!“ (n = Kettenglieder), nicht öfter als chainPopupGap
+  chain(n) {
+    const now = performance.now() / 1000;
+    const c = this.chainShown;
+    if (now - c.t < ITEMS.chainPopupGap && n <= c.n) return;
+    c.n = n;
+    c.t = now;
+    const e = this.q.chain;
+    e.textContent = `KETTENREAKTION ×${n}!`;
+    show(e, true);
+    e.classList.remove('go');
+    void e.offsetWidth;
+    e.classList.add('go');
+    clearTimeout(this.chainTimer);
+    this.chainTimer = setTimeout(() => show(e, false), 1400);
   }
 
   // Fähigkeits-Knöpfe (werden von platform/input.js als 'ab0' … angemeldet)
@@ -68,9 +120,15 @@ export class Hud {
 
   // abilities: Fähigkeits-Definitionen in Knopf-Reihenfolge.
   // goal: { target, medals: {bronze, silver?, gold}, medalList } → Zielbalken mit Medaillen-Marken
-  show(on, { best = 0, tutorial = false, weather = null, abilities = [], goal = null } = {}) {
+  // items: { inventory, slots, napped } → Item-Leiste
+  show(on, { best = 0, tutorial = false, weather = null, abilities = [], goal = null, items = null } = {}) {
     show(this.el, on);
     this.last = {};
+    this.feed = [];
+    this.renderFeed();
+    show(this.q.chain, false);
+    this.chainShown = { n: 0, t: -1e9 };
+    this.q.items.innerHTML = items && items.inventory.length ? itemBarHtml(items.inventory, items.inventory.length, items.napped ?? -1) : '';
     this.goal = goal;
     this.q.best.textContent = goal ? `🏁 Ziel ${fmt(goal.target)} m` : `🏁 ${fmt(best)} m`;
     show(this.q.goal, !!goal);
@@ -177,6 +235,12 @@ export class Hud {
       q.durrow.classList.toggle('crit', l === 2);
     });
     this.set('durnum', Math.ceil(v.durability), (d) => { q.durnum.textContent = fmt(d); });
+    // Drehzahl-Anzeige (Rasenmäher, Regel groundSpeedStacks)
+    const rpm = stage.chassisStackFrac ? stage.chassisStackFrac() : null;
+    this.set('rpmOn', rpm !== null, (on) => show(q.rpmrow, on));
+    if (rpm !== null) this.set('rpm', Math.round(rpm * 100), (p) => { q.rpm.style.width = `${p}%`; });
+    // Feed: alte Zeilen ausblenden
+    if (this.feed.length && performance.now() / 1000 - this.feed[0].t > ITEMS.feedTime) { this.feed.shift(); this.renderFeed(); }
 
     // Fähigkeits-Knöpfe: Ring = Abklingzeit bzw. Treibstoff (Boost), grau = nicht nutzbar
     const bar = stage.abilities;

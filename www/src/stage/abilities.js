@@ -72,7 +72,8 @@ export class AbilityBar {
     if (isBoostAbility(d)) return vehicle.canBoost;
     const needsPower = num(d.fuel) > 0 || num(d.heat) > 0;
     if (needsPower && vehicle.stall > 0) return false;                 // Überhitzungs-Stillstand
-    if (num(d.fuel) > 0 && vehicle.fuel < (d.mode === 'hold' ? 1e-6 : num(d.fuel))) return false;
+    const fuel = vehicle.fuelAvailable ?? vehicle.fuel;   // inkl. Schrauben-Reserve (Regel boltsAreFuel)
+    if (num(d.fuel) > 0 && fuel < (d.mode === 'hold' ? 1e-6 : num(d.fuel))) return false;
     if (d.mode === 'hold') return true;
     const chute = d.rules && d.rules.parachute;
     if (chute && vehicle.parachute > 0) return true;                    // offenen Schirm kappen geht immer
