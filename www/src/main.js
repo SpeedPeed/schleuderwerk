@@ -51,11 +51,15 @@ import { setChainLog } from './items/triggerEngine.js';
 import { Tutorial, TutorialView, tutorialProgress, resetTutorial } from './ui/tutorial.js';
 import { backAction } from './ui/backButton.js';
 import { FxOverlay } from './ui/fxOverlay.js';
+import { applyInputMode, inputMode } from './ui/inputMode.js';
+import { KeyNav } from './ui/keyNav.js';
 
 // ---------- Grundaufbau ----------
 let save = loadSave();
 const canvas = document.getElementById('game');
 const uiRoot = document.getElementById('ui');
+// PC (Maus/Tastatur) oder Handy: Hinweise und Beschriftungen passend (html.kbd); muss vor dem Aufbau der Oberfläche stehen
+applyInputMode(window, () => { if (state === 'garage') refreshGarage(); });
 const view = createView(canvas);
 const origin = new Origin();
 
@@ -543,7 +547,9 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
   menus.showPause(false, mode);
   fxOverlay.reset();
   fxOverlay.veil();
+  if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur();
   hud.show(true, {
+    boostSlot: input.boostSlot,
     weather: stage.weather,
     abilities: stage.abilities.slots.map((s) => s.def),
     goal: { target: stage.target, medals: stage.medals, medalList: stage.medalList },
@@ -763,6 +769,8 @@ function openMap() {
   setVehicle(lo.chassis.id, partIds(lo));
   mapScreen.render(run);
   mapScreen.show(true);
+  // PC: ersten erreichbaren Knoten markieren (Pfeiltasten wählen, Enter betritt)
+  if (inputMode.kbd) requestAnimationFrame(() => { if (state === 'map' && !runScreens.open) keyNav.autoFocus('.mnode.reach'); });
   particles.clear();
   popups.clear();
   tutorial.dropToasts();
@@ -1102,6 +1110,7 @@ function pauseGame() {
   paused = true;
   input.captureKeys = false;
   input.reset();
+  tutorial.dropToasts();   // Etappen-Hinweis nicht über Pause-Menü/Tastenübersicht liegen lassen
   menus.showPause(true, mode);
   sfx.loop(false);
   sfx.pauseMusic(true);
@@ -1240,7 +1249,9 @@ function backSnapshot() {
   const rk = runScreens.open ? runScreens.kind : null;
   return {
     modal: !!uiRoot.querySelector('.modal'),
-    tutorial: tutorial.isOpen,
+    // ein Etappen-Hinweis (Toast) liegt unter der Tastenübersicht → Esc schließt zuerst die Übersicht
+    tutorial: tutorial.isOpen && !(menus.keysOpen && tutorialView.mode === 'toast'),
+    keys: menus.keysOpen,
     devMenu: devMenu.isOpen,
     itemSheet: itemSheet.isOpen,
     settings: menus.settingsOpen,
@@ -1261,6 +1272,7 @@ async function handleBack() {
   switch (a) {
     case 'closeModal': { const m = uiRoot.querySelector('.modal'); (m.querySelector('.btn-secondary') || m.querySelector('.btn-primary'))?.click(); break; }
     case 'closeTutorial': tutorial.close(); break;
+    case 'closeKeys': menus.closeKeys(); break;
     case 'closeDev': devMenu.close(); break;
     case 'closeItemSheet': itemSheet.close(); break;
     case 'closeSettings': menus.closeSettings(); break;
@@ -1304,6 +1316,55 @@ window.addEventListener('keydown', (e) => {
   handleBack();
 });
 platform.markNative();
+
+// Tastatur-Bedienung der Menüs (ui/keyNav.js): oberste Ebene, Hauptaktion, Kürzel. In der laufenden Etappe nur P = Pause.
+function navSnapshot() {
+  const rk = runScreens.open ? runScreens.kind : null;
+  return {
+    captured: input.captureKeys,
+    modal: !!uiRoot.querySelector('.modal'),
+    tutorialCard: tutorial.isOpen && tutorialView.mode === 'card',
+    keys: menus.keysOpen,
+    devMenu: devMenu.isOpen,
+    itemSheet: itemSheet.isOpen,
+    settings: menus.settingsOpen,
+    pause: state === 'stage' && paused && menus.pauseOpen,
+    run: rk,
+    pickerOpen: state === 'garage' && garage.pickerOpen,
+    state,
+    testResults: state === 'results' && !results.el.classList.contains('hidden'),
+    screen: rk ? `run:${rk}` : `${state}:${garage.tab}:${garage.pickerOpen}`,
+  };
+}
+function navRoot(layer) {
+  switch (layer) {
+    case 'modal': { const m = uiRoot.querySelectorAll('.modal'); return m[m.length - 1] || null; }
+    case 'tutorial': return tutorialView.q.card;
+    case 'keys': return menus.keys;
+    case 'dev': return devMenu.el;
+    case 'itemSheet': return itemSheet.el;
+    case 'settings': return menus.settings;
+    case 'pause': return menus.pause;
+    case 'run': return runScreens.el;
+    case 'picker': return garage.q.pick;
+    case 'garage': return garage.el;
+    case 'map': return mapScreen.el;
+    case 'results': return results.el;
+    default: return null;
+  }
+}
+const keyNav = new KeyNav({
+  snapshot: navSnapshot,
+  rootFor: navRoot,
+  onAction: (type, arg) => {
+    if (type === 'pause') pauseGame();
+    else if (type === 'keys') { sfx.click(); menus.openKeys(); }
+    else if (type === 'chassis') {
+      const b = garage.q[arg < 0 ? 'cprev' : 'cnext'];
+      if (b && b.offsetParent !== null) b.click();
+    }
+  },
+});
 
 // Ton darf erst nach der ersten Berührung starten
 window.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
@@ -1608,6 +1669,9 @@ window.__game = {
   get model() { return carModel; },
   get view() { return view; },
   input,
+  keyNav,
+  inputMode,
+  menus,
   tutorial,
   fxOverlay,
   sfx,

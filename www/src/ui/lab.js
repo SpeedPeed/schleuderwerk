@@ -3,6 +3,7 @@
 // Knoten-Zustände gesperrt / verfügbar / erforscht. Antippen → Detail unten (Freischaltungen, Voraussetzungen, Kosten,
 // „Erforschen“). Nur Anzeige – Regeln in garage/research.js. h: { onBuy(id) }
 import { el, fmt, show } from './dom.js';
+import { inputMode } from './inputMode.js';
 import { RESEARCH, BRANCHES, researchById, researchState, unlockList, researchProgress } from '../garage/research.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -93,7 +94,7 @@ export class LabPanel {
   renderDetail() {
     const q = this.q;
     const r = this.sel && researchById(this.sel);
-    if (!r) { q.detail.innerHTML = '<p class="small">Tippe einen Knoten an. Blaupausen 📘 gibt es für Elite-Etappen, Bosse und manche Ereignisse.</p>'; return; }
+    if (!r) { q.detail.innerHTML = `<p class="small">${inputMode.kbd ? 'Wähle einen Knoten (Tab/Pfeiltasten, Enter).' : 'Tippe einen Knoten an.'} Blaupausen 📘 gibt es für Elite-Etappen, Bosse und manche Ereignisse.</p>`; return; }
     const st = researchState(this.save, r);
     const ul = unlockList(r).map((u) => `<span class="chip">${u.icon} ${esc(u.text)}</span>`).join('');
     const req = r.requires.map((id) => {

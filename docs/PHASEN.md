@@ -630,11 +630,53 @@ Boss-Einblendung + Musik, Run-Sieg-Konfetti, Querformat-Hinweis, keine Konsolenf
 
 ---
 
+## PC-Version – eine Datei, Doppelklick, komplett per Tastatur
+
+**Was ist neu**
+- **Ein-Datei-Build** `npm run build:pc` (`tools/build-pc.mjs`, esbuild als devDependency): bündelt `www/src/main.js`
+  samt three.js aus `www/vendor` zu einem klassischen Skript und schreibt es mit `style.css`, Icon und Startbild
+  (data:-URLs) in **`dist/Schleuderwerk-PC.html`** (≈ 1,2 MB). Keine Modul-Importe, keine Import-Map, kein `fetch` –
+  läuft per Doppelklick (`file://`) in Chrome/Edge/Firefox, Spielstand im localStorage. `dist/` steht in `.gitignore`,
+  die Datei taugt als Release-Download. Der Bau prüft, dass keine externen Verweise übrig sind.
+- **Menüs per Tastatur** (`ui/keyNav.js`): Tab/Umschalt+Tab und Pfeiltasten bewegen einen gelben Fokus innerhalb der
+  obersten Ebene (Dialog → Hinweis → Tastenübersicht → Dev-Menü → Inventar → Einstellungen → Pause → Run-Overlay →
+  Teile-Auswahl → Garage/Karte), Enter/Leertaste drückt, **Enter ohne Markierung = Hauptaktion** (RUN STARTEN, LOS,
+  Weiter, Nehmen, Zur Garage …; bei echten Entscheidungen wie Item-Auswahl/Tankstelle wird nur markiert). Nach einem
+  Klick, der den Bildschirm neu zeichnet (Kaufen, Reservieren …), bleibt der Fokus auf demselben Knopf – Enter verlässt
+  also nicht versehentlich den Laden. Kürzel: Garage **Q/E** (ohne Markierung auch ←/→), Karte **Pfeiltasten** (nur
+  erreichbare Knoten, beim Öffnen ist der erste markiert) + **Enter**, **I** = Rucksack, Item-Auswahl **1/2/3** + **S**,
+  Ereignis/Tankstelle **1–4**, **K** = Tastenübersicht, **P** = Pause. In der laufenden Etappe gehören Leertaste,
+  Pfeile und Ziffern nur dem Fahrzeug (nur P/Esc wirken zusätzlich); gehaltene Tasten lösen in Menüs nichts aus.
+- **PC-Darstellung** (`ui/inputMode.js`, `html.kbd` bei `pointer: fine` bzw. ohne Touch): Tutorial-Hinweise in
+  Tastatur-Fassung (`textKbd`), Fähigkeits-Knöpfe mit Taste („1 · Leer“), Pause-Knopf mit „Esc“, Zielhilfe „Leertaste
+  halten = Kraft · ↑/↓ = Winkel · loslassen im grünen Bereich“, Ziffern an Item-/Ereignis-/Tankstellen-Knöpfen,
+  „drücken“ statt „tippen“. Im Querformat ab 900 px Breite: HUD in einer zentrierten Spalte (≤ 940 px), Item-Auswahl
+  und Läden dreispaltig, Kartenkopf in der Mitte; die Kamera rechnet unverändert mit dem ganzen Fenster.
+- **Tastenübersicht**: Pause-Menü und ⚙ Einstellungen → „⌨ Tastenbelegung“ (oder **K**), Esc schließt; Startbildschirm
+  und Garage zeigen am PC eine Zeile „Tastatur: …“. Beim Pausieren verschwindet ein offener Etappen-Hinweis (Toast).
+- Am Handy (Touch) ist alles wie vorher; die Tastatur-Bedienung funktioniert dort zusätzlich, ändert aber keine Texte.
+
+**Tests**: `tests/keynav.test.mjs` (Eingabe-Art, Ebenen-Reihenfolge, Hauptaktion je Bildschirm, Enter/Leertaste/Tab/Pfeile,
+keine Konflikte in der Etappe, Kürzel, räumliche Navigation, Tastatur-Tutorialtexte, Esc schließt die Übersicht).
+`npm run smoke:pc` (`tools/smoke-pc.mjs`): baut die Datei, öffnet sie per `file://` in 1366×768 und spielt nur mit der
+Tastatur (Hinweis weg, Q/E, Tab, RUN STARTEN, Knoten per Pfeil + Enter, LOS, Zielen/Abschuss/Neigen/Boost/1–2,
+P/K/Esc/Enter, Ergebnis, Item mit 1, zurück zur Karte, Esc → Garage, Neuladen = Spielstand da); prüft Konsolenfehler,
+Datei-Anfragen, HUD-Spalte und „Auto im Bild“. Fotos: `/tmp/sw-pc/`. `npm run smoke` bleibt grün.
+
+**So testest du es**: `npm install` → `npm run build:pc` → `dist/Schleuderwerk-PC.html` doppelklicken (F11 = Vollbild)
+→ nur mit der Tastatur einen Run spielen. Automatisch: `npm run smoke:pc` → „PC-RAUCHTEST BESTANDEN“.
+
+**Grenzen**: Die Labor-Knoten und langen Listen erreicht man per Tab/Pfeil (kein eigenes Kürzel je Knoten). Firefox
+legt den localStorage von `file://`-Seiten je nach Version/Einstellung pro Ordner bzw. gemeinsam für alle lokalen Dateien
+ab – zum Umziehen ⚙ → Exportieren/Importieren. „Spiel beenden?“ (Esc in der Garage) schließt keinen Browser-Tab.
+
+---
+
 ## Gesamtübersicht – was ist fertig (Version 1.0.0)
 
 | Bereich | Stand |
 |---|---|
-| Steuerung & Kamera | Halten/Ziehen/Loslassen-Abschuss, Neigen per Halten, Multi-Touch-Fähigkeiten, Tastatur; Kamera mit harter „Auto-im-Bild“-Garantie, Floating Origin |
+| Steuerung & Kamera | Halten/Ziehen/Loslassen-Abschuss, Neigen per Halten, Multi-Touch-Fähigkeiten, Tastatur (PC: auch alle Menüs); Kamera mit harter „Auto-im-Bild“-Garantie, Floating Origin |
 | Physik | adaptive Teilschritte, kein Durchtunneln, weiche Tempo-Grenze, Treibstoff/Hitze/Haltbarkeit, Loopings, Schluchten, Oberflächen, alle Regel-Schalter (Anhang A) |
 | Garage | 9 Chassis, 7 Slots × 3–5 Teile (Stufe 0–20), Fähigkeiten, Erfinder-Labor (≈ 45 Knoten), Lackiererei, Statistik |
 | Run | 3 Akte/Biome, verzweigte Karte, 8 Knotentypen, 6 Bosse (Intro, Warnungen, Musik), Abschleppen, Run-Ende mit Auszahlung |
@@ -644,6 +686,7 @@ Boss-Einblendung + Musik, Run-Sieg-Konfetti, Querformat-Hinweis, keine Konsolenf
 | Bedienung | Einstellungen (Ton, Lautstärken, Vibration, Wackeln, Zeitlupe, Grafik, Schatten, Tutorial), Zurück-Taste überall, Export/Import |
 | Technik | Logik ohne three.js/DOM (Node-Tests), alle Zahlen in `balance.js`, Spielstand v3 mit Migration, Dev-Menü mit Hilfe |
 | Qualität | 252 Unit-Tests, Rauchtest über 3 Akte + Abschluss-Rundgang in 3 Auflösungen, Balance-/Progressions-Simulatoren |
+| PC | eine HTML-Datei per Doppelklick (`npm run build:pc`), Tastatur-Bedienung überall, Tasten-Hinweise, HUD-Spalte im Querformat |
 | App | Capacitor-Android (Hochformat, Vollbild, Wachhalten, Haptik, Zurück-Taste), GitHub-Action → Release mit APK |
 
 ## Bekannte Grenzen
@@ -661,6 +704,6 @@ Boss-Einblendung + Musik, Run-Sieg-Konfetti, Querformat-Hinweis, keine Konsolenf
   Belohnung versehentlich verfällt.
 - Icon und Startbild sind die gezeichneten Platzhalter aus `tools/make_icons.py`; die App ist mit einem Debug-Schlüssel
   signiert (für den Play Store bräuchte es einen Release-Schlüssel und ein App-Bundle).
-- Querformat wird nur mit Hinweis abgefangen (die App selbst ist auf Hochformat fixiert); am PC funktioniert Querformat mit
-  Garage links/Liste rechts, ist aber nicht der Ziel-Modus.
+- Querformat wird am Handy nur mit Hinweis abgefangen (die App selbst ist auf Hochformat fixiert); am PC ist Querformat
+  der Normalfall (Garage: Fahrzeug links/Liste rechts, HUD-Spalte in der Mitte, siehe „PC-Version“).
 - Balance-Grenzen wie in Phase 6 beschrieben (Simulator-Modell, Schrott-Überschuss im Endgame).

@@ -7,7 +7,8 @@ Items mit Tags und Set-Boni, die sich gegenseitig auslösen – **Kettenreaktion
 Gratis-Boost → Kühlung → Tempo“. Drei Akte (Schrottplatz, Glutwüste, Gewittersteppe) mit je zwei Bossen, danach
 15 Schrottstufen für Profis. Zwischen den Runs: Teile verbessern, im Erfinder-Labor forschen, lackieren.
 
-Version **1.0.0** · Three.js r170 (lokal, offline) · native ES-Module ohne Build-Werkzeuge · Android-App über Capacitor.
+Version **1.0.0** · Three.js r170 (lokal, offline) · native ES-Module ohne Build-Werkzeuge · Android-App über Capacitor ·
+PC-Version als eine HTML-Datei (Doppelklick, komplett per Tastatur).
 
 📄 Design: [docs/V2-DESIGN.md](docs/V2-DESIGN.md) · Technik/Verträge: [docs/ARCHITEKTUR.md](docs/ARCHITEKTUR.md) ·
 Umbau-Stand & Testanleitung je Phase, was fertig ist, bekannte Grenzen: [docs/PHASEN.md](docs/PHASEN.md) ·
@@ -20,6 +21,8 @@ am Handy die angezeigte Adresse (z. B. `http://192.168.178.23:8137`) öffnen. Am
 (F12 → Geräte-Ansicht, z. B. 412 × 915). Beenden mit `Strg + C`.
 
 **Als App:** siehe [APK-ANLEITUNG.md](APK-ANLEITUNG.md) (automatisch über GitHub Actions oder lokal mit Android Studio).
+
+**Am PC:** siehe [Am PC spielen](#am-pc-spielen) – eine einzige HTML-Datei, Doppelklick genügt.
 
 Beim ersten Start führt ein **Tutorial** durch den ersten Run (kurze Hinweise, jeder nur einmal, überspringbar,
 in ⚙ Einstellungen zurücksetzbar).
@@ -41,8 +44,37 @@ Mehrere Finger gleichzeitig sind erlaubt. Unten links: ⛽ Treibstoff, 🌡 Hitz
 glüht rot, bei 100 % „ÜBERHITZT“ = 2 s Stillstand), 🔧 Haltbarkeit (gilt für den ganzen Run). Ist der Boden nicht
 im Bild, zeigt ein Pfeil die Höhe („Boden ↓ 340 m“).
 
-**Am PC:** Leertaste halten/loslassen = Abschuss · ↑/↓ beim Zielen = Winkel · Leertaste im Flug = Boost ·
-**1–4** = Fähigkeit 1–4 · ←/→ = neigen · Esc = zurück.
+**Am PC:** komplett mit der Tastatur spielbar – siehe [Am PC spielen](#am-pc-spielen).
+
+## Am PC spielen
+
+1. Einmalig bauen: `npm install`, dann `npm run build:pc` → **`dist/Schleuderwerk-PC.html`** (≈ 1,2 MB, alles in einer
+   Datei: Spiel, three.js, Stile, Icon, Startbild). Die Datei eignet sich auch als Release-Download.
+2. **Doppelklick** auf `Schleuderwerk-PC.html` – sie startet ohne Webserver in Chrome, Edge oder Firefox (`file://`).
+   Der Spielstand liegt im Browser (localStorage) und bleibt beim nächsten Doppelklick erhalten – bitte immer
+   denselben Browser und dieselbe Datei/denselben Ordner nehmen; Sicherung über ⚙ → Exportieren.
+3. Vollbild: **F11**. Mit Maus/Tastatur zeigt das Spiel automatisch Tasten statt Touch-Hinweisen (Tutorial, HUD,
+   Fähigkeits-Knöpfe mit Ziffer, Zielhilfe), im Querformat sitzt das HUD in einer Spalte in der Bildmitte.
+
+| Wo | Taste | Wirkung |
+|---|---|---|
+| Abschuss | **Leertaste halten** / loslassen | Kraft laden – loslassen im **grünen Bereich** = perfekt |
+| Abschuss | **↑ / ↓** | Winkel steiler / flacher |
+| Flug | **← / →** | Nase hoch / Nase runter |
+| Flug | **Leertaste halten** | Boost (die 🚀-Fähigkeit) |
+| Flug | **1 – 4** | Fähigkeit 1–4 (halten bzw. drücken; die Taste steht am Knopf) |
+| Etappe | **Esc** / **P** | Pause (Enter/P = weiter) |
+| Menüs | **Tab** / **Umschalt+Tab**, **Pfeiltasten** | gelb markierten Knopf bzw. Karte wechseln |
+| Menüs | **Enter** / **Leertaste** | markierten Knopf drücken |
+| Menüs | **Enter** (nichts markiert) | Hauptaktion: RUN STARTEN, LOS, Weiter, Nehmen, Zur Garage … |
+| überall | **Esc** | zurück / schließen (wie die Zurück-Taste am Handy) |
+| überall | **K** | Tastenübersicht (auch im Pause-Menü und in ⚙ → „⌨ Tastenbelegung“) |
+| Garage | **Q / E** (ohne Markierung auch **← / →**) | Chassis wechseln |
+| Karte | **Pfeiltasten**, **Enter** | erreichbaren Knoten wählen / betreten · **I** = Rucksack |
+| Item-Auswahl | **1 / 2 / 3**, **S** | Item nehmen / überspringen |
+| Ereignis, Tankstelle | **1 – 4** | Antwort wählen |
+
+Zum Entwickeln geht weiterhin `python tools/serve.py` → `http://localhost:8137` (gleiche Tastatur-Bedienung).
 
 **Geheim:** ⚙ Einstellungen → **7× schnell auf die Versionsnummer** tippen = Dev-Menü (mit eingebauter Hilfe).
 
@@ -93,11 +125,14 @@ www/                        ← das komplette Spiel (wird in die App gepackt)
     audio/sfx.js            alle Klänge per Web Audio (Effekte- und Musik-Bus)
     save/save.js            Spielstand v3, Migration, Export/Import
     platform/               input.js (Multi-Touch, Tastatur), platform.js (Vibration, Wachhalten, Zurück-Taste, Pause)
+    ui/inputMode.js, keyNav.js  PC: Maus/Tastatur erkennen (html.kbd, Tasten-Texte) und Menüs per Tastatur bedienen
 tests/                      node --test (≈ 250 Tests): Physik, Kamera, Trigger-Engine, Regeln, Items, Shops, Forschung,
                             Schrottstufen, Progression, Spielstand, Tutorial/Einstellungen/Zurück-Taste (ui.test.mjs)
 tools/
   smoke.mjs                 Playwright-Rauchtest (ganzer Run über 3 Akte, alle Knoten, Bosse, Bausteine …)
   smoke-final.mjs           Abschluss-Rundgang: Neustart mit Tutorial in 360×780 / 412×915 / 430×932, alle Bildschirme
+  build-pc.mjs              PC-Version: bündelt alles (esbuild) in EINE Datei dist/Schleuderwerk-PC.html (Doppelklick)
+  smoke-pc.mjs              Rauchtest der PC-Datei per file:// in 1366×768, nur mit Tastatur
   sim/                      Balance-Simulatoren: bot, calibrate (Zielmarken), items (Item-Wirkung), progression (Spielzeit)
   validateContent.mjs       Prüfer der Inhaltsdaten
   serve.py                  Webserver zum Testen am Handy
@@ -118,6 +153,8 @@ three.js noch das DOM und laufen deshalb auch in Node (Tests, Simulatoren).
 npm test                          # node --test tests/ – alle Logik-Tests (≈ 15 s)
 npm run smoke                     # Rauchtest im echten Browser (Chromium + Software-WebGL, ≈ 15–20 min)
 node tools/smoke-final.mjs 412    # nur der Abschluss-Rundgang in einer Auflösung (≈ 2 min)
+npm run build:pc                  # PC-Version bauen → dist/Schleuderwerk-PC.html
+npm run smoke:pc                  # PC-Version per file:// nur mit Tastatur spielen (≈ 2 min, Fotos in /tmp/sw-pc/)
 node tools/validateContent.mjs    # Inhaltsdaten prüfen (läuft auch in npm test)
 node tools/sim/calibrate.mjs      # Zielmarken je Biom/Etage (--apply schreibt sie in biomes.js)
 node tools/sim/items.mjs          # Item- und Set-Wirkung, ganze Runs

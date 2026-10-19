@@ -1,5 +1,6 @@
 import { el, show, confirmDialog } from './dom.js';
 import { GAME_VERSION, CONTROLS } from '../data/balance.js';
+import { keyHelpHtml } from './inputMode.js';
 
 // Pause-Menü und Einstellungen (inkl. Spielstand exportieren/importieren).
 export class Menus {
@@ -11,11 +12,14 @@ export class Menus {
       <div class="btn-col">
         <button class="btn btn-primary" data-a="resume">▶ Weiter</button>
         <button class="btn btn-secondary" data-a="settings">⚙ Einstellungen</button>
+        <button class="btn btn-secondary kbd-only" data-a="keys">⌨ Tastenbelegung</button>
         <button class="btn btn-danger" data-a="quit">⏹ Testfahrt beenden</button>
-      </div></div></div>`);
+      </div>
+      <p class="small kbd-only pause-keys">Esc / P / Enter = weiter · K = Tastenbelegung</p></div></div>`);
     this.pause.querySelector('[data-a=resume]').onclick = h.onResume;
     this.pause.querySelector('[data-a=settings]').onclick = () => this.openSettings();
     this.pause.querySelector('[data-a=quit]').onclick = h.onQuit;
+    this.pause.querySelector('[data-a=keys]').onclick = () => this.openKeys();
     root.appendChild(this.pause);
 
     this.settings = el(`<div id="settings" class="overlay hidden"><div class="card">
@@ -40,6 +44,8 @@ export class Menus {
       <div class="toggles">
         <label><input type="checkbox" data-k="shadows"> 🌗 Schatten</label>
       </div>
+      <h3 class="kbd-only">Tastatur</h3>
+      <div class="btn-col kbd-only"><button class="btn btn-secondary" data-a="keys">⌨ Tastenbelegung</button></div>
       <h3>Tutorial</h3>
       <p class="small" data-id="tutTxt"></p>
       <div class="btn-col"><button class="btn btn-secondary" data-a="tutReset">🎓 Hinweise wieder zeigen</button></div>
@@ -56,10 +62,21 @@ export class Menus {
         <button class="btn btn-danger small-btn" data-a="reset">🗑 Spielstand löschen</button>
         <button class="btn btn-primary" data-a="close">Fertig</button>
       </div>
-      <div class="version" data-id="version">Schleuderwerk v${GAME_VERSION}</div>
+      <div class="version" data-id="version">Schleuderwerk v${GAME_VERSION}${typeof window !== 'undefined' && window.SW_PC_BUILD ? ' · PC-Version' : ''}</div>
     </div></div>`);
     root.appendChild(this.settings);
     const s = this.settings;
+    s.querySelector('[data-a=keys]').onclick = () => this.openKeys();
+
+    // Tastenbelegung (PC): eigene Ebene über Pause/Einstellungen
+    this.keys = el(`<div id="keys" class="overlay hidden"><div class="card keys-card">
+      <h2>⌨ Tastenbelegung</h2>
+      ${keyHelpHtml()}
+      <div class="btn-row"><button class="btn btn-primary" data-a="close">Fertig</button></div>
+    </div></div>`);
+    this.keys.querySelector('[data-a=close]').onclick = () => this.closeKeys();
+    this.keys.addEventListener('click', (e) => { if (e.target === this.keys) this.closeKeys(); });
+    root.appendChild(this.keys);
     this.text = s.querySelector('[data-id=text]');
     this.msg = s.querySelector('[data-id=msg]');
     s.querySelectorAll('input[data-k]').forEach((i) => {
@@ -162,6 +179,11 @@ export class Menus {
   }
 
   closeSettings() { show(this.settings, false); }
+
+  openKeys() { show(this.keys, true); this.keys.querySelector('.card').scrollTop = 0; }
+  closeKeys() { show(this.keys, false); }
+  get keysOpen() { return !this.keys.classList.contains('hidden'); }
+  get pauseOpen() { return !this.pause.classList.contains('hidden'); }
 
   get settingsOpen() { return !this.settings.classList.contains('hidden'); }
 }

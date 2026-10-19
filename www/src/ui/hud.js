@@ -2,6 +2,7 @@ import { el, fmt, show } from './dom.js';
 import { KOMBO, RESOURCES, SOFTCAPS, ITEMS } from '../data/balance.js';
 import { DEG } from '../core/math.js';
 import { itemBarHtml, esc } from './items.js';
+import { abilityKeyLabel, modeLabel } from './inputMode.js';
 
 // Höchstens so viele Fähigkeits-Slots wie die Soft-Caps erlauben, plus die Spezialfähigkeit des Chassis
 export const MAX_ABILITY_BUTTONS = SOFTCAPS.abilitySlots.max + 1;
@@ -14,12 +15,12 @@ export const MAX_ABILITY_BUTTONS = SOFTCAPS.abilitySlots.max + 1;
 export class Hud {
   constructor(root, { onPause }) {
     const abBtns = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) =>
-      `<button class="ability-btn ab-${i} hidden" data-id="ab${i}" aria-label="Fähigkeit ${i + 1}"><span data-id="abi${i}">🚀</span><i class="ab-key">${i + 1}</i></button>`).join('');
+      `<button class="ability-btn ab-${i} hidden" data-id="ab${i}" aria-label="Fähigkeit ${i + 1}"><span data-id="abi${i}">🚀</span><i class="ab-key" data-id="abk${i}">${i + 1}</i></button>`).join('');
     this.el = el(`<div id="hud" class="hidden">
       <div class="tilt-zone tz-left hidden" data-id="tzl"><span>↺</span></div>
       <div class="tilt-zone tz-right hidden" data-id="tzr"><span>↻</span></div>
       <div class="hud-top">
-        <button class="icon-btn" data-id="pause" aria-label="Pause">❚❚</button>
+        <button class="icon-btn hud-pause" data-id="pause" aria-label="Pause">❚❚<i class="key-badge kbd-only">Esc</i></button>
         <div class="hud-dist"><span data-id="dist">0</span><small> m</small></div>
         <div class="hud-bolts">🔩 <span data-id="bolts">0</span></div>
       </div>
@@ -52,6 +53,7 @@ export class Hud {
           <div class="pm-fill" data-id="fill"></div>
         </div>
         <div class="aim-angle" data-id="angle">32°</div>
+        <div class="aim-keys kbd-only"><b>Leertaste halten</b> = Kraft · <b>↑/↓</b> = Winkel · <b>loslassen</b> im grünen Bereich</div>
         <div class="weather" data-id="weather"></div>
       </div>
     </div>`);
@@ -125,7 +127,8 @@ export class Hud {
   // abilities: Fähigkeits-Definitionen in Knopf-Reihenfolge.
   // goal: { target, medals: {bronze, silver?, gold}, medalList } → Zielbalken mit Medaillen-Marken
   // items: { inventory, slots, napped } → Item-Leiste
-  show(on, { best = 0, weather = null, abilities = [], goal = null, items = null } = {}) {
+  // boostSlot: Fähigkeit der Leertaste (Tasten-Beschriftung am PC)
+  show(on, { best = 0, weather = null, abilities = [], goal = null, items = null, boostSlot = 0 } = {}) {
     show(this.el, on);
     this.last = {};
     this.feed = [];
@@ -164,7 +167,8 @@ export class Hud {
       b.classList.remove('active', 'off', 'held', 'special');
       if (!a) continue;
       this.q[`abi${i}`].textContent = a.icon;
-      b.setAttribute('aria-label', `${a.name} (${a.mode === 'hold' ? 'halten' : 'tippen'})`);
+      b.setAttribute('aria-label', `${a.name} (${modeLabel(a.mode)})`);
+      this.q[`abk${i}`].textContent = abilityKeyLabel(i, boostSlot);
       b.classList.toggle('special', !!a.chassis);
       b.dataset.ability = a.id;
     }

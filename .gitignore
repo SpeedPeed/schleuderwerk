@@ -6,3 +6,6 @@ android/
 # lokale Werkzeug-Einstellungen
 .claude/
 __pycache__/
+
+# PC-Version (npm run build:pc)
+dist/

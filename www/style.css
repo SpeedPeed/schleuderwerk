@@ -161,7 +161,7 @@ html, body {
   position: absolute; right: 2px; top: 0; font-style: normal; font-size: 10px; font-weight: 900;
   background: rgba(20,24,38,.8); border-radius: 6px; padding: 1px 4px; color: var(--muted); pointer-events: none;
 }
-@media (pointer: coarse) { .ability-btn .ab-key { display: none; } }
+html:not(.kbd) .ability-btn .ab-key { display: none; }   /* Tasten-Beschriftung nur am PC (ui/inputMode.js) */
 .ability-btn.held span, .ability-btn.active span { background: radial-gradient(circle at 50% 40%, #ff9d4f, #c4401c); transform: scale(.95); }
 .ability-btn.special.held span, .ability-btn.special.active span { background: radial-gradient(circle at 50% 40%, #7ff0ff, #1d7d96); }
 .ability-btn.off { filter: grayscale(1) brightness(.6); }
@@ -896,4 +896,69 @@ textarea {
 /* Bewegung reduzieren (Systemeinstellung) */
 @media (prefers-reduced-motion: reduce) {
   #fxflash.go, #veil.go, .rc-boss, .tut-target, #confetti.go i { animation: none !important; }
+}
+
+/* ---------- PC-Version: Tastatur & Maus (html.kbd, ui/inputMode.js + ui/keyNav.js) ---------- */
+html:not(.kbd) .kbd-only { display: none !important; }
+html.kbd .touch-only { display: none !important; }
+/* deutlich sichtbarer Tastatur-Fokus */
+html.kbd :focus { outline: none; }
+.kf, html.kbd :focus-visible {
+  outline: 3px solid var(--accent-2) !important; outline-offset: 3px;
+  box-shadow: 0 0 0 6px rgba(255, 210, 63, .28), 0 0 18px rgba(255, 210, 63, .55) !important;
+}
+.slot-row.kf, .pcard.kf { outline-offset: -2px; }
+.mnode.kf { transform: translate(-50%, -50%) scale(1.15); z-index: 2; }
+.mnode.kf::before {
+  content: attr(aria-label); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 10px;
+  white-space: nowrap; font-size: 12px; font-weight: 900; color: #2a1300; background: var(--accent-2);
+  padding: 3px 8px; border-radius: 8px; pointer-events: none;
+}
+.key-badge, .ability-btn .ab-key { white-space: nowrap; }
+.hud-pause { position: relative; }
+.key-badge {
+  position: absolute; right: -6px; bottom: -6px; font-style: normal; font-size: 10px; font-weight: 900; line-height: 1;
+  background: rgba(20,24,38,.9); color: var(--muted); border-radius: 6px; padding: 3px 4px; pointer-events: none;
+}
+.ability-btn .ab-key { font-size: 11px; padding: 2px 5px; color: #fff; }
+.aim-keys {
+  position: absolute; left: 50%; bottom: calc(var(--safe-bottom) + 18px); transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 24px); text-align: center; font-size: 15px; font-weight: 700; line-height: 1.35;
+  background: rgba(20,24,38,.78); padding: 8px 14px; border-radius: 12px; text-shadow: 0 1px 0 rgba(0,0,0,.4);
+}
+.aim-keys b { color: var(--accent-2); }
+html.kbd .tz-left span::after { content: " ←"; font-size: 32px; }
+html.kbd .tz-right span::before { content: "→ "; font-size: 32px; }
+.g-keys { margin-top: 6px; text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); line-height: 1.3; }
+.boot-keys { max-width: min(92vw, 640px); text-align: center; color: #fff; font-size: 13px; font-weight: 700; line-height: 1.4;
+  background: rgba(20,24,38,.7); padding: 8px 14px; border-radius: 12px; }
+.pause-keys { text-align: center; margin-top: 12px; }
+.tut-ok small { font-size: 11px; opacity: .7; font-weight: 800; }
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 3px 7px; border-radius: 7px; font: inherit; font-size: 13px; font-weight: 900;
+  background: #3a4260; color: #fff; box-shadow: 0 2px 0 rgba(0,0,0,.4); text-align: center; white-space: nowrap;
+}
+.keys-card { width: min(100%, 520px); }
+.keys-card h3 { color: var(--accent-2); }
+.kh-rows { display: flex; flex-direction: column; gap: 6px; }
+.kh-row { display: grid; grid-template-columns: minmax(150px, 40%) 1fr; gap: 10px; align-items: center; font-size: 14px; }
+.kh-row kbd { justify-self: start; }
+
+/* Querformat am großen Bildschirm (PC): HUD in einer zentrierten Spalte statt über die ganze Breite verteilt.
+   Die Kamera rechnet weiter mit dem ganzen Fenster („Auto im Bild“-Garantie unverändert). */
+@media (min-aspect-ratio: 1/1) and (min-width: 900px) {
+  html.kbd #hud { left: calc(50% - min(50vw, 470px)); right: calc(50% - min(50vw, 470px)); }
+  html.kbd #hud .tilt-zone { position: fixed; width: 50vw; }
+  html.kbd .goal { width: min(78%, 420px); }
+}
+.btn kbd, .st-opt kbd, .ev-opt kbd { font-size: 12px; padding: 1px 6px; margin-left: 4px; background: rgba(20,24,38,.55); box-shadow: none; vertical-align: 1px; }
+.st-opt kbd, .ev-opt kbd { margin: 0 4px 0 0; }
+/* Querformat (PC): Item-Auswahl und Läden nebeneinander statt einer langen Liste; Karte in einer Spalte */
+@media (min-aspect-ratio: 1/1) and (min-width: 900px) {
+  html.kbd .run-card.rc-choice, html.kbd .run-card.rc-dealer, html.kbd .run-card.rc-blackmarket { width: min(100%, 1000px); }
+  html.kbd .rc-choice .ch-cards, html.kbd .rc-dealer .ch-cards, html.kbd .rc-blackmarket .ch-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+  html.kbd .rc-choice .ch-cards { align-items: stretch; }
+  html.kbd .rc-choice .ch-cards .icard { display: flex; flex-direction: column; }
+  html.kbd .rc-choice .ch-cards .ic-pick { margin-top: auto; }
+  html.kbd #map .map-head, html.kbd #map .map-res, html.kbd #map .map-items { width: min(100%, 760px); align-self: center; }
 }

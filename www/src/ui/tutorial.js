@@ -11,27 +11,33 @@
 // verschwindet nach TUTORIAL.toastTime Sekunden oder per Antippen).
 import { el, show } from './dom.js';
 import { TUTORIAL } from '../data/balance.js';
+import { inputMode } from './inputMode.js';
 
 export const TUTORIAL_STEPS = {
   garage: {
     icon: '🔧', title: 'Deine Garage', mode: 'card', place: 'top', target: '#garage [data-id=start]',
     text: 'Hier baust du deine Kiste: ◀ ▶ wählt das Chassis, darunter rüstest du Teile aus und verbesserst sie mit ⚙ Schrott. Unten wählst du zwei Fähigkeiten – dann <b>RUN STARTEN</b>!',
+    textKbd: 'Hier baust du deine Kiste: <b>Q/E</b> wechselt das Chassis, mit <b>Tab/Pfeiltasten</b> wählst du Teile und Fähigkeiten, <b>Enter</b> drückt den markierten Knopf. Ohne Auswahl startet <b>Enter</b> den Run – RUN STARTEN!',
   },
   map: {
     icon: '🗺', title: 'Die Karte', mode: 'card', place: 'top', target: '#map .mnode.reach',
     text: 'Tippe einen <b>pulsierenden Knoten</b> an. ⚑ Etappen bringen Items, 🛒 Händler und 🔧 Werkbank helfen beim Bauen. Ganz oben wartet der Boss des Akts.',
+    textKbd: 'Wähle mit den <b>Pfeiltasten</b> einen pulsierenden Knoten, <b>Enter</b> betritt ihn. ⚑ Etappen bringen Items, 🛒 Händler und 🔧 Werkbank helfen beim Bauen – ganz oben wartet der Boss.',
   },
   goal: {
     icon: '🏁', title: 'Zielmarke & Medaillen', mode: 'card', place: 'top', target: '#runui .ri-target',
     text: 'Erreichst du die Zielmarke, gibt es 🥉 Bronze – Silber und Gold bringen mehr. Schaffst du sie nicht, wirst du <b>abgeschleppt</b>: das kostet Haltbarkeit, dann darfst du nochmal.',
+    textKbd: 'Erreichst du die Zielmarke, gibt es 🥉 Bronze – Silber und Gold bringen mehr. Schaffst du sie nicht, wirst du <b>abgeschleppt</b> und darfst nochmal. <b>Enter</b> = LOS!',
   },
   launch: {
     icon: '🎯', title: 'Abschuss', mode: 'toast', place: 'top', target: '#hud .power-meter',
     text: '<b>Finger irgendwo halten</b> – die Kraft pendelt. Hoch/runter ziehen ändert den Winkel. <b>Loslassen im grünen Bereich!</b>',
+    textKbd: '<b>Leertaste halten</b> = Kraft (pendelt), <b>↑/↓</b> = Winkel. <b>Loslassen im grünen Bereich!</b>',
   },
   fly: {
     icon: '🪂', title: 'Fliegen', mode: 'toast', place: 'top', target: '#hud .ab-0',
     text: '<b>Links halten</b> = Nase hoch, <b>rechts halten</b> = Nase runter – möglichst gerade landen. Die runden Knöpfe unten rechts sind deine Fähigkeiten (🚀 Boost halten).',
+    textKbd: '<b>←</b> = Nase hoch, <b>→</b> = Nase runter – möglichst gerade landen. <b>Leertaste halten</b> = 🚀 Boost, <b>1–4</b> = deine Fähigkeiten.',
   },
   resources: {
     icon: '⛽', title: 'Treibstoff, Hitze, Haltbarkeit', mode: 'toast', place: 'top', target: '#hud .res-bars',
@@ -40,10 +46,12 @@ export const TUTORIAL_STEPS = {
   items: {
     icon: '🎁', title: 'Items & Tags', mode: 'card', place: 'bottom', target: '#runui .ch-cards',
     text: 'Wähle ein Item. Die farbigen Chips sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei. Im 🎒 Rucksack siehst du deine Sets.',
+    textKbd: 'Nimm ein Item mit <b>1/2/3</b> (<b>S</b> = überspringen). Die farbigen Chips sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei.',
   },
   shop: {
     icon: '🛒', title: 'Schrotthändler', mode: 'card', place: 'bottom', target: '#runui .sh-bar',
     text: 'Bezahlt wird mit 🔩 Schrauben aus dem Run. ↻ würfelt das Angebot neu, 📌 reserviert ein Item für den nächsten Händler. <b>Weiter ▶</b> verlässt den Laden.',
+    textKbd: 'Bezahlt wird mit 🔩 Schrauben aus dem Run. ↻ würfelt neu, 📌 reserviert ein Item für den nächsten Händler (Tab/Pfeile wählen, Enter kauft). <b>Enter</b> ohne Auswahl = Weiter ▶.',
   },
   workbench: {
     icon: '🔧', title: 'Werkbank', mode: 'card', place: 'bottom', target: '#runui .wb-opts',
@@ -52,9 +60,13 @@ export const TUTORIAL_STEPS = {
   lab: {
     icon: '🧪', title: 'Erfinder-Labor', mode: 'card', place: 'bottom', target: '#garage [data-tab=lab]',
     text: 'Dein erster Run ist vorbei! Im Reiter <b>🧪 Labor</b> erforschst du mit 📘 Blaupausen neue Items, Teile, Chassis und Kartenknoten.',
+    textKbd: 'Dein erster Run ist vorbei! Im Reiter <b>🧪 Labor</b> (mit Tab erreichbar) erforschst du mit 📘 Blaupausen neue Items, Teile, Chassis und Kartenknoten.',
   },
 };
 export const TUTORIAL_ORDER = Object.keys(TUTORIAL_STEPS);
+
+// Text eines Hinweises: am PC (Tastatur) die Variante textKbd, falls vorhanden
+export const stepText = (step, kbd = false) => (kbd && step.textKbd) || step.text;
 
 // ---------- reine Logik auf dem Spielstand ----------
 function tut(save) {
@@ -168,9 +180,9 @@ export class TutorialView {
         <p class="tut-text" data-id="text"></p>
         <div class="tut-btns" data-id="btns">
           <button class="btn btn-secondary tut-skip" data-a="skip">Alle Hinweise aus</button>
-          <button class="btn btn-primary tut-ok" data-a="ok">Verstanden ✔</button>
+          <button class="btn btn-primary tut-ok" data-a="ok">Verstanden ✔<small class="kbd-only"> Enter</small></button>
         </div>
-        <div class="tut-tap" data-id="tap">antippen zum Schließen</div>
+        <div class="tut-tap" data-id="tap"><span class="touch-only">antippen zum Schließen</span><span class="kbd-only">verschwindet von selbst · Esc schließt</span></div>
       </div>
     </div>`);
     root.appendChild(this.el);
@@ -190,7 +202,7 @@ export class TutorialView {
     q.icon.textContent = step.icon;
     q.title.textContent = step.title;
     q.count.textContent = `${n}/${total}`;
-    q.text.innerHTML = step.text;
+    q.text.innerHTML = stepText(step, inputMode.kbd);
     this.el.className = `mode-${step.mode} place-${step.place || 'bottom'}`;
     this.el.dataset.step = id;
     show(q.scrim, step.mode !== 'toast');

@@ -1,4 +1,5 @@
 import { el, fmt, short, show } from './dom.js';
+import { inputMode, modeLabel } from './inputMode.js';
 import { GARAGE } from '../data/balance.js';
 import { CHASSIS, ABILITIES, SLOTS, SLOT_INFO, partsForSlot, partById, abilityById, isSlotAbility, researchLabel, chassisById } from '../data/index.js';
 import { chassisState, partState, abilityState, PAINTS, paintState } from '../garage/garage.js';
@@ -86,6 +87,7 @@ export class GarageScreen {
           <button class="btn btn-danger g-giveup hidden" data-id="giveup">Aufgeben</button>
           <button class="btn btn-start" data-id="start">RUN STARTEN ▶</button>
         </div>
+        <div class="g-keys kbd-only">⌨ Enter = Start · Q/E = Chassis · Tab/Pfeile = auswählen · Esc = zurück · K = alle Tasten</div>
       </div>
       <div class="g-pick hidden" data-id="pick">
         <div class="g-pick-sheet">
@@ -276,7 +278,7 @@ export class GarageScreen {
     let html = '';
     for (let i = 0; i < slots; i++) {
       const a = abilityById(g.abilities[i]);
-      html += `<button class="ab-chip" data-i="${i}">${a ? `${a.icon} ${esc(a.name)}` : '＋ leer'}<small>Slot ${i + 1}${a ? ` · ${a.mode === 'hold' ? 'halten' : 'tippen'}` : ''}</small></button>`;
+      html += `<button class="ab-chip" data-i="${i}">${a ? `${a.icon} ${esc(a.name)}` : '＋ leer'}<small>Slot ${i + 1}${a ? ` · ${modeLabel(a.mode)}` : ''}</small></button>`;
     }
     if (cur.special) {
       const a = abilityById(cur.special);
@@ -358,7 +360,7 @@ export class GarageScreen {
     const sel = this.paintSel === undefined ? cur : this.paintSel;
     const card = (id, name, colors, inner, extra = '') => `<div class="pcard paint ${sel === id ? 'sel' : ''} ${cur === id ? 'equipped' : ''} ${extra}" data-paint="${id === null ? '' : id}">
         <div class="pc-top"><span class="pt-swatch" style="--b:${colors[0]};--a:${colors[1]}"></span><div class="pc-name">${esc(name)}</div></div>${inner}</div>`;
-    let html = `<p class="small">Rein optisch – Lackierungen gelten für alle Chassis. Antippen = Vorschau am Modell.</p>`;
+    let html = `<p class="small">Rein optisch – Lackierungen gelten für alle Chassis. ${inputMode.kbd ? 'Auswählen (Enter)' : 'Antippen'} = Vorschau am Modell.</p>`;
     html += card(null, 'Original (Chassis-Farben)', ['#c8843a', '#d94a3a'], `<div class="pc-btns">${cur === null ? '<span class="pc-tag">✓ Angelegt</span>' : '<button class="btn btn-primary small-btn" data-act="equip">Anlegen</button>'}</div>`);
     for (const p of PAINTS) {
       const st = paintState(save, p);
@@ -508,7 +510,7 @@ export class GarageScreen {
       q.picklist.innerHTML = ABILITIES.filter(isSlotAbility).map((a) => {
         const st = abilityState(this.save, a);
         const here = this.save.garage.abilities[idx] === a.id;
-        const costs = [a.mode === 'hold' ? 'halten' : 'tippen'];
+        const costs = [modeLabel(a.mode)];
         // Der Boost kostet laut Fahrzeugwerten (boostFuel/boostHeat), alle anderen laut Fähigkeit
         const boost = isBoostAbility(a);
         const fuel = boost ? this.loadout.stats.boostFuel : a.fuel;

@@ -178,7 +178,7 @@ export class RunScreens {
       <div class="ri-sub">${esc(sub)}${d.remaining > 1 ? ` · noch ${d.remaining - 1} weitere Auswahl` : ''}</div>
       <button class="ch-inv" data-a="inv">🎒 ${d.inventory.length}/${d.slots} ${d.inventory.length >= d.slots ? '· voll – Nehmen ersetzt ein Item' : ''}</button>
       <div class="ch-cards">${cards}</div>
-      <div class="btn-row"><button class="btn btn-secondary" data-a="skip">${choice.skipBolts ? `Überspringen: +${fmt(choice.skipBolts)} 🔩` : 'Ablehnen'}</button></div>`);
+      <div class="btn-row"><button class="btn btn-secondary" data-a="skip">${choice.skipBolts ? `Überspringen: +${fmt(choice.skipBolts)} 🔩` : 'Ablehnen'} <kbd class="kbd-only">S</kbd></button></div>`);
     this.card.querySelectorAll('[data-pick]').forEach((b) => { b.onclick = () => onPick(Number(b.dataset.pick)); });
     this.bind('[data-a=skip]', onSkip);
     this.bind('[data-a=inv]', onInventory);
@@ -204,7 +204,7 @@ export class RunScreens {
     this.present('station', `
       <div class="ri-kind" style="--c:${NODE_TYPES.station.color}">⛽ Tankstelle</div>
       <p class="ri-desc">Eine Wahl für den Rest des Runs. Haltbarkeit: ${fmt(Math.ceil(d.durability))} / ${fmt(d.durabilityMax)}</p>
-      <div class="st-opts">${options.map((o) => `<button class="st-opt" data-choice="${o.id}"><span>${o.icon}</span><b>${esc(o.name)}</b><small>${esc(o.desc)}</small></button>`).join('')}</div>`);
+      <div class="st-opts">${options.map((o, i) => `<button class="st-opt" data-choice="${o.id}"><span>${o.icon}</span><b><kbd class="kbd-only">${i + 1}</kbd> ${esc(o.name)}</b><small>${esc(o.desc)}</small></button>`).join('')}</div>`);
     this.card.querySelectorAll('[data-choice]').forEach((b) => { b.onclick = () => onChoose(b.dataset.choice); });
   }
 

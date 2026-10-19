@@ -2,6 +2,7 @@
 // Platz-Auswahl (Ersetzen, Fähigkeits-Slot, „Fundstück wählen“). Zeichnet in das Overlay von ui/runScreens.js
 // (runScreens.present). Nur Anzeige – die Regeln stehen in shops/*.js, main.js verbindet beides.
 import { fmt } from './dom.js';
+import { modeLabel } from './inputMode.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { abilityById } from '../data/index.js';
 import { itemById } from '../data/items.js';
@@ -43,7 +44,7 @@ export class ShopScreens {
     }).join('');
     const a = v.ability;
     const ab = a ? `<div class="pcard sh-ability ${a.sold ? 'sold' : ''}">
-        <div class="pc-top"><span class="pc-icon">${a.def.icon}</span><div class="pc-name">${esc(a.def.name)} <small>Fähigkeit · ${a.def.mode === 'hold' ? 'halten' : 'tippen'}</small></div></div>
+        <div class="pc-top"><span class="pc-icon">${a.def.icon}</span><div class="pc-name">${esc(a.def.name)} <small>Fähigkeit · ${modeLabel(a.def.mode)}</small></div></div>
         <div class="pc-desc">${esc(a.def.desc)}</div>
         <div class="pc-desc small">Ersetzt einen deiner Fähigkeits-Slots bis zum Run-Ende.</div>
         <div class="sh-btns">${a.sold ? '<span class="pc-tag">✓ Gekauft</span>' : `<button class="btn btn-buy ${a.canAfford ? '' : 'cant'}" data-a="ability">Kaufen 🔩 ${fmt(a.price)}</button>`}</div>
@@ -116,7 +117,7 @@ export class ShopScreens {
     let body;
     if (!v.result) {
       body = `<div class="ev-opts">${v.options.map((o) => `<button class="ev-opt ${o.available ? '' : 'off'}" data-opt="${o.index}" ${o.available ? '' : 'disabled'}>
-          <b>${esc(o.label)}</b>${o.costText ? `<span class="ev-cost">Kosten: ${esc(o.costText)}</span>` : ''}${o.hint ? `<small>${esc(o.hint)}</small>` : ''}
+          <b><kbd class="kbd-only">${o.index + 1}</kbd> ${esc(o.label)}</b>${o.costText ? `<span class="ev-cost">Kosten: ${esc(o.costText)}</span>` : ''}${o.hint ? `<small>${esc(o.hint)}</small>` : ''}
           ${o.available ? '' : `<span class="ev-cost bad">${{ bolts: 'Nicht genug Schrauben', hp: 'Zu wenig Haltbarkeit', fuel: 'Zu wenig Treibstoff', item: 'Kein Fundstück dabei' }[o.reason] || 'Nicht möglich'}</span>`}
         </button>`).join('')}</div>`;
     } else {

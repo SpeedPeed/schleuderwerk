@@ -8,6 +8,8 @@
   <meta name="description" content="Schleuderwerk – baue aus Schrott eine verrückte Kiste und schieß sie über drei Akte.">
   <title>Schleuderwerk</title>
   <link rel="stylesheet" href="style.css">
+  <script>/* PC (Maus/Tastatur): Tastatur-Hinweise zeigen – ui/inputMode.js prüft das später genauso */
+    if ((window.matchMedia && matchMedia('(pointer: fine)').matches) || !(navigator.maxTouchPoints > 0 || 'ontouchstart' in window)) document.documentElement.classList.add('kbd');</script>
   <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
 <body>
@@ -20,6 +22,7 @@
     <div class="boot-logo">SCHLEUDERWERK<span>SCHROTT · SCHUB · SALTO</span></div>
     <div class="boot-bar"><i></i></div>
     <div class="boot-sub">Werkstatt wird aufgeschlossen …</div>
+    <div class="boot-keys kbd-only">⌨ Tastatur: Leertaste halten = Abschuss/Boost · ←/→ neigen · ↑/↓ Winkel · 1–4 Fähigkeiten · Enter = OK · Esc = zurück · K = alle Tasten</div>
   </div>
   <noscript>Dieses Spiel braucht JavaScript.</noscript>
   <script type="module" src="src/main.js"></script>

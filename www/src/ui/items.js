@@ -200,7 +200,7 @@ export function choiceCardsHtml(choice, { inventory, parts }) {
   return choice.items.map((id, i) => itemCardHtml(id, {
     progress: setProgressFor(id, inventory, parts),
     cls: 'pickable',
-    extra: `<button class="btn btn-primary ic-pick" data-pick="${i}">Nehmen</button>`,
+    extra: `<button class="btn btn-primary ic-pick" data-pick="${i}">Nehmen <kbd class="kbd-only">${i + 1}</kbd></button>`,
   })).join('');
 }
 

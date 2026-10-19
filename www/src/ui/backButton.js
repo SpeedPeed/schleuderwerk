@@ -1,7 +1,7 @@
 // Android-Zurück-Taste (und Esc am PC): entscheidet, was „zurück“ gerade bedeutet – immer die oberste Ebene.
 // Reine Logik ohne DOM (tests/ui.test.mjs); main.js baut den Zustand (backSnapshot) und führt die Aktion aus.
 //
-// s: { modal, tutorial, devMenu, itemSheet, settings, state ('garage'|'map'|'stage'|'results'|'runEnd'), paused,
+// s: { modal, tutorial, keys (Tastenbelegung), devMenu, itemSheet, settings, state ('garage'|'map'|'stage'|'results'|'runEnd'), paused,
 //      run: Art des Run-Overlays oder null ('intro'|'result'|'choice'|'replace'|'pick'|'station'|'act'|'end'|
 //           'dealer'|'workbench'|'blackmarket'|'event'|'treasure'), runHasCont, runHasBack,
 //      pickerOpen, tab, testResults }
@@ -9,6 +9,7 @@
 export const BACK_ACTIONS = [
   'closeModal',      // Bestätigungsdialog: wie „Abbrechen“
   'closeTutorial',   // Hinweis schließen
+  'closeKeys',       // Tastenbelegung (PC) schließen
   'closeDev', 'closeItemSheet', 'closeSettings',
   'runBack',         // Overlay-Knopf „◀ Zurück“ (Ersetzen, Platz wählen)
   'runContinue',     // Overlay-Knopf „Weiter ▶“ (Ereignis/Schatz erledigt)
@@ -30,6 +31,7 @@ const SHOPS = new Set(['dealer', 'workbench', 'blackmarket']);
 export function backAction(s) {
   if (s.modal) return 'closeModal';
   if (s.tutorial) return 'closeTutorial';
+  if (s.keys) return 'closeKeys';
   if (s.devMenu) return 'closeDev';
   if (s.itemSheet) return 'closeItemSheet';
   if (s.settings) return 'closeSettings';
