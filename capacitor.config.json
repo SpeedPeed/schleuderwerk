@@ -3,6 +3,7 @@
   "appName": "Schleuderwerk",
   "webDir": "www",
   "android": {
-    "backgroundColor": "#1b2030"
+    "backgroundColor": "#1b2030",
+    "allowMixedContent": false
   }
 }

@@ -4,7 +4,7 @@
 // Diese Datei importiert nichts und wird auch von node --test geladen.
 
 export const SAVE_VERSION = 3;
-export const GAME_VERSION = '0.6.0';
+export const GAME_VERSION = '1.0.0';
 
 // ---------- Speichern ----------
 export const SAVE = {
@@ -560,13 +560,16 @@ export const CONTROLS = {
   abilityKeys: ['Digit1', 'Digit2', 'Digit3', 'Digit4'], // Tastatur: Fähigkeit 1–4 (Leertaste = Boost)
   devTaps: 7,              // so oft schnell hintereinander auf die Versionsnummer tippen → Dev-Menü …
   devTapGap: 1.0,          // … mit höchstens so vielen Sekunden zwischen zwei Taps
-  tutorialRuns: 3,         // so viele Runs lang werden Hinweise gezeigt
-  flyHintTime: 5,          // Sekunden
+  tutorialRuns: 3,         // Balance-Simulator: so viele Runs lang kostet jede Etappe Zeit für Hinweise (Tutorial: TUTORIAL)
+  backExitConfirm: true,   // Zurück-Taste in der Garage: erst fragen „Spiel beenden?“
 };
 
 // ---------- Darstellung ----------
 export const RENDER = {
-  maxPixelRatio: 1.5,
+  maxPixelRatio: 1.5,      // Standard (Grafikqualität „Mittel“)
+  // Grafikqualität (Einstellungen): höchstens so viele Bildpunkte je CSS-Pixel (nie mehr als das Gerät hat)
+  pixelRatio: { low: 1, mid: 1.5, high: 2 },
+  defaultQuality: 'mid',
   vehicleScale: 1.2,       // Fahrzeug-Modelle werden so stark vergrößert (Radunterkante bleibt auf rideHeight)
   fogNear: 60,             // Nebel beginnt bei Kamera-Abstand + fogNear …
   fogFar: 650,             // … und ist bei Kamera-Abstand + fogFar voll
@@ -653,5 +656,50 @@ export const FX = {
     boostFlame: { n: 2, colors: ['#fff17a', '#ffa22e', '#ff5a1f'], spread: 0.5, speed: 9, inherit: 0.7, life: 0.28, size: 0.5, jitter: 0.3, zSpread: 0.6, zSpeed: 0.5 },
     groundDust: { minSpeed: 8, chance: 0.4, dx: -1.4, dy: -0.9, n: 1, dir: 0.75, spread: 0.8, speed: 3, life: 0.6, gravity: 3, size: 0.45, zSpread: 2.2 },
     windDust: { minWind: 0.5, chancePerWind: 0.06, spreadX: 1.2, windMul: 3, vy: -0.5, life: 1.4, sizeBase: 0.18, sizePerWidth: 0.004, zSpread: 6 },
+    // Phase 7: Landungen (perfekt = goldener Ring + Sterne, sauber = kleine helle Wolke)
+    landPerfect: { n: 24, colors: ['#ffd23f', '#fff6c0', '#ffffff'], dir: 1.5708, spread: 3.1, speed: 9, life: 0.7, gravity: 6, size: 0.32, jitter: 0.6, zSpread: 2 },
+    landClean: { n: 10, colors: ['#ffffff', '#e8eef5'], dir: 1.5708, spread: 2.8, speed: 4, life: 0.5, gravity: 4, size: 0.4, zSpread: 2 },
+    // Item ausgelöst: Funken in der Tag-Farbe (Farbe kommt aus data/tags.js), je Kettentiefe + nPerDepth
+    tagBurst: { n: 6, nPerDepth: 3, nMax: 18, speed: 5, speedPerDepth: 1.2, life: 0.5, gravity: 2, size: 0.28, jitter: 0.8, zSpread: 1.5 },
+    // Kettenreaktion: Ring aus Funken, wächst mit der Kettenlänge
+    chain: { nBase: 10, nPerLink: 4, nMax: 48, speedBase: 6, speedPerLink: 1.5, life: 0.7, gravity: 0, size: 0.35, jitter: 0.5, zSpread: 2.5,
+      colors: ['#ff9d2f', '#ffd23f', '#ffffff', '#ff5a1f'] },
+    // Überhitzung: Dampfstoß
+    overheat: { n: 22, colors: ['#ffffff', '#e6eef5', '#ffb0a0'], dir: 1.5708, spread: 2.4, speed: 7, life: 1.1, gravity: -3, size: 0.55, zSpread: 1.5 },
+    // Run-Sieg: großes Konfetti am Fahrzeug
+    victory: { n: 80, colors: ['#ffd23f', '#ff5a5a', '#33e6ff', '#5fe08a', '#ff8a3d', '#ffffff'], dir: 1.5708, spread: 2.4, speed: 16, life: 2, gravity: 8, size: 0.4, jitter: 2, zSpread: 5 },
   },
+  // Phase 7: Bildschirm-Aufblitzen (DOM, ui/fxOverlay.js): Farbe und Stärke 0…1 je Anlass
+  screenFlash: {
+    perfectLanding: { color: '#ffe680', a: 0.22 },
+    medal: { color: '#ffd23f', a: 0.25 },
+    shock: { color: '#9fdcff', a: 0.4 },
+    explosion: { color: '#ffb060', a: 0.35 },
+    crash: { color: '#ff4040', a: 0.25 },
+    chain: { color: '#ff9d2f', a: 0.12, perLink: 0.03, max: 0.35 },
+    boss: { color: '#c0392b', a: 0.35 },
+  },
+  tagBurstGap: 0.08,       // Item-Funken derselben Quelle höchstens alle so viele Sekunden (gegen Partikel-Flut bei Ketten)
+  confettiPieces: 36,      // DOM-Konfetti beim Run-Sieg (einmal angelegt, wiederverwendet)
+  confettiTime: 3.2,       // Sekunden
+  bossBanner: 2.2,         // „BOSS“-Einblendung zu Beginn einer Boss-Strecke (s)
+};
+
+// ---------- Ton (audio/sfx.js) – Platzhalter-Klänge per Web Audio ----------
+export const AUDIO = {
+  master: 0.7,             // Gesamtlautstärke (die Regler in den Einstellungen wirken darunter)
+  defaultSfx: 0.8,         // Standard-Lautstärke Effekte (0…1)
+  defaultMusic: 0.6,       // Standard-Lautstärke Musik (0…1)
+  tagGap: 0.06,            // gleicher Tag-Klang höchstens alle so viele Sekunden
+  chainBaseHz: 330,        // Kettenreaktion: Grundton …
+  chainStepSemi: 2,        // … steigt je Kettenglied um so viele Halbtöne
+  chainMaxSemi: 24,
+  music: { lookahead: 0.25, bpmDefault: 132, bassVol: 0.05, leadVol: 0.035, drumVol: 0.12, fade: 0.6 },
+};
+
+// ---------- Tutorial (ui/tutorial.js) ----------
+export const TUTORIAL = {
+  showDelay: 0.35,         // Sekunden, bis ein ausgelöster Hinweis erscheint (Bildschirm baut sich erst auf)
+  toastTime: 7,            // Hinweise während der Etappe verschwinden nach so vielen Sekunden von selbst
+  resourcesAfter: 3.5,     // Hinweis „Ressourcen“ so viele Sekunden nach dem Abschuss
 };

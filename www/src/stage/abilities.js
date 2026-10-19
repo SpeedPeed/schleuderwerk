@@ -50,7 +50,7 @@ export class AbilityBar {
 
   // Wird der Boost gerade gehalten?
   get boostHeld() {
-    for (const s of this.slots) if (s.held && isBoostAbility(s.def)) return true;
+    for (let i53 = 0; i53 < this.slots.length; i53++) { const s = this.slots[i53]; if (s.held && isBoostAbility(s.def)) return true; }
     return false;
   }
 
@@ -150,7 +150,8 @@ export class AbilityBar {
   // Abklingzeiten und Kosten der Halte-Fähigkeiten (1× pro Physik-Schritt)
   update(dt, stage) {
     const v = stage.vehicle;
-    for (const s of this.slots) {
+    for (let i153 = 0; i153 < this.slots.length; i153++) {
+      const s = this.slots[i153];
       if (s.cd > 0) s.cd = Math.max(0, s.cd - dt);
       if (s.def.mode !== 'hold' || isBoostAbility(s.def) || !s.held) continue;
       if (!this.usable(s, v)) { s.held = false; continue; }
@@ -161,7 +162,8 @@ export class AbilityBar {
 
   // Abklingzeit verkürzen (Effekt refill): id = Fähigkeit oder null für alle, pct = Anteil der vollen Abklingzeit
   refill(id, pct, stats) {
-    for (const s of this.slots) {
+    for (let i164 = 0; i164 < this.slots.length; i164++) {
+      const s = this.slots[i164];
       if (id && s.def.id !== id) continue;
       const full = s.cdMax || this.cooldownOf(s.def, stats);
       s.cd = Math.max(0, s.cd - full * pct);

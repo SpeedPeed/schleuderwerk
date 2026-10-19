@@ -220,3 +220,33 @@ Regel „ein schlechter Run muss auch mit voller Meta scheitern können“ (Sieg
 | Einzel-Items (Bot-Ausreißer) | Nadeldose, Blitzableiter, Perpetuum Mobile, Schraubenvergaser | siehe PHASEN.md Phase 6 | ohne Items mit voller Meta gewann der Bot vorher ≈ 12 % der Runs allein mit der Nadeldose als Start-Item |
 
 Unverändert geprüft: Belohnungen (`REWARDS`), Teile-Kosten (`GARAGE.costGrowth` 1,15, Basis 40), Forschungskosten (`RESEARCH.costMul` 1), Kerne je Sieg (1) – Varianten mit teureren Teilen (Basis 60) oder 2 Kernen je Sieg verschoben die Zeiten weniger zielgenau bzw. machten Kerne inflationär.
+
+## Leistung (Phase 7)
+
+Gemessen in der Testumgebung: Chromium headless mit Software-WebGL (SwiftShader), 412 × 915, Testfahrt je Biom mit
+Seed 3, Abschuss 80 %, Werte aus `renderer.info` (Dev-Menü „📈 Leistungsanzeige“ bzw. `window.__game.perf()`).
+Bilder/s sind wegen der Software-Darstellung nur relativ aussagekräftig; Draw Calls, Dreiecke und Allokationen sind
+geräteunabhängig.
+
+| Szene | Draw Calls (inkl. Schattenpass) | Dreiecke | Geometrien | Shader-Programme |
+|---|---|---|---|---|
+| Garage | 9 | 5.900 | 8 (vorher 21) | 4 (vorher 9) |
+| Schrottplatz Zielen / Flug | 15 / 11 | 9.900 / 10.500 | 13 (vorher 24) | 7 (vorher 10) |
+| Glutwüste Zielen / Flug | 16 / 13 | 10.100 / 11.400 | 14 | 8 |
+| Gewittersteppe Zielen / Flug | 17 / 13 | 13.200 / 13.800 | 15 | 8 |
+
+| Messung (Flug, 4 s) | vor Phase 7 | nach Phase 7 |
+|---|---|---|
+| Bilder in 4 s (Software-Darstellung, Schrottplatz) | 30–38 | 68 |
+| JS-Heap-Zuwachs je Bild (Summe positiver Sprünge, 3 Biome) | 95–133 KB | 37–66 KB |
+| Allokationen gesamt (Heap-Sampling, 4 s Boost-Flug) | 11,2 MB | 4,5 MB (bei doppelt so vielen Bildern) |
+| Shader-Neuauswahl (`getParameters`) je Bild | ≈ 3 | 0 |
+
+Ursachen und Maßnahmen: durchsichtige beidseitige Materialien (Aufwind, Felder) → `forceSinglePass`; instanzierte
+Schattenwerfer → eigenes Tiefen-Material; leere InstancedMeshes → unsichtbar; HUD/Ton/Objekt-Darstellung ohne
+Objekte/Closures pro Bild; Indexschleifen in Physik und Darstellung; Gelände-Stücke über `GeoBuilder` (gemeinsamer
+Puffer statt geklonter Teil-Geometrien und Zwischen-Arrays); Kollision mit x-Vorauswahl. Der Rest der Allokationen
+entsteht in three.js (Uniform-Kopien, Matrizen) und beim Nachladen von Gelände-Stücken (≈ alle 96 m).
+
+Grafikqualität: Niedrig = Pixel-Ratio 1, Mittel = 1,5 (Standard, wie bisher), Hoch = 2 (jeweils höchstens die
+des Geräts); Schatten getrennt abschaltbar. Ziel 60 Bilder/s auf Mittelklasse-Handys ist am Gerät zu prüfen.

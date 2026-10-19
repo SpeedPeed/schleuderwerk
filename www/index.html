@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#1b2030">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="Schleuderwerk – baue aus Schrott eine verrückte Kiste und schieß sie über drei Akte.">
   <title>Schleuderwerk</title>
   <link rel="stylesheet" href="style.css">
   <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
@@ -13,7 +14,13 @@
   <div id="sky"></div>
   <canvas id="game"></canvas>
   <div id="ui"></div>
-  <div id="rotate-hint">📱 Bitte Handy hochkant halten</div>
+  <div id="rotate-hint"><b>📱</b>Bitte das Handy hochkant halten<small class="boot-sub">Schleuderwerk wird im Hochformat gespielt</small></div>
+  <div id="boot" role="status" aria-label="Schleuderwerk lädt">
+    <div class="boot-car">🛒</div>
+    <div class="boot-logo">SCHLEUDERWERK<span>SCHROTT · SCHUB · SALTO</span></div>
+    <div class="boot-bar"><i></i></div>
+    <div class="boot-sub">Werkstatt wird aufgeschlossen …</div>
+  </div>
   <noscript>Dieses Spiel braucht JavaScript.</noscript>
   <script type="module" src="src/main.js"></script>
 </body>

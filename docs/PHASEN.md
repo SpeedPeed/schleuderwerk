@@ -521,3 +521,146 @@ Der vorhandene Content ist jetzt vollständig wirksam und die Progression ist au
 - **priceMul** wirkt auf alle Schrauben-Preise (Händler, Fähigkeit, Reroll, Fluch entfernen); Schwarzmarkt-Preise in Haltbarkeit/Treibstoff/Kernen und Ereignis-Kosten bleiben. **damageMul** wirkt auch auf Ereignis- und Schatz-Schaden, nicht auf die Abschlepp-Strafe (dafür gibt es `towPenaltyAdd`).
 - Raketen-Set 6 bleibt das stärkste Set (Akt-3-Boss 90 %) – gewollt als „sichere“ Synergie; Gyro-Items liegen einzeln im Minus, weil der Bot mit ihnen Saltos dreht (Bot-Fahrweise, kein Item-Wert).
 - Zielmarken in `biomes.js` kommen weiter aus `tools/sim/calibrate.mjs`; dessen Soll-Verhältnisse sind auf die Phase-6-Ziele gesetzt (`--apply` würde sie bis auf Rundung reproduzieren, ungeprüft).
+
+## Phase 7 – Polish, Effekte, Sound-Platzhalter, UI, Tutorial, APK-Anleitung
+
+Das Spiel ist rund: geführter erster Run, Effekte und Klänge für alles Wichtige, einheitliche Oberfläche in allen
+Handy-Größen, Zurück-Taste überall, Grafik-/Ton-Einstellungen, Leistungs-Pass und eine neue APK-Anleitung.
+Version **1.0.0** (`package.json`, `balance.js → GAME_VERSION`, Test prüft die Gleichheit).
+
+### Was ist neu
+
+**🎓 Tutorial** (`ui/tutorial.js`, Zahlen `balance.TUTORIAL`)
+- 10 kurze Hinweise (2–3 Sätze, Symbol, hervorgehobenes Ziel-Element) an den richtigen Momenten des ersten Runs:
+  Garage (Chassis/Teile/Fähigkeiten) · Karte (Knoten wählen) · Etappen-Intro (Zielmarke/Medaillen/Abschleppen) ·
+  Zielen (Halten/Ziehen/Loslassen im grünen Bereich) · Flug (links/rechts halten, Fähigkeits-Knöpfe) · Ressourcen
+  (Treibstoff/Hitze/Haltbarkeit, 3,5 s nach dem Abschuss) · erste Item-Auswahl (Tags/Set-Boni) · erster Händler ·
+  erste Werkbank · Garage nach dem ersten Run (Labor).
+- Garage/Karte/Shops: Karte mit Abdunklung, „Verstanden ✔“ oder „Alle Hinweise aus“. In der Etappe: „Toast“ ohne
+  Blockade, verschwindet nach 7 s oder per Antippen. Mehrere Hinweise kommen nacheinander (Warteschlange).
+- Jeder Hinweis erscheint **nur einmal** (`save.tutorial.seen`), „Alle Hinweise aus“ = `save.tutorial.off`.
+  ⚙ Einstellungen → „🎓 Hinweise wieder zeigen“ (auch im Dev-Menü). Spielstände aus Phase 6, mit denen schon
+  gespielt wurde, starten mit ausgeschaltetem Tutorial. Die alten Dauer-Hinweise (Zielen/Flug in den ersten 3 Runs)
+  sind ersetzt.
+
+**✨ Effekte** (`main.js → emitFx`, `ui/fxOverlay.js`, Vorlagen `balance.FX.particles`/`screenFlash`)
+- Landungen: perfekt = goldener Funkenring + Aufblitzen (+ Zeitlupe), sauber = helle Wolke, Bruch = Trümmer + roter Blitz + Wackeln.
+- Medaillen: Konfetti in Medaillenfarbe (Gold doppelt) + goldenes Aufblitzen; im Ergebnis leuchten die Medaillen nacheinander auf.
+- Item-Auslösungen: Funken in der **Tag-Farbe** am Fahrzeug, mehr und schneller mit der Kettentiefe (je Quelle höchstens alle 0,08 s).
+- Kettenreaktionen: Funkenring und Bildschirm-Blitz wachsen mit der Kettenlänge, „KETTENREAKTION ×n!“ wird größer.
+- Überhitzung: Dampfstoß, roter Bildrand (ab 80 % Hitze leicht, bei Stillstand pulsierend). Stromschlag: doppelte
+  Funken + blauer Blitz. Explosion: Feuerball + orangener Blitz + Ton.
+- Boss: Intro-Karte rüttelt und glüht, zu Beginn der Boss-Strecke „BOSS-STRECKE · Name“ groß eingeblendet.
+- Run-Sieg: DOM-Konfetti (36 wiederverwendete Stücke) + 80 Konfetti-Partikel + Sieg-Jingle.
+- Übergänge: Bildschirme blenden weich ein, beim Start einer Etappe kurze Abblende (verdeckt den Streckenaufbau).
+- Abschaltbar: „💥 Bildschirmwackeln & Blitze“ (Wackeln + Aufblitzen) und „🐌 Zeitlupe bei Stunts“; Systemeinstellung
+  „Bewegung reduzieren“ schaltet die CSS-Animationen ab. Alle Partikel laufen über den festen Pool (`render/particles.js`,
+  320 Stück, 1 Draw Call), Effekt-Vorlagen sind vorab angelegte Objekte.
+
+**🔊 Sound-Platzhalter** (`audio/sfx.js`, Zahlen `balance.AUDIO`, alles Web Audio ohne Dateien)
+- Getrennte Busse für Effekte und Musik, Regler „💥 Effekte“ und „🎵 Musik“ (0–100 %) in den Einstellungen, Ton an/aus wie bisher.
+- Eigener Klang je Tag (Feuer fauchen, Eis klirren, Elektro zirpen, Gyro Arpeggio, Magnet wabern, Schrott scheppern,
+  Hydraulik zischen, Gummi „boing“, Rakete heulen, Glück Glöckchen), Tonhöhe steigt mit der Kettentiefe.
+- Kettenreaktion: Arpeggio, je Kettenglied 2 Halbtöne höher. Shop: Ladenglocke beim Betreten, Würfelklappern beim
+  Reroll, Kauf, Münzen beim Zerlegen. Werkbank-Fusion: Wirbel + Akkord. Labor: Blubbern + Akkord. Medaillen-Fanfare
+  (Gold länger), Tutorial-„Pling“, Sieg- und Niederlage-Jingle.
+- **Boss-Musik-Schleife:** aus der Erkennungsmelodie des Bosses (Melodie, Bass, Schlagzeug, jeder 4. Takt eine
+  Oktave höher), läuft während der Boss-Strecke, pausiert mit dem Spiel, endet mit der Etappe.
+
+**📱 UI-Polish** (`style.css` Abschnitt „Phase 7“, `index.html`)
+- Startbildschirm mit Logo und Ladebalken, bis das erste Bild steht. Hochformat-Hinweis im Querformat (animiert).
+- Touch-Ziele ≥ 44 px (Reiter, Dev-Knöpfe, Inventar-Knopf, ☠-Chip …), Overlays halten Abstand zu Notch und
+  Navigationsleiste (`--safe-top/bottom`, App: `body.native`). Schmale Handys: Ressourcen-Leisten weichen den
+  Fähigkeits-Knöpfen aus, Ergebnis-Zeilen und Summen umbrechen nicht mehr unschön, lange Labor-Namen werden getrennt.
+- **Zurück-Taste** (`ui/backButton.js`, am PC **Esc**): Dialog → Abbrechen, Hinweis → schließen, Dev-Menü/Inventar/
+  Einstellungen/Teile-Auswahl → schließen, Garage-Reiter → Garage, Etappe → Pause ↔ weiter, Karte → Garage (Run
+  bleibt), Etappen-Intro → Karte, Ergebnis/Akt-Übergang/Run-Ende → Haupt-Knopf, Händler/Werkbank/Schwarzmarkt/Schatz →
+  „verlassen?“, Ereignis/Tankstelle/Item-Auswahl → Hinweis „erst entscheiden“, Garage → „Spiel beenden?“.
+- Geprüft per Rauchtest in **360×780, 412×915, 430×932**: jeder Bildschirm fotografiert, nichts ragt seitlich heraus,
+  kein Knopftext abgeschnitten, alle Touch-Ziele ≥ 44 px.
+
+**⚡ Leistung** (Messung und Werte: [BALANCE.md → Leistung](BALANCE.md#leistung-phase-7))
+- Draw Calls gezählt (`renderer.info`): Garage 9, Etappe 13–17 – Gelände-Stücke, Fahrzeuge und Deko sind schon
+  zusammengeführte Geometrien, Schrauben/Pickups/Hindernisse/Partikel/Regen instanziert. Neu: leere InstancedMeshes
+  werden gar nicht gezeichnet.
+- **Shader-Wechsel pro Bild beseitigt:** durchsichtige, beidseitige Materialien (Aufwind, Magnetfeld, Glutfeld,
+  Blitz-Warnring) ließen three.js jedes Bild zweimal `material.needsUpdate` setzen → Programm-Parameter neu berechnet;
+  jetzt `forceSinglePass`. Instanzierte Schattenwerfer haben ein eigenes Tiefen-Material (`shadowInstanced`), sonst
+  wechselt der Schattenpass zwischen Instanz- und Normal-Shader.
+- Allokationen pro Bild entfernt: HUD ohne Closures (`changed()`), Ton-Schleife ohne Objekt, Objekt-Darstellung ohne
+  `Object.keys/entries`, Indexschleifen statt `for…of` in Physik-Kollision, Zonen, Fähigkeiten, Darstellung;
+  Gelände-Stücke werden in einen wiederverwendeten Puffer gebaut (`GeoBuilder`) statt aus geklonten Teil-Geometrien.
+- Kollision: schnelle x-Vorauswahl – nur Schrauben/Pickups nahe der Teilschritt-Strecke werden genau geprüft
+  (vorher jede Schraube der Etappe in jedem Teilschritt; Ergebnisse unverändert, alle Physik-Tests grün).
+- Einstellungen: **Grafik Niedrig/Mittel/Hoch** (Pixel-Ratio höchstens 1 / 1,5 / 2, nie über dem Gerät) und Schatten an/aus.
+- Dev-Menü: „📈 Leistungsanzeige“ (Bilder/s, Bildzeit, Logik-/Render-Zeit, Draw Calls, Dreiecke, Partikel, Pixel-Ratio).
+
+**🛠 Dev-Menü** – aufklappbare Hilfe („❓ Hilfe – was macht was?“), neu: +100 🔩 im Run, Tutorial zurücksetzen /
+alle Hinweise aus, Leistungsanzeige, Abschnitte „Ton“ und „Tutorial“ bei „Werte live ändern“. Geprüft (Rauchtest):
+Währungen, Freischalten, Etappe überspringen (Gold/Bronze/verfehlt), Zum Boss, Nächster Akt, Knotentyp erzwingen,
+Haltbarkeit setzen, Items hinzufügen/★, Testfahrten, Werte live, Meilenstein-Zeiten.
+
+**📦 App-Bau** – `capacitor.config.json` (App „Schleuderwerk“, `de.privat.schleuderwerk`, keine gemischten Inhalte),
+`tools/patch-android.mjs`: Hochformat, Vollbild auch neben der Kamera-Aussparung, Bildschirm bleibt an, WebView-Textzoom
+fest 100 % (große Systemschrift sprengt das Layout nicht), Version aus `package.json` + Laufnummer, fester Schlüssel,
+Icon/Startbild. Zurück-Taste und Haptik über `@capacitor/app`/`@capacitor/haptics`. Workflow: Tests vor dem Bau,
+Branch-Builds als Vorab-Version, `concurrency`. Geprüft: `npm install` → `npx cap add android` → `node tools/patch-android.mjs`
+→ `npx cap sync android` laufen fehlerfrei (Gradle-Bau macht die Action). Icon/Startbild unverändert (`tools/make_icons.py`).
+**[APK-ANLEITUNG.md](../APK-ANLEITUNG.md) komplett neu** (GitHub Actions inkl. „Run workflow“ auf einem Branch, lokal mit
+Android Studio, Installation, Updates ohne Spielstandverlust, Export/Import, häufige Fehler).
+
+### Tests
+`npm test` (252 Tests) – neu `tests/ui.test.mjs`: Tutorial (Daten, Auslösen mit Verzögerung, nur einmal – auch nach
+Export/Import, Warteschlange, Toasts schließen sich selbst, `dropToasts`, „Alle aus“, Zurücksetzen, Fortschritt),
+Spielstand (Migration Tutorial/Einstellungen, Reparatur falscher Werte, Lautstärke/Qualität überstehen Export/Import),
+Zurück-Taste (Reihenfolge der Ebenen, Garage, Karte, Etappe, alle Run-Bildschirme), Version/App-Name.
+`npm run smoke`: Hauptdurchlauf wie bisher (Tutorial per „Alle Hinweise aus“ abgeschaltet, vorher geprüft, dass der
+erste Hinweis erscheint) + **Abschluss-Rundgang** `tools/smoke-final.mjs` in drei Auflösungen: Neustart, alle 10
+Hinweise durchgeklickt, ≈ 46 Bildschirmfotos je Auflösung (`/tmp/sw-smoke/final-<B>x<H>-*.png`), Layout-Prüfung,
+Zurück-Taste an 12 Stellen, Einstellungen nach Neuladen erhalten, Tutorial nur einmal / zurücksetzbar / abschaltbar,
+Boss-Einblendung + Musik, Run-Sieg-Konfetti, Querformat-Hinweis, keine Konsolenfehler, Auto immer im Bild.
+
+### So testest du Phase 7
+1. `npm test` → „# fail 0“. `npm run smoke` → „RAUCHTEST BESTANDEN“ (≈ 20 min); nur der Rundgang: `node tools/smoke-final.mjs 412`.
+2. Von Hand: `python tools/serve.py`, im Browser (Handy-Ansicht) einen **neuen Spielstand** (⚙ → Spielstand löschen oder privates
+   Fenster) → den Hinweisen folgen: Garage → RUN STARTEN → Knoten → LOS → halten/loslassen → im Flug links/rechts …
+3. ⚙: Regler Effekte/Musik (Boss-Strecke per Dev „👹 Zum Boss“ hören), Grafik Niedrig/Mittel/Hoch, Zeitlupe, Wackeln.
+4. Esc (am Handy: Zurück) überall ausprobieren. Dev-Menü → „📈 Leistungsanzeige“.
+5. Am Handy (App): siehe APK-ANLEITUNG.md.
+
+---
+
+## Gesamtübersicht – was ist fertig (Version 1.0.0)
+
+| Bereich | Stand |
+|---|---|
+| Steuerung & Kamera | Halten/Ziehen/Loslassen-Abschuss, Neigen per Halten, Multi-Touch-Fähigkeiten, Tastatur; Kamera mit harter „Auto-im-Bild“-Garantie, Floating Origin |
+| Physik | adaptive Teilschritte, kein Durchtunneln, weiche Tempo-Grenze, Treibstoff/Hitze/Haltbarkeit, Loopings, Schluchten, Oberflächen, alle Regel-Schalter (Anhang A) |
+| Garage | 9 Chassis, 7 Slots × 3–5 Teile (Stufe 0–20), Fähigkeiten, Erfinder-Labor (≈ 45 Knoten), Lackiererei, Statistik |
+| Run | 3 Akte/Biome, verzweigte Karte, 8 Knotentypen, 6 Bosse (Intro, Warnungen, Musik), Abschleppen, Run-Ende mit Auszahlung |
+| Items | 88 Items, 10 Tags mit Set-Boni, ★-Stufen, Hybride, Flüche, Trigger-Engine mit Ketten, Kompendium |
+| Fortschritt | 4 Währungen, Meilensteine mit Zielzeiten (Simulator: alle im Korridor), 15 Schrottstufen |
+| Präsentation | Low-Poly-3D, Partikel/Blitze/Konfetti, Platzhalter-Sounds + Boss-Musik, Startbildschirm, Übergänge, Tutorial |
+| Bedienung | Einstellungen (Ton, Lautstärken, Vibration, Wackeln, Zeitlupe, Grafik, Schatten, Tutorial), Zurück-Taste überall, Export/Import |
+| Technik | Logik ohne three.js/DOM (Node-Tests), alle Zahlen in `balance.js`, Spielstand v3 mit Migration, Dev-Menü mit Hilfe |
+| Qualität | 252 Unit-Tests, Rauchtest über 3 Akte + Abschluss-Rundgang in 3 Auflösungen, Balance-/Progressions-Simulatoren |
+| App | Capacitor-Android (Hochformat, Vollbild, Wachhalten, Haptik, Zurück-Taste), GitHub-Action → Release mit APK |
+
+## Bekannte Grenzen
+
+- **Klänge und Musik sind Platzhalter** (synthetisch per Web Audio); echte Aufnahmen/Musik wären der nächste Schritt.
+  Auf manchen Android-WebViews startet der Ton erst nach der ersten Berührung (Browser-Regel).
+- **Leistung nur in der Software-Darstellung gemessen** (Chromium/SwiftShader in der Testumgebung, ≈ 8–10 Bilder/s) –
+  Draw Calls, Dreiecke und Allokationen sind gerätunabhängig gemessen, echte Bildraten auf Mittelklasse-Handys müssen am
+  Gerät geprüft werden (Dev-Menü „📈 Leistungsanzeige“). Bei Bedarf: Grafik „Niedrig“, Schatten aus.
+- **Restliche Allokationen** stammen aus three.js selbst (Matrizen/Uniform-Kopien beim Rendern) und aus Ereignis-Objekten
+  der Physik (je Ereignis, nicht je Bild); Gelände-Stücke erzeugen beim Nachladen (≈ alle 96 m) ihre Puffer.
+- Das Tutorial erklärt nur den ersten Run; Schwarzmarkt, Ereignisse, Schatz, Schrottstufen erklären sich über ihre
+  Texte. Ein Tutorial-Neustart über die Einstellungen zeigt die Hinweise beim nächsten passenden Moment, nicht sofort.
+- Zurück-Taste: Item-Auswahl, Ereignis und Tankstelle schließen sich absichtlich nicht (nur ein Hinweis), damit keine
+  Belohnung versehentlich verfällt.
+- Icon und Startbild sind die gezeichneten Platzhalter aus `tools/make_icons.py`; die App ist mit einem Debug-Schlüssel
+  signiert (für den Play Store bräuchte es einen Release-Schlüssel und ein App-Bundle).
+- Querformat wird nur mit Hinweis abgefangen (die App selbst ist auf Hochformat fixiert); am PC funktioniert Querformat mit
+  Garage links/Liste rechts, ist aber nicht der Ziel-Modus.
+- Balance-Grenzen wie in Phase 6 beschrieben (Simulator-Modell, Schrott-Überschuss im Endgame).

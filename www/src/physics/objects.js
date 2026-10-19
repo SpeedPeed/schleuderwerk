@@ -183,7 +183,8 @@ export class Objects {
   // ---------- Zonen ----------
   // Aufwind an Position x in Höhe alt über dem Boden (m/s²)
   thermalAt(x, alt) {
-    for (const t of this.thermals) {
+    for (let i186 = 0; i186 < this.thermals.length; i186++) {
+      const t = this.thermals[i186];
       const d = Math.abs(x - t.x);
       if (d < t.w / 2) {
         const edge = 1 - Math.pow(d / (t.w / 2), OBJ.thermalEdgePow); // am Rand weicher
@@ -196,7 +197,8 @@ export class Objects {
 
   // Zusätzlicher Wind (m/s, + = Rückenwind) einer Windzone an x
   windAt(x) {
-    for (const w of this.winds) {
+    for (let i199 = 0; i199 < this.winds.length; i199++) {
+      const w = this.winds[i199];
       if (x >= w.x0 && x <= w.x1) {
         const edge = Math.min(1, (x - w.x0) / 10, (w.x1 - x) / 10);
         return (w.wind + w.gust * Math.sin(this.time * FEATURES.wind.gustFreq * Math.PI * 2 + w.phase)) * edge;
@@ -207,7 +209,7 @@ export class Objects {
 
   // Zusätzliche Umgebungshitze (pro s) eines Hitzefelds an x
   heatAt(x) {
-    for (const h of this.heats) if (x >= h.x0 && x <= h.x1) return h.heat;
+    for (let i210 = 0; i210 < this.heats.length; i210++) { const h = this.heats[i210]; if (x >= h.x0 && x <= h.x1) return h.heat; }
     return 0;
   }
 
@@ -215,7 +217,8 @@ export class Objects {
   magnetPull(x, y, out) {
     out.ax = 0; out.ay = 0;
     const M = FEATURES.magnet;
-    for (const m of this.magnets) {
+    for (let i218 = 0; i218 < this.magnets.length; i218++) {
+      const m = this.magnets[i218];
       if (x < m.x0 - M.radius || x > m.x1 + M.radius) continue;
       const dx = m.hx - x, dy = m.hy - y;
       const d = Math.hypot(dx, dy);
@@ -232,18 +235,21 @@ export class Objects {
   update(dt, car, ev) {
     this.time += dt;
     const t = this.time;
-    for (const c of this.crushers) {
+    for (let i235 = 0; i235 < this.crushers.length; i235++) {
+      const c = this.crushers[i235];
       c.lift = c.broken ? FEATURES.crusher.openY : crusherLift(c, t);   // zerstörte Presse bleibt offen stehen
       if (c.cd > 0) c.cd -= dt;
     }
     const M = FEATURES.magnet;
-    for (const m of this.magnets) {
+    for (let i240 = 0; i240 < this.magnets.length; i240++) {
+      const m = this.magnets[i240];
       const u = 0.5 + 0.5 * Math.sin(t * M.swing * Math.PI * 2 + m.phase * Math.PI * 2);
       m.hx = m.x0 + (m.x1 - m.x0) * u;
       m.hy = this.ground(m.hx) + M.height;
     }
     const L = FEATURES.lightning;
-    for (const z of this.lightning) {
+    for (let i246 = 0; i246 < this.lightning.length; i246++) {
+      const z = this.lightning[i246];
       if (car.x < z.x0 - 6 || car.x > z.x1) continue;
       z.t -= dt;
       if (z.t <= 0) {
@@ -254,7 +260,8 @@ export class Objects {
         ev.push({ type: 'lightningWarn', x: sx });
       }
     }
-    for (const s of this.strikes) {
+    for (let i257 = 0; i257 < this.strikes.length; i257++) {
+      const s = this.strikes[i257];
       if (s.t > 0) {
         s.t -= dt;
         if (s.t <= 0) {
@@ -352,9 +359,14 @@ export class Objects {
     const pr = OBJ.boltPickup;
     const mr = car.magnetRadius ?? car.stats.magnet;
     const speed = car.speed;
+    // schnelle Vorauswahl: nur was in x nahe der Strecke liegt, kann getroffen oder angezogen werden
+    // (Treffer: Abstand zur Strecke < Sammelradius; Magnet: Abstand zum Auto < mr) – angezogene immer weiter bewegen
+    const reach = Math.max(mr, pr * OBJ.bigBoltPickupMul, PICKUPS.radius);
+    const loX = Math.min(x0, x1) - reach, hiX = Math.max(x0, x1) + reach;
 
-    for (const c of this.bolts) {
-      if (!c.alive) continue;
+    for (let i356 = 0; i356 < this.bolts.length; i356++) {
+      const c = this.bolts[i356];
+      if (!c.alive || (!c.attract && (c.x < loX || c.x > hiX))) continue;
       const rr = c.big ? pr * OBJ.bigBoltPickupMul : pr;
       if (segmentDist2(x0, y0, x1, y1, c.x, c.y) < rr * rr) {
         c.alive = false;
@@ -365,8 +377,9 @@ export class Objects {
     }
 
     const kr = PICKUPS.radius;
-    for (const c of this.pickups) {
-      if (!c.alive) continue;
+    for (let i368 = 0; i368 < this.pickups.length; i368++) {
+      const c = this.pickups[i368];
+      if (!c.alive || (!c.attract && (c.x < loX || c.x > hiX))) continue;
       if (segmentDist2(x0, y0, x1, y1, c.x, c.y) < kr * kr) {
         c.alive = false;
         ev.push({ type: 'pickup', kind: c.kind, value: c.value, x: c.x, y: c.y });
@@ -377,7 +390,8 @@ export class Objects {
 
     // Ringe: senkrechtes Fenster, um den Autoradius verbreitert
     const rh = OBJ.ringRadius - OBJ.ringInset;
-    for (const r of this.rings) {
+    for (let i380 = 0; i380 < this.rings.length; i380++) {
+      const r = this.rings[i380];
       if (r.passed) continue;
       if (segmentBox(x0, y0, x1, y1, r.x - cr, r.y - rh, r.x + cr, r.y + rh) >= 0) {
         r.passed = true;
@@ -386,7 +400,8 @@ export class Objects {
     }
 
     // Hindernisse: Box um den Autoradius vergrößert
-    for (const o of this.obstacles) {
+    for (let i389 = 0; i389 < this.obstacles.length; i389++) {
+      const o = this.obstacles[i389];
       if (!o.alive) continue;
       const hw = o.w / 2 + cr;
       if ((o.rehit || 0) <= this.time && segmentBox(x0, y0, x1, y1, o.x - hw, o.y0 - cr, o.x + hw, o.y0 + o.h + cr) >= 0) {
@@ -404,7 +419,8 @@ export class Objects {
 
     // Schrottpressen: der Block (zwischen lift und lift + blockH über dem Boden) ist das Hindernis
     const C = FEATURES.crusher;
-    for (const c of this.crushers) {
+    for (let i407 = 0; i407 < this.crushers.length; i407++) {
+      const c = this.crushers[i407];
       if (c.cd > 0 || c.broken) continue;
       const hw = c.w / 2 + cr * 0.6;
       const by = c.y0 + c.lift;
@@ -458,14 +474,16 @@ export class Objects {
   // Nächstes Hindernis vor der Kiste (Mittelpunkt-x > x) im Abstand ≤ range (Abstand zum Mittelpunkt) – obstacleMagnet
   nearestObstacle(x, y, range) {
     let best = null, bd = range * range;
-    for (const o of this.obstacles) {
+    for (let i461 = 0; i461 < this.obstacles.length; i461++) {
+      const o = this.obstacles[i461];
       if (!o.alive || o.x <= x) continue;
       const cy = o.y0 + o.h / 2;
       const d = (o.x - x) ** 2 + (cy - y) ** 2;
       if (d <= bd) { bd = d; best = { x: o.x, y: cy }; }
     }
     const C = FEATURES.crusher;
-    for (const c of this.crushers) {
+    for (let i468 = 0; i468 < this.crushers.length; i468++) {
+      const c = this.crushers[i468];
       if (c.broken || c.x <= x) continue;
       const cy = c.y0 + c.lift + C.blockH / 2;
       const d = (c.x - x) ** 2 + (cy - y) ** 2;
@@ -477,8 +495,10 @@ export class Objects {
   // Nächstes noch nicht eingesammeltes Einsammelbares (Schraube oder Pickup) vor der Kiste im Radius – mutualAttraction
   nearestPickupAhead(x, y, range) {
     let best = null, bd = range * range;
-    for (const list of [this.pickups, this.bolts]) {
-      for (const c of list) {
+    for (let k = 0; k < 2; k++) {
+      const list = k ? this.bolts : this.pickups;
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
         if (!c.alive || c.x <= x) continue;
         const d = (c.x - x) ** 2 + (c.y - y) ** 2;
         if (d <= bd) { bd = d; best = c; }
@@ -492,13 +512,15 @@ export class Objects {
   // Ergebnis: { target: {x, y} | null, collected: n }
   arcStrike(x, y, range, ev) {
     let target = null, bd = Infinity;
-    for (const o of this.obstacles) {
+    for (let i495 = 0; i495 < this.obstacles.length; i495++) {
+      const o = this.obstacles[i495];
       if (!o.alive) continue;
       const d = o.x - o.w / 2 - x;
       if (o.x >= x && d <= range && d < bd) { bd = d; target = o; }
     }
     let crusher = null;
-    for (const c of this.crushers) {
+    for (let i501 = 0; i501 < this.crushers.length; i501++) {
+      const c = this.crushers[i501];
       if (c.broken) continue;
       const d = c.x - c.w / 2 - x;
       if (c.x >= x && d <= range && d < bd) { bd = d; crusher = c; target = null; }
@@ -508,13 +530,15 @@ export class Objects {
     else if (target) { target.alive = false; t = { x: target.x, y: target.y0 + target.h / 2 }; }
     let collected = 0;
     const r2 = range * range;
-    for (const c of this.bolts) {
+    for (let i511 = 0; i511 < this.bolts.length; i511++) {
+      const c = this.bolts[i511];
       if (!c.alive || (c.x - x) ** 2 + (c.y - y) ** 2 > r2) continue;
       c.alive = false;
       collected++;
       ev.push({ type: 'bolt', v: c.v, x: c.x, y: c.y, big: c.big });
     }
-    for (const c of this.pickups) {
+    for (let i517 = 0; i517 < this.pickups.length; i517++) {
+      const c = this.pickups[i517];
       if (!c.alive || (c.x - x) ** 2 + (c.y - y) ** 2 > r2) continue;
       c.alive = false;
       collected++;

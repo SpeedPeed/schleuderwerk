@@ -179,6 +179,7 @@ export class Stage {
     this.acc = 0;
     this.timeScale = 1;
     this.slowmo = 0;
+    this.slowmoEnabled = true;
     this.stopTimer = 0;
     this.wreckTimer = -1;
     this.perfectLaunch = false;
@@ -490,7 +491,8 @@ export class Stage {
     this.chain = { pts: 0, mult: 1, timer: 0 };
   }
 
-  startSlowmo(t) { this.slowmo = Math.max(this.slowmo, t); }
+  // Zeitlupe (Einstellung „Zeitlupe“ aus → slowmoEnabled = false, main.js)
+  startSlowmo(t) { if (this.slowmoEnabled) this.slowmo = Math.max(this.slowmo, t); }
 
   get altitude() { return this.vehicle.y - P.rideHeight - this.track.heightAt(this.vehicle.x); }
 
@@ -517,8 +519,7 @@ export class Stage {
     this.hooks.fx('steamBurst', v.x, v.y, { amount });
     if (heat >= RULES.heatToThrust.explodeAt) {
       this.emit('explosion', { amount });
-      this.hooks.fx('explosion', v.x, v.y, { amount });
-      this.hooks.sfx('explosion');
+      this.hooks.fx('explosion', v.x, v.y, { amount });   // Ton und Aufblitzen macht main.js → emitFx
     }
   }
 
@@ -553,7 +554,7 @@ export class Stage {
       this.time += P.dt;
       this.objects.update(P.dt, v, ev);
       this.afterStep(P.dt);
-      for (const e of ev) this.handle(e);
+      for (let i = 0; i < ev.length; i++) this.handle(ev[i]);
       ev.length = 0;
       this.checkWreck();
       this.flushEvents();
@@ -734,6 +735,7 @@ export class Stage {
         else {
           h.popup('ÜBERHITZT! 🔥', 'bad');
           h.haptic('medium');
+          h.fx('overheat', v.x, v.y);
         }
         h.sfx('overheat');
         break;
@@ -885,6 +887,7 @@ export class Stage {
     }
     if (e.quality === 'perfect') this.stunts.perfectLandings++;
     else this.stunts.cleanLandings++;
+    if (big) h.fx(e.quality === 'perfect' ? 'landPerfect' : 'landClean', e.x, e.y - P.rideHeight);
     if (big) {
       if (e.quality === 'perfect') {
         this.trick('perfectLanding', 'PERFEKTE LANDUNG!', 1, 'big');

@@ -18,6 +18,10 @@
 // Phase 6: Schrottstufen per Dev freischalten, Stufe 3 in der Garage wählen, Run mit aktiver Stufe (☠ auf der Karte,
 //   Erschwerungen im Intro), Boss-Intros aller 6 Bosse (Bildschirmfotos b-boss-<id>.png), Boss-Warnhinweis in der Etappe,
 //   Garage-Reiter „Statistik“, Dev-Menü (Meilensteine mit Zielzeiten, alle balance.js-Abschnitte live änderbar).
+// Phase 7: Der Hauptdurchlauf schaltet die Tutorial-Hinweise ab („Alle Hinweise aus“); danach folgt der
+//   Abschluss-Rundgang (tools/smoke-final.mjs): kompletter Neustart MIT Tutorial in 360×780, 412×915 und 430×932,
+//   alle Bildschirme fotografiert (/tmp/sw-smoke/final-*), Layout-Prüfung (Überstand, abgeschnittene Knöpfe,
+//   Touch-Ziele ≥ 44 px), Zurück-Taste (Esc), Einstellungen gespeichert, Tutorial nur einmal/zurücksetzbar.
 // Geprüft wird außerdem:
 //   - keine Konsolenfehler / pageerrors
 //   - das Fahrzeug liegt in JEDEM 100-ms-Sample im Bild (window.__game.carScreen())
@@ -27,6 +31,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { finalTour } from './smoke-final.mjs';
 
 const require = createRequire(import.meta.url);
 function loadPlaywright() {
@@ -120,6 +125,11 @@ async function main() {
     await page.goto(base, { waitUntil: 'load' });
     await waitState('garage', 15000);
     await sleep(800);
+    // Tutorial-Hinweise abschalten (der Abschluss-Rundgang am Ende prüft das Tutorial auf einem frischen Spielstand)
+    await page.waitForFunction(() => window.__game.tutorial.current === 'garage', null, { timeout: 6000 }).catch(() => {});
+    check(await g(() => window.__game.tutorial.current === 'garage'), 'neuer Spielstand: Tutorial-Hinweis „Garage“ erscheint');
+    await g(() => window.__game.tutorial.skipAll());
+    await sleep(200);
 
     // Alle 100 ms (im Spiel selbst gemessen): Wo ist das Fahrzeug auf dem Bildschirm?
     await g(() => {
@@ -1004,6 +1014,13 @@ async function main() {
     failures.push(`Ausnahme: ${e.message}`);
     console.log('✗ Ausnahme', e);
     try { await shot('99-fehler'); } catch (_) { /* egal */ }
+  }
+
+  // ---------- Phase 7: Abschluss-Rundgang in drei Auflösungen ----------
+  try {
+    await finalTour({ browser, base, check, log, shotsDir: SHOTS });
+  } catch (e) {
+    failures.push(`Ausnahme im Abschluss-Rundgang: ${e.message}`);
   }
 
   check(errors.length === 0, `keine Konsolenfehler/pageerrors${errors.length ? `:\n    ${errors.slice(0, 10).join('\n    ')}` : ''}`);

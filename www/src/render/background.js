@@ -69,10 +69,11 @@ export class Background {
     for (const l of this.layers) {
       const rel = camX * (1 - l.follow);
       const offset = (((-rel) % TILE) + TILE) % TILE;
-      l.meshes.forEach((m, k) => {
+      for (let k = 0; k < l.meshes.length; k++) {
+        const m = l.meshes[k];
         m.position.x = camX - originX + offset + (k - 1.5) * TILE;
         m.position.y = camY * (l.follow * 0.6);
-      });
+      }
     }
   }
 

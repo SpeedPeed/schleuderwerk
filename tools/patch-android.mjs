@@ -1,7 +1,9 @@
 // Passt das von Capacitor erzeugte Android-Projekt (Ordner android/) an das Spiel an.
 // Läuft automatisch beim App-Bau (GitHub Actions) bzw. über "npm run android:prepare".
 //
-//  - Hochformat fest, Vollbild ohne Status-/Navigationsleiste, Bildschirm bleibt an
+//  - Hochformat fest, Vollbild ohne Status-/Navigationsleiste (auch neben der Kamera-Aussparung), Bildschirm bleibt an
+//  - Schriftgröße des Systems verändert das Spiel nicht (WebView-Textzoom 100 %)
+//  - Zurück-Taste und Haptik laufen über die Capacitor-Plugins @capacitor/app und @capacitor/haptics (www/src/platform)
 //  - fester Signaturschlüssel (keystore/debug.keystore) -> Updates behalten den Spielstand
 //  - Versionsnummer (BUILD_NUMBER aus GitHub Actions)
 //  - eigenes Icon und Startbild
@@ -48,6 +50,7 @@ const javaDir = path.join(MAIN, 'java', ...config.appId.split('.'));
 fs.mkdirSync(javaDir, { recursive: true });
 fs.writeFileSync(path.join(javaDir, 'MainActivity.java'), `package ${config.appId};
 
+import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowManager;
 import androidx.core.view.WindowCompat;
@@ -61,6 +64,12 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         // Bildschirm bleibt an, solange das Spiel im Vordergrund ist
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // Bild auch neben der Kamera-Aussparung nutzen (das Spiel hält per CSS Abstand: body.native)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            getWindow().getAttributes().layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+        }
+        // große Systemschrift soll das Spiel-Layout nicht sprengen
+        if (getBridge() != null && getBridge().getWebView() != null) getBridge().getWebView().getSettings().setTextZoom(100);
         hideSystemBars();
     }
 

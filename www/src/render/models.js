@@ -7,6 +7,15 @@ export const flatMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatS
 // Eigenes Material für InstancedMeshes: teilen sich normale und instanzierte Meshes ein Material, wählt three.js
 // bei jedem Wechsel das Shader-Programm neu aus (jedes Bild).
 export const flatMatInstanced = flatMat.clone();
+// Dasselbe Problem im Schattenpass: three.js nutzt dort EIN Tiefen-Material für alle Objekte und wechselt bei jedem
+// Wechsel zwischen InstancedMesh und Mesh das Shader-Programm (inkl. Neuberechnung der Programm-Parameter).
+// Instanzierte Schattenwerfer bekommen deshalb ein eigenes Tiefen-Material (shadowInstanced).
+export const instancedDepthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+export function shadowInstanced(mesh) {
+  mesh.castShadow = true;
+  mesh.customDepthMaterial = instancedDepthMat;
+  return mesh;
+}
 
 const _c = new THREE.Color();
 const _m = new THREE.Matrix4();
@@ -51,6 +60,87 @@ export function part(shape, color, o = {}, jitter = 0, rng = Math.random) {
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return g;
+}
+
+// Farb-Texte nur einmal parsen ('#ff8a3d' → THREE.Color, geteilt, nie verändert)
+const COLORS = new Map();
+export function colorOf(css) {
+  let c = COLORS.get(css);
+  if (!c) { c = new THREE.Color(css); COLORS.set(css, c); }
+  return c;
+}
+
+// Baut eine Geometrie (Positionen + Vertex-Farben) direkt in einen wiederverwendeten Puffer – ohne Zwischen-Arrays und
+// ohne geklonte Teil-Geometrien (Gelände-Stücke entstehen während der Fahrt; jede Allokation dort wäre eine GC-Spitze).
+// Ergebnis von geometry(): eine BufferGeometry mit passgenauen Kopien, wie merge([...]).
+const _v3 = new THREE.Vector3();
+export class GeoBuilder {
+  constructor(capVerts = 8192) {
+    this.pos = new Float32Array(capVerts * 3);
+    this.col = new Float32Array(capVerts * 3);
+    this.n = 0;   // Anzahl Ecken
+  }
+
+  reset() { this.n = 0; return this; }
+
+  ensure(extra) {
+    const need = (this.n + extra) * 3;
+    if (need <= this.pos.length) return;
+    let cap = this.pos.length;
+    while (cap < need) cap *= 2;
+    const p = new Float32Array(cap), c = new Float32Array(cap);
+    p.set(this.pos.subarray(0, this.n * 3));
+    c.set(this.col.subarray(0, this.n * 3));
+    this.pos = p;
+    this.col = c;
+  }
+
+  vert(x, y, z, r, g, b) {
+    const i = this.n * 3;
+    this.pos[i] = x; this.pos[i + 1] = y; this.pos[i + 2] = z;
+    this.col[i] = r; this.col[i + 1] = g; this.col[i + 2] = b;
+    this.n++;
+  }
+
+  // Viereck a-b-c-d als zwei Dreiecke (a,b,c) + (a,c,d); a/b liegen bei x = xa, c/d bei x = xb.
+  // Jedes Dreieck bekommt eine eigene Helligkeits-Abweichung (k1, k2).
+  quad(xa, xb, ya, za, yb, zb, yc, zc, yd, zd, color, k1, k2) {
+    this.ensure(6);
+    const r = color.r, g = color.g, b = color.b;
+    this.vert(xa, ya, za, r * k1, g * k1, b * k1);
+    this.vert(xa, yb, zb, r * k1, g * k1, b * k1);
+    this.vert(xb, yc, zc, r * k1, g * k1, b * k1);
+    this.vert(xa, ya, za, r * k2, g * k2, b * k2);
+    this.vert(xb, yc, zc, r * k2, g * k2, b * k2);
+    this.vert(xb, yd, zd, r * k2, g * k2, b * k2);
+  }
+
+  // wie part(): Grundform transformieren und einfärben (jitter je Dreieck), direkt in den Puffer
+  part(shape, color, o = {}, jitter = 0, rng = Math.random) {
+    const src = (typeof shape === 'string' ? SHAPES[shape] : shape).attributes.position;
+    const cnt = src.count;
+    this.ensure(cnt);
+    _e.set(o.rx || 0, o.ry || 0, o.rz || 0);
+    _q.setFromEuler(_e);
+    _p.set(o.x || 0, o.y || 0, o.z || 0);
+    _s.set(o.sx ?? o.s ?? 1, o.sy ?? o.s ?? 1, o.sz ?? o.s ?? 1);
+    _m.compose(_p, _q, _s);
+    const c = typeof color === 'string' ? colorOf(color) : color;
+    let k = 1;
+    for (let i = 0; i < cnt; i++) {
+      if (i % 3 === 0) k = jitter ? 1 + (rng() - 0.5) * jitter : 1;
+      _v3.fromBufferAttribute(src, i).applyMatrix4(_m);
+      this.vert(_v3.x, _v3.y, _v3.z, c.r * k, c.g * k, c.b * k);
+    }
+  }
+
+  geometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos.slice(0, this.n * 3), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(this.col.slice(0, this.n * 3), 3));
+    g.computeVertexNormals();
+    return g;
+  }
 }
 
 export function merge(parts) {

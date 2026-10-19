@@ -1,9 +1,16 @@
 import * as THREE from 'three';
-import { part, merge, flatMatInstanced } from './models.js';
+import { part, merge, flatMatInstanced, shadowInstanced } from './models.js';
 import { OBJ } from '../physics/objects.js';
 import { RENDER } from '../data/balance.js';
 
 const _o = new THREE.Object3D();
+
+// Anzahl sichtbarer Instanzen setzen; leere InstancedMeshes werden gar nicht gezeichnet (spart Draw Calls)
+function setCount(mesh, n) {
+  mesh.count = n;
+  mesh.visible = n > 0;
+  if (n > 0) mesh.instanceMatrix.needsUpdate = true;
+}
 
 function instanced(geo, mat, max) {
   const m = new THREE.InstancedMesh(geo, mat, max);
@@ -116,15 +123,21 @@ export class ObjectsView {
     this.obstacleMeshes = { tires: this.tires, scrap: this.scrap, cactus: this.cactus, pillar: this.pillar };
 
     this.modelH = { tires: OBJ.tires.h, scrap: OBJ.scrapModelH, cactus: OBJ.cactus.h, pillar: OBJ.pillar.h };
+    // für update(): Listen/Zähler einmal anlegen (keine Objekte pro Bild)
+    this.obstacleKeys = Object.keys(this.obstacleMeshes);
+    this.obstacleCounts = {};
+    this.pickupCounts = {};
     for (const m of [this.bolts, this.rings, ...Object.values(this.pickups), ...Object.values(this.obstacleMeshes)]) {
-      m.castShadow = true;
+      shadowInstanced(m);
       scene.add(m);
     }
 
-    // Aufwind-Säulen: durchsichtige, flimmernde Röhren
+    // Aufwind-Säulen: durchsichtige, flimmernde Röhren. forceSinglePass: durchsichtig + beidseitig würde three.js sonst
+    // jedes Bild in zwei Durchgängen mit material.needsUpdate zeichnen (Shader-Programm wird jedes Mal neu gewählt).
+    // Gilt genauso für die durchsichtigen Zonen in featuresView.js.
     const thGeo = new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1, true);
     thGeo.translate(0, 0.5, 0);
-    this.thermalMat = new THREE.MeshBasicMaterial({ color: '#fff6dc', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
+    this.thermalMat = new THREE.MeshBasicMaterial({ color: '#fff6dc', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
     this.thermals = instanced(thGeo, this.thermalMat, 12);
     scene.add(this.thermals);
   }
@@ -134,7 +147,8 @@ export class ObjectsView {
     const minX = camX - RENDER.objectsBehind, maxX = camX + RENDER.objectsAhead;
     let n = 0;
     if (objects) {
-      for (const c of objects.bolts) {
+      for (let i150 = 0; i150 < objects.bolts.length; i150++) {
+        const c = objects.bolts[i150];
         if (!c.alive || c.x < minX || c.x > maxX || n >= 600) continue;
         _o.position.set(c.x - originX, c.y, 0);
         _o.rotation.set(0.35, time * 3 + c.x * 0.3, 0.25);
@@ -143,13 +157,13 @@ export class ObjectsView {
         this.bolts.setMatrixAt(n++, _o.matrix);
       }
     }
-    this.bolts.count = n;
-    this.bolts.instanceMatrix.needsUpdate = true;
+    setCount(this.bolts, n);
 
-    const pc = this._pc || (this._pc = {});
+    const pc = this.pickupCounts;
     for (const k of PICKUP_KINDS) pc[k] = 0;
     if (objects) {
-      for (const c of objects.pickups) {
+      for (let i164 = 0; i164 < objects.pickups.length; i164++) {
+        const c = objects.pickups[i164];
         if (!c.alive || c.x < minX || c.x > maxX) continue;
         const mesh = this.pickups[c.kind];
         if (!mesh || pc[c.kind] >= 40) continue;
@@ -160,14 +174,12 @@ export class ObjectsView {
         mesh.setMatrixAt(pc[c.kind]++, _o.matrix);
       }
     }
-    for (const k of PICKUP_KINDS) {
-      this.pickups[k].count = pc[k];
-      this.pickups[k].instanceMatrix.needsUpdate = true;
-    }
+    for (const k of PICKUP_KINDS) setCount(this.pickups[k], pc[k]);
 
     n = 0;
     if (objects) {
-      for (const r of objects.rings) {
+      for (let i179 = 0; i179 < objects.rings.length; i179++) {
+        const r = objects.rings[i179];
         if (r.x < minX || r.x > maxX) continue;
         _o.position.set(r.x - originX, r.y, 0);
         _o.rotation.set(0, 1.15, 0);
@@ -176,13 +188,13 @@ export class ObjectsView {
         this.rings.setMatrixAt(n++, _o.matrix);
       }
     }
-    this.rings.count = n;
-    this.rings.instanceMatrix.needsUpdate = true;
+    setCount(this.rings, n);
 
-    const counts = {};
-    for (const k of Object.keys(this.obstacleMeshes)) counts[k] = 0;
+    const counts = this.obstacleCounts;
+    for (const k of this.obstacleKeys) counts[k] = 0;
     if (objects) {
-      for (const o of objects.obstacles) {
+      for (let i193 = 0; i193 < objects.obstacles.length; i193++) {
+        const o = objects.obstacles[i193];
         if (!o.alive || o.x < minX || o.x > maxX) continue;
         const mesh = this.obstacleMeshes[o.type];
         if (!mesh) continue;
@@ -194,14 +206,12 @@ export class ObjectsView {
         mesh.setMatrixAt(counts[o.type]++, _o.matrix);
       }
     }
-    for (const [k, mesh] of Object.entries(this.obstacleMeshes)) {
-      mesh.count = counts[k];
-      mesh.instanceMatrix.needsUpdate = true;
-    }
+    for (const k of this.obstacleKeys) setCount(this.obstacleMeshes[k], counts[k]);
 
     n = 0;
     if (objects) {
-      for (const th of objects.thermals) {
+      for (let i209 = 0; i209 < objects.thermals.length; i209++) {
+        const th = objects.thermals[i209];
         if (th.x + th.w < minX || th.x - th.w > maxX) continue;
         _o.position.set(th.x - originX, objects.ground(th.x) - 2, -1);
         _o.rotation.set(0, time * 0.5, 0);
@@ -210,8 +220,7 @@ export class ObjectsView {
         this.thermals.setMatrixAt(n++, _o.matrix);
       }
     }
-    this.thermals.count = n;
-    this.thermals.instanceMatrix.needsUpdate = true;
+    setCount(this.thermals, n);
     this.thermalMat.opacity = 0.12 + Math.sin(time * 3) * 0.04;
   }
 }

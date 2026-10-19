@@ -20,12 +20,29 @@ export class Menus {
 
     this.settings = el(`<div id="settings" class="overlay hidden"><div class="card">
       <h2>Einstellungen</h2>
+      <h3>Ton</h3>
       <div class="toggles">
-        <label><input type="checkbox" data-k="sound"> 🔊 Ton</label>
+        <label><input type="checkbox" data-k="sound"> 🔊 Ton an</label>
+      </div>
+      <label class="slider"><span>💥 Effekte</span><input type="range" min="0" max="100" step="5" data-v="sfxVol" aria-label="Lautstärke Effekte"><b data-id="sfxVolTxt"></b></label>
+      <label class="slider"><span>🎵 Musik</span><input type="range" min="0" max="100" step="5" data-v="musicVol" aria-label="Lautstärke Musik"><b data-id="musicVolTxt"></b></label>
+      <h3>Spielgefühl</h3>
+      <div class="toggles">
         <label><input type="checkbox" data-k="vibration"> 📳 Vibration</label>
-        <label><input type="checkbox" data-k="shake"> 💥 Bildschirmwackeln</label>
+        <label><input type="checkbox" data-k="shake"> 💥 Bildschirmwackeln & Blitze</label>
+        <label><input type="checkbox" data-k="slowmo"> 🐌 Zeitlupe bei Stunts</label>
+      </div>
+      <h3>Grafik</h3>
+      <div class="seg" data-id="quality" role="radiogroup" aria-label="Grafikqualität">
+        <button class="seg-btn" data-q="low">Niedrig</button><button class="seg-btn" data-q="mid">Mittel</button><button class="seg-btn" data-q="high">Hoch</button>
+      </div>
+      <p class="small">Niedrig = schneller und sparsamer (weniger Bildpunkte). Schatten kosten ebenfalls Leistung.</p>
+      <div class="toggles">
         <label><input type="checkbox" data-k="shadows"> 🌗 Schatten</label>
       </div>
+      <h3>Tutorial</h3>
+      <p class="small" data-id="tutTxt"></p>
+      <div class="btn-col"><button class="btn btn-secondary" data-a="tutReset">🎓 Hinweise wieder zeigen</button></div>
       <h3>Spielstand</h3>
       <p class="small">Sichere den Text z. B. in einer Notiz. So geht beim Neuinstallieren nichts verloren.</p>
       <textarea data-id="text" rows="3" placeholder="Hier erscheint der Export – oder füge hier einen Spielstand zum Importieren ein."></textarea>
@@ -48,6 +65,20 @@ export class Menus {
     s.querySelectorAll('input[data-k]').forEach((i) => {
       i.onchange = () => h.onSetting(i.dataset.k, i.checked);
     });
+    // Lautstärke: beim Ziehen sofort hörbar (ohne Speichern), beim Loslassen gespeichert
+    s.querySelectorAll('input[data-v]').forEach((i) => {
+      const txt = s.querySelector(`[data-id=${i.dataset.v}Txt]`);
+      i.oninput = () => { txt.textContent = `${i.value} %`; h.onSetting(i.dataset.v, Number(i.value) / 100, false); };
+      i.onchange = () => h.onSetting(i.dataset.v, Number(i.value) / 100, true);
+    });
+    s.querySelectorAll('[data-q]').forEach((b) => {
+      b.onclick = () => { h.onSetting('quality', b.dataset.q); this.markQuality(b.dataset.q); };
+    });
+    s.querySelector('[data-a=tutReset]').onclick = () => {
+      if (h.onTutorialReset) h.onTutorialReset();
+      this.refreshTutorial();
+      this.say('✔ Die Hinweise erscheinen wieder an den passenden Stellen.');
+    };
     s.querySelector('[data-a=close]').onclick = () => this.closeSettings();
     // Verstecktes Dev-Menü: CONTROLS.devTaps× schnell hintereinander auf die Versionsnummer tippen
     this.taps = 0;
@@ -101,9 +132,29 @@ export class Menus {
     show(this.pause, on);
   }
 
+  markQuality(q) {
+    this.settings.querySelectorAll('[data-q]').forEach((b) => {
+      b.classList.toggle('on', b.dataset.q === q);
+      b.setAttribute('aria-checked', String(b.dataset.q === q));
+    });
+  }
+
+  refreshTutorial() {
+    const p = this.h.getTutorial ? this.h.getTutorial() : null;
+    this.settings.querySelector('[data-id=tutTxt]').textContent = !p ? ''
+      : p.off ? `Hinweise ausgeschaltet (${p.seen} von ${p.total} gesehen).` : `${p.seen} von ${p.total} Hinweisen gesehen – jeder erscheint nur einmal.`;
+  }
+
   openSettings() {
     const st = this.h.getSettings();
     this.settings.querySelectorAll('input[data-k]').forEach((i) => { i.checked = !!st[i.dataset.k]; });
+    this.settings.querySelectorAll('input[data-v]').forEach((i) => {
+      i.value = String(Math.round((st[i.dataset.v] ?? 1) * 100));
+      this.settings.querySelector(`[data-id=${i.dataset.v}Txt]`).textContent = `${i.value} %`;
+    });
+    this.markQuality(st.quality);
+    this.refreshTutorial();
+    this.settings.querySelector('.card').scrollTop = 0;
     this.text.value = '';
     this.say('');
     show(this.backupBtn, !!(this.h.getBackup && this.h.getBackup()));

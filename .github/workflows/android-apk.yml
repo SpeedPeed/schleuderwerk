@@ -1,5 +1,8 @@
 # Baut bei jedem Push auf "main" automatisch eine installierbare Debug-APK.
 # Ergebnis: unter "Releases" (direkter APK-Download, auch am Handy) und unter "Actions" als Artefakt.
+# Von Hand: Reiter "Actions" → "Android-APK bauen" → "Run workflow" → Branch wählen (Release dann als Vorab-Version).
+# Versionsname = Version aus package.json + Laufnummer (z. B. 1.0.0.42), immer derselbe Signaturschlüssel
+# (keystore/debug.keystore) → Updates behalten den Spielstand.
 name: Android-APK bauen
 
 on:
@@ -9,6 +12,10 @@ on:
 
 permissions:
   contents: write # nötig, um das Release mit der APK anzulegen
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   apk:
@@ -30,6 +37,9 @@ jobs:
 
       - name: Abhängigkeiten installieren
         run: npm install --no-audit --no-fund
+
+      - name: Tests
+        run: npm test
 
       - name: Android-Projekt erzeugen und anpassen
         env:
@@ -67,6 +77,7 @@ jobs:
           body: |
             Automatisch gebaute Test-Version.
             Am Handy die .apk-Datei unten unter „Assets“ antippen und installieren.
-            Commit: ${{ github.event.head_commit.message }}
+            Branch: ${{ github.ref_name }} · Commit: ${{ github.sha }}
           files: out/*.apk
-          make_latest: true
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          make_latest: ${{ github.ref == 'refs/heads/main' }}

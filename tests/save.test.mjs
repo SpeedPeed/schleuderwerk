@@ -1,7 +1,7 @@
 // Spielstand v3: Standard-Schema, Migration v2 → v3, Export/Import-Rundlauf, alte SW2-Texte, laufender Run.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SAVE_VERSION, GARAGE } from '../www/src/data/balance.js';
+import { SAVE_VERSION, GARAGE, AUDIO, RENDER } from '../www/src/data/balance.js';
 import { defaultSave, migrate, exportSave, importSave, SaveError } from '../www/src/save/save.js';
 import { markMilestone, addPlaytime } from '../www/src/garage/progression.js';
 import { newRun, reachableNodes, enterNode } from '../www/src/run/runState.js';
@@ -47,7 +47,8 @@ test('Migration v2 → v3: Geld / 40 als Schrott, Einstellungen und Rekorde blei
   assert.equal(s.meta.scrap, 250);
   assert.equal(s.meta.cores, 0);
   assert.ok(!('money' in s) && !('upgrades' in s) && !('unlocked' in s));
-  assert.deepEqual(s.settings, { sound: false, vibration: true, shake: false, shadows: true });
+  // alte Einstellungen bleiben, neue (Phase 7) kommen mit Standardwerten dazu
+  assert.deepEqual(s.settings, { sound: false, vibration: true, shake: false, shadows: true, slowmo: true, sfxVol: AUDIO.defaultSfx, musicVol: AUDIO.defaultMusic, quality: RENDER.defaultQuality });
   assert.equal(s.stats.bestDist, 4100);
   assert.equal(s.stats.bestHeight, 210);
   assert.equal(s.stats.bestTricks, 880);
@@ -55,6 +56,7 @@ test('Migration v2 → v3: Geld / 40 als Schrott, Einstellungen und Rekorde blei
   assert.ok(!('worlds' in s), 'Welten gibt es seit Phase 3 nicht mehr (Biome sind Akte eines Runs)');
   assert.equal(s.run, null);
   assert.equal(s.tutorial.runs, 23);
+  assert.equal(s.tutorial.off, true, 'wer schon gespielt hat, bekommt keine Tutorial-Hinweise');
   assert.equal(s.createdAt, 1700000000000);
   assert.deepEqual(s.garage.parts, GARAGE.starterParts, 'Garage startet neu');
 });

@@ -143,7 +143,8 @@ export class CameraRig {
   extent(px, py, R, aspect, fovDeg) {
     const p = this._p, e = this._e || (this._e = { minX: 0, maxX: 0, minY: 0, maxY: 0 });
     e.minX = Infinity; e.maxX = -Infinity; e.minY = Infinity; e.maxY = -Infinity;
-    for (const [cx, cy] of RING) {
+    for (let k = 0; k < RING.length; k++) {
+      const cx = RING[k][0], cy = RING[k][1];
       projectNdc(this.out, aspect, fovDeg, px + cx * R, py + cy * R, 0, p);
       if (p.x < e.minX) e.minX = p.x;
       if (p.x > e.maxX) e.maxX = p.x;

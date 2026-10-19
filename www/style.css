@@ -106,7 +106,7 @@ html, body {
 /* Ressourcen-Leisten unten links: Treibstoff, Hitze (blinkt ab 80 %), Haltbarkeit */
 .res-bars {
   position: absolute; left: 14px; bottom: calc(var(--safe-bottom) + 22px);
-  width: min(44vw, 190px); display: flex; flex-direction: column; gap: 7px;
+  width: min(44vw, 190px, calc(100vw - 226px)); display: flex; flex-direction: column; gap: 7px;   /* schmale Handys: Platz für die Fähigkeits-Knöpfe */
 }
 .rbar { display: flex; align-items: center; gap: 6px; }
 .rbar b { width: 22px; text-align: center; font-size: 15px; filter: drop-shadow(0 2px 0 rgba(0,0,0,.4)); }
@@ -390,12 +390,14 @@ html, body {
 .res-badges { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 8px; }
 .badge { background: linear-gradient(#ffe066, #f5b82e); color: #3a2600; font-weight: 900; padding: 6px 12px; border-radius: 10px; animation: bump .5s; }
 .res-row {
-  display: grid; grid-template-columns: 1fr auto 56px; gap: 8px; align-items: center;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) 56px; gap: 8px; align-items: center;
   padding: 8px 4px; border-bottom: 1px solid var(--line); animation: fadein .3s both;
 }
+.res-row > span:first-child { white-space: nowrap; }
+.res-row .res-sub { text-align: right; }
 .res-row b { text-align: right; color: var(--accent-2); }
 .res-sub { color: var(--muted); font-size: 14px; }
-.res-total { font-size: 38px; font-weight: 900; text-align: center; margin-top: 12px; color: var(--accent-2); }
+.res-total { font-size: clamp(26px, 8.5vw, 38px); font-weight: 900; text-align: center; margin-top: 12px; color: var(--accent-2); }
 .res-total small { font-size: 16px; color: var(--muted); }
 .res-tip { text-align: center; color: var(--good); font-weight: 700; margin-top: 10px; min-height: 1em; font-size: 14px; }
 
@@ -454,7 +456,7 @@ textarea {
 #devmenu { z-index: 20; background: rgba(10, 12, 20, .8); }
 .dev-card { width: min(100%, 440px); background: #181c2c; }
 .dev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.dev-grid .btn { padding: 10px; font-size: 14px; }
+.dev-grid .btn { padding: 10px; font-size: 14px; min-height: 44px; }
 .dev-tweaks { display: flex; flex-direction: column; gap: 6px; }
 .dev-tw { display: grid; grid-template-columns: 1fr 96px 44px; gap: 6px; align-items: center; font-size: 13px; font-weight: 700; }
 .dev-tw small { display: block; color: var(--muted); font-size: 10px; font-family: monospace; }
@@ -680,7 +682,7 @@ textarea {
   background: #1d2234; border: 2px solid color-mix(in srgb, var(--c) 35%, #333a50); color: var(--text); font: inherit; cursor: pointer;
 }
 .lab-node .ln-icon { font-size: 24px; line-height: 1.1; }
-.lab-node .ln-name { font-size: 10px; font-weight: 800; line-height: 1.1; height: 2.2em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; }
+.lab-node .ln-name { font-size: 10px; font-weight: 800; line-height: 1.1; height: 2.2em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; hyphens: auto; overflow-wrap: anywhere; max-width: 100%; }
 .lab-node .ln-cost { font-size: 10px; font-weight: 900; color: var(--accent-2); margin-top: auto; white-space: nowrap; }
 .lab-node.s-locked { opacity: .45; filter: grayscale(.7); }
 .lab-node.s-available { border-color: var(--c); box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent); }
@@ -779,3 +781,119 @@ textarea {
 .dev-row.ok b { color: var(--good); }
 .dev-row.early b { color: #ffd23f; }
 .dev-row.late b { color: var(--bad); }
+
+/* ======================================================================
+   Phase 7 – Polish: Übergänge, Tutorial, Effekte, Einstellungen, Startbildschirm
+   ====================================================================== */
+:root {
+  --gap: 10px;
+  --radius: 14px;
+  --touch: 44px;            /* Mindestgröße für Touch-Ziele */
+}
+
+/* Overlays respektieren Notch/Navigationsleiste (App-Modus body.native setzt die Abstände) */
+.overlay { padding: calc(var(--safe-top) + 12px) 12px calc(var(--safe-bottom) + 12px); }
+
+/* Touch-Ziele ≥ 44 px */
+.g-tab, .is-tab, .ch-inv, .map-asc, .dev-check, .dev-sec summary { min-height: var(--touch); }
+.ch-inv { padding: 8px 14px; }
+.map-items { min-height: var(--touch); }
+.icon-btn { min-width: var(--touch); min-height: var(--touch); }
+
+/* Übergänge zwischen Bildschirmen: weiches Einblenden beim Anzeigen */
+#garage:not(.hidden), #map:not(.hidden), #results:not(.hidden) { animation: screenin .28s ease-out; }
+#hud:not(.hidden) { animation: fadein .35s ease-out; }
+@keyframes screenin { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+#veil { position: absolute; inset: 0; background: #0d1018; opacity: 0; pointer-events: none; z-index: 30; }
+#veil.go { animation: veil .45s ease-out; }
+@keyframes veil { from { opacity: 1; } to { opacity: 0; } }
+
+/* ---------- Tutorial ---------- */
+#tutorial { position: absolute; inset: 0; z-index: 40; pointer-events: none; }
+.tut-scrim { position: absolute; inset: 0; background: rgba(8, 10, 18, .45); pointer-events: auto; animation: fadein .2s; }
+.tut-card {
+  position: absolute; left: 50%; transform: translateX(-50%); width: min(calc(100% - 24px), 400px);
+  background: linear-gradient(#2c3350, #20263c); border: 2px solid rgba(255, 210, 63, .55); border-radius: 18px;
+  padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.5); pointer-events: auto; animation: tutin .3s ease-out;
+}
+.place-top .tut-card { top: calc(var(--safe-top) + 64px); }
+.place-bottom .tut-card { bottom: calc(var(--safe-bottom) + 16px); }
+#tutorial.mode-toast .tut-card { bottom: auto; top: calc(var(--safe-top) + 168px); background: rgba(32, 38, 60, .94); border-color: rgba(51, 230, 255, .5); padding: 10px 12px; }
+.tut-head { display: flex; align-items: center; gap: 8px; }
+.tut-icon { font-size: 26px; line-height: 1; }
+.tut-head b { flex: 1; font-size: 17px; font-weight: 900; color: var(--accent-2); }
+.tut-head small { color: var(--muted); font-weight: 800; font-size: 11px; }
+.tut-text { margin: 6px 0 0; font-size: 14.5px; line-height: 1.4; color: #eef1f8; }
+.tut-text b { color: #fff; }
+.tut-btns { display: flex; gap: 8px; margin-top: 10px; }
+.tut-btns .btn { flex: 1; min-height: var(--touch); padding: 10px 12px; font-size: 15px; }
+.tut-btns .tut-skip { flex: 0 1 auto; font-size: 13px; background: transparent; box-shadow: none; color: var(--muted); text-decoration: underline; }
+.tut-tap { margin-top: 6px; text-align: right; font-size: 11px; color: var(--muted); font-weight: 700; }
+.tut-target { outline: 3px solid var(--accent-2) !important; outline-offset: 3px; animation: tutpulse 1.1s ease-in-out infinite; }
+@keyframes tutin { from { opacity: 0; transform: translate(-50%, 12px) scale(.96); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes tutpulse { 0%, 100% { outline-color: rgba(255, 210, 63, .95); } 50% { outline-color: rgba(255, 210, 63, .25); } }
+
+/* ---------- Effekte über dem 3D-Bild ---------- */
+#fxflash { position: absolute; inset: 0; background: var(--c, #fff); opacity: 0; pointer-events: none; z-index: 2; }
+#fxflash.go { animation: fxflash .35s ease-out; }
+@keyframes fxflash { from { opacity: var(--a, .3); } to { opacity: 0; } }
+#fxheat { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0; transition: opacity .3s;
+  box-shadow: inset 0 0 60px 18px rgba(255, 60, 20, .55); }
+#fxheat.warn { opacity: .55; }
+#fxheat.stall { opacity: 1; animation: heatpulse .5s ease-in-out infinite alternate; }
+@keyframes heatpulse { from { box-shadow: inset 0 0 40px 10px rgba(255, 40, 20, .45); } to { box-shadow: inset 0 0 90px 30px rgba(255, 30, 10, .85); } }
+#fxbanner { position: absolute; left: 0; right: 0; top: 34%; text-align: center; pointer-events: none; z-index: 6; }
+#fxbanner small { display: block; font-size: 14px; font-weight: 900; letter-spacing: 6px; color: #ffb0a0; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
+#fxbanner b { display: block; font-size: 34px; font-weight: 900; color: #fff; text-shadow: 0 4px 0 #8e2f3a, 0 0 24px rgba(192, 57, 43, .9); padding: 0 12px; }
+#fxbanner.go { animation: bossbanner 2.2s ease-out forwards; }
+@keyframes bossbanner { 0% { opacity: 0; transform: scale(2.2); } 12% { opacity: 1; transform: scale(.94); } 20% { transform: scale(1.04); } 28% { transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px); } }
+#confetti { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 12; }
+#confetti i { position: absolute; top: -20px; left: var(--x); width: 9px; height: 14px; background: var(--c); border-radius: 2px; opacity: 0; }
+#confetti.go i { animation: confetti 2.6s cubic-bezier(.3, .6, .5, 1) var(--d) forwards; }
+@keyframes confetti { 0% { opacity: 1; transform: translateY(0) rotate(0); } 85% { opacity: 1; } 100% { opacity: 0; transform: translateY(105vh) rotate(var(--r)); } }
+.hud-chain.go { font-size: calc(26px + var(--n, 3) * 2px); }
+
+/* Boss-Intro: Karte rüttelt kurz und glüht */
+.rc-boss { animation: bossin .6s ease-out, bossglow 1.6s ease-in-out .6s infinite alternate; }
+@keyframes bossin { 0% { transform: scale(.85); opacity: 0; } 50% { transform: scale(1.03) rotate(-1deg); opacity: 1; } 70% { transform: rotate(1deg); } 100% { transform: none; } }
+@keyframes bossglow { from { box-shadow: 0 0 0 2px rgba(192,57,43,.8), 0 0 18px rgba(192,57,43,.3); } to { box-shadow: 0 0 0 2px rgba(255,90,60,.95), 0 0 40px rgba(255,60,40,.55); } }
+.rc-end .res-total { animation: bump .6s 1.2s both; }
+
+/* ---------- Einstellungen ---------- */
+.slider { display: grid; grid-template-columns: 96px 1fr 52px; align-items: center; gap: 8px; min-height: var(--touch); font-weight: 700; font-size: 15px; }
+.slider input[type=range] { width: 100%; height: var(--touch); accent-color: var(--accent); }
+.slider b { text-align: right; color: var(--accent-2); font-size: 14px; }
+.seg { display: flex; gap: 6px; }
+.seg-btn { flex: 1; min-height: var(--touch); border-radius: 12px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font: inherit; font-weight: 800; font-size: 15px; }
+.seg-btn.on { color: var(--text); border-color: rgba(255,138,61,.7); background: rgba(255,138,61,.24); }
+#settings .card h3 { margin-top: 14px; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+
+/* ---------- Dev-Menü ---------- */
+.dev-help p { margin: 4px 0; }
+.dev-perf { margin: 0 0 6px; }
+#perf { position: absolute; left: 4px; right: 4px; top: calc(var(--safe-top) + 2px); z-index: 50; pointer-events: none; text-align: center;
+  font: 700 10px/1.3 monospace; color: #b6ffcb; background: rgba(0,0,0,.55); border-radius: 6px; padding: 2px 4px; }
+
+/* ---------- Startbildschirm (index.html, bis das erste Bild steht) ---------- */
+#boot { position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: radial-gradient(circle at 50% 38%, #34406a 0%, #1b2030 62%); transition: opacity .5s; }
+#boot.done { opacity: 0; pointer-events: none; }
+.boot-logo { font-size: clamp(28px, 9vw, 44px); font-weight: 900; letter-spacing: 2px; color: #fff; text-align: center; line-height: 1;
+  text-shadow: 0 4px 0 #b8461c, 0 7px 0 rgba(0,0,0,.3); transform: rotate(-4deg); }
+.boot-logo span { display: block; font-size: .42em; letter-spacing: 6px; color: var(--accent-2); text-shadow: 0 2px 0 rgba(0,0,0,.4); margin-top: 8px; }
+.boot-car { font-size: 56px; animation: bootcar 1.2s ease-in-out infinite; }
+@keyframes bootcar { 0%, 100% { transform: translateY(0) rotate(-8deg); } 50% { transform: translateY(-14px) rotate(6deg); } }
+.boot-bar { width: min(60vw, 240px); height: 8px; border-radius: 4px; background: rgba(255,255,255,.12); overflow: hidden; }
+.boot-bar i { display: block; width: 40%; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ff9d4f, #ffd23f); animation: bootbar 1.1s ease-in-out infinite; }
+@keyframes bootbar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.boot-sub { color: var(--muted); font-size: 13px; font-weight: 700; }
+
+/* Hochformat-Hinweis im Querformat (Handy) */
+#rotate-hint { flex-direction: column; gap: 12px; text-align: center; padding: 20px; }
+#rotate-hint b { font-size: 54px; display: block; animation: rotatehint 1.8s ease-in-out infinite; }
+@keyframes rotatehint { 0%, 30% { transform: rotate(-90deg); } 60%, 100% { transform: rotate(0); } }
+
+/* Bewegung reduzieren (Systemeinstellung) */
+@media (prefers-reduced-motion: reduce) {
+  #fxflash.go, #veil.go, .rc-boss, .tut-target, #confetti.go i { animation: none !important; }
+}

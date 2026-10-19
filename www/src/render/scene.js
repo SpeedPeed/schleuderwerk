@@ -5,6 +5,7 @@ import { RENDER, CAMERA, FX } from '../data/balance.js';
 export function createView(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, RENDER.maxPixelRatio));
+  let quality = RENDER.defaultQuality;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -68,11 +69,22 @@ export function createView(canvas) {
     scene.fog.far = dist + RENDER.fogFar;
   }
 
+  // Grafikqualität 'low' | 'mid' | 'high' → Pixel-Ratio (nie mehr als das Gerät hat)
+  function setQuality(q) {
+    const max = RENDER.pixelRatio[q] ?? RENDER.maxPixelRatio;
+    const pr = Math.min(window.devicePixelRatio || 1, max);
+    quality = q;
+    if (Math.abs(renderer.getPixelRatio() - pr) < 1e-3) return;
+    renderer.setPixelRatio(pr);
+    resize();
+  }
+
   function setShadows(on) {
+    if (renderer.shadowMap.enabled === on && sun.castShadow === on) return;
     renderer.shadowMap.enabled = on;
     sun.castShadow = on;
     scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; });
   }
 
-  return { renderer, scene, camera, hemi, sun, resize, applyPalette, followSun, setFog, setShadows, flash };
+  return { renderer, scene, camera, hemi, sun, resize, applyPalette, followSun, setFog, setShadows, setQuality, flash, get quality() { return quality; } };
 }

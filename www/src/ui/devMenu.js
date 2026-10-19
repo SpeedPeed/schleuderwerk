@@ -66,8 +66,19 @@ const SECTION_NAMES = {
   PROGRESSION: 'Fortschritt (Zielzeiten)', REWARDS: 'Belohnungen', SHOP: 'Schrotthändler', WORKBENCH: 'Werkbank', BLACKMARKET: 'Schwarzmarkt',
   STATION: 'Tankstelle', EVENTS: 'Ereignisse', TREASURE: 'Schatzhaufen', RESEARCH: 'Forschung', ITEMS: 'Items', RULES: 'Regel-Schalter',
   LAUNCH: 'Abschuss', CAMERA: 'Kamera', ORIGIN: 'Floating Origin', TRACK: 'Strecke', OBJECTS: 'Objekte', SPAWN: 'Verteilung', STAGE: 'Etappe',
-  CONTROLS: 'Steuerung', RENDER: 'Darstellung', KOMBO: 'Kombos', FX: 'Effekte', SAVE: 'Speichern',
+  CONTROLS: 'Steuerung', RENDER: 'Darstellung', KOMBO: 'Kombos', FX: 'Effekte', SAVE: 'Speichern', AUDIO: 'Ton', TUTORIAL: 'Tutorial',
 };
+
+// Kurze Hilfe (aufklappbar oben im Menü)
+const HELP = [
+  ['Währungen', '⚙ Schrott, 📘 Blaupausen, 💠 Kerne für die Garage; 🔩 Schrauben nur im laufenden Run.'],
+  ['Freischalten', '„Forschung erfüllen“ erfüllt nur die Bedingungen (kaufen musst du noch), „Ganzen Baum erforschen“ erforscht alles. „Alles freischalten“ schenkt Chassis und Fähigkeiten.'],
+  ['Run', '„Etappe: Gold/Bronze/verfehlt“ beendet die laufende Etappe bzw. spielt auf der Karte den nächsten Knoten mit diesem Ergebnis (Shops werden übersprungen). „Zum Boss“ setzt dich vor den Boss, „Nächster Akt“ wechselt den Akt. „Typ erzwingen“ macht alle wählbaren Knoten zu diesem Typ.'],
+  ['Items', 'Item suchen (Name, ID oder Tag) → hinzufügen; ★ erhöhen auf einem Inventar-Platz. Ketten-Log schreibt jede Auslösung in die Konsole (F12).'],
+  ['Werte live', 'Jede Zahl aus data/balance.js ist hier änderbar (↺ = Originalwert). Fahrzeug-Grundwerte wirken sofort, alles andere ab der nächsten Etappe. Änderungen gelten bis zum Neuladen.'],
+  ['Meilensteine', 'Spielzeit bis zu jedem Meilenstein mit Zielkorridor: grün = im Korridor, gelb = zu früh, rot = zu spät.'],
+  ['Leistung', '„Leistungsanzeige“ zeigt oben Bilder/s, Bildzeit, Logik-/Render-Zeit, Draw Calls, Dreiecke und Partikel.'],
+];
 
 // Verstecktes Entwickler-Menü (7× schnell auf die Versionsnummer in den Einstellungen tippen).
 // h: { getSave(), getStage(), onCurrency(kind, n), onResearch(), onUnlockAll(), onGiftParts(), onEndStage(),
@@ -79,12 +90,16 @@ export class DevMenu {
     this.h = h;
     this.el = el(`<div id="devmenu" class="overlay hidden"><div class="card dev-card">
       <h2>🛠 Dev-Menü</h2>
+      <details class="dev-sec dev-help"><summary>❓ Hilfe – was macht was?</summary>
+        ${HELP.map(([t, d]) => `<p class="small"><b>${t}:</b> ${d}</p>`).join('')}
+      </details>
       <h3>Währungen</h3>
       <div class="dev-grid">
         <button class="btn btn-secondary" data-a="scrap1k">+1.000 ⚙</button>
         <button class="btn btn-secondary" data-a="scrap10k">+10.000 ⚙</button>
         <button class="btn btn-secondary" data-a="bp">+10 📘</button>
         <button class="btn btn-secondary" data-a="cores">+3 💠</button>
+        <button class="btn btn-secondary" data-a="bolts">+100 🔩 (Run)</button>
       </div>
       <h3>Freischalten</h3>
       <div class="dev-grid">
@@ -117,6 +132,13 @@ export class DevMenu {
         <div class="dev-tw dev-tier"><span>★ erhöhen<small>Inventar-Platz</small></span><select data-id="islot"></select><button class="icon-btn small" data-a="itier" aria-label="★ erhöhen">★</button></div>
         <label class="dev-check"><input type="checkbox" data-id="ilog"> 🔗 Ketten-Log in der Konsole</label>
       </div>
+      <h3>Tutorial & Leistung</h3>
+      <div class="dev-grid">
+        <button class="btn btn-secondary" data-a="tutReset">🎓 Tutorial zurücksetzen</button>
+        <button class="btn btn-secondary" data-a="tutOff">🎓 Alle Hinweise aus</button>
+      </div>
+      <label class="dev-check"><input type="checkbox" data-id="perf"> 📈 Leistungsanzeige</label>
+      <div class="dev-perf small" data-id="perfTxt"></div>
       <h3>Testfahrt (ohne Run)</h3>
       <div class="dev-grid">${BIOMES.map((b) => `<button class="btn btn-secondary" data-test="${b.id}">${b.icon} ${b.name}</button>`).join('')}</div>
       <div class="msg" data-id="msg"></div>
@@ -138,6 +160,9 @@ export class DevMenu {
     on('scrap10k', () => { h.onCurrency('scrap', 10000); this.say('+10.000 Schrott'); });
     on('bp', () => { h.onCurrency('blueprints', 10); this.say('+10 Blaupausen'); });
     on('cores', () => { h.onCurrency('cores', 3); this.say('+3 Kerne'); });
+    on('bolts', () => { this.say(h.onCurrency('bolts', 100) || ''); });
+    on('tutReset', () => { this.say(h.onTutorial ? h.onTutorial('reset') : ''); });
+    on('tutOff', () => { this.say(h.onTutorial ? h.onTutorial('off') : ''); });
     on('research', () => { h.onResearch(); this.say('Forschungs-Bedingungen erfüllt – Chassis jetzt mit 💠 kaufbar, Teile mit ⚙'); });
     on('researchAll', () => { h.onResearchAll(); this.say('Ganzer Forschungsbaum erforscht (Feinschliff Stufe 1) – Werkbank/Schwarzmarkt ab dem nächsten Akt bzw. Run'); });
     on('force', () => { this.say(h.onForceNode(this.q.ntype.value)); });
@@ -164,6 +189,7 @@ export class DevMenu {
     on('iadd', () => { const id = this.q.ilist.value; this.say(id ? h.onAddItem(id) : 'Kein Item gewählt'); });
     on('ipool', () => { this.say(h.onAllPool()); });
     on('itier', () => { this.say(h.onTierUp(Number(this.q.islot.value))); });
+    this.q.perf.onchange = () => { this.say(h.onPerf ? h.onPerf(this.q.perf.checked) : ''); };
     this.q.ilog.onchange = () => { h.onChainLog(this.q.ilog.checked); this.say(this.q.ilog.checked ? 'Ketten-Log an (Konsole, F12)' : 'Ketten-Log aus'); };
     this.el.querySelector('[data-a=close]').onclick = () => this.close();
 
@@ -263,7 +289,15 @@ export class DevMenu {
     this.q.ev.innerHTML = keys.length ? keys.map((k) => `<span class="dev-chip">${k} <b>${fmt(counts[k])}</b></span>`).join('') : '<span class="small">noch keine Etappe gefahren</span>';
     this.el.querySelector('[data-a=end]').disabled = !(stage && stage.phase !== 'over');
     const run = save.run;
-    for (const a of ['skipGold', 'skipBronze', 'skipMiss', 'boss', 'act', 'setdur', 'iadd', 'itier', 'force']) this.el.querySelector(`[data-a=${a}]`).disabled = !run;
+    for (const a of ['skipGold', 'skipBronze', 'skipMiss', 'boss', 'act', 'setdur', 'iadd', 'itier', 'force', 'bolts']) this.el.querySelector(`[data-a=${a}]`).disabled = !run;
+    if (this.h.getPerf) {
+      const p = this.h.getPerf();
+      this.q.perfTxt.textContent = `Jetzt: ${p.fps} fps · ${p.calls} Draw Calls · ${p.triangles} Dreiecke · ${p.geometries} Geometrien · ${p.programs} Shader · Pixel-Ratio ${p.pixelRatio} (${p.quality})`;
+    }
+    if (this.h.getTutorial) {
+      const t = this.h.getTutorial();
+      this.el.querySelector('[data-a=tutReset]').title = `${t.seen}/${t.total} Hinweise gesehen${t.off ? ', aus' : ''}`;
+    }
     const inv = run ? run.inventory || [] : [];
     this.q.islot.innerHTML = inv.map((e, i) => `<option value="${i}">${i + 1}: ${entryName(e)} ★${e.tier || 1}</option>`).join('') || '<option value="-1">– leer –</option>';
     this.q.ilog.checked = chainLogOn();

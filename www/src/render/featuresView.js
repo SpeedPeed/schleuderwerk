@@ -36,15 +36,15 @@ export class FeaturesView {
     this.blocks = [];       // Pressblöcke { mesh, piston, x, crusher }
     this.cranes = [];       // { head, cable, field, x, arm, magnet }
     this.shimmers = [];     // { mesh, x, phase }
-    this.strikeMat = new THREE.MeshBasicMaterial({ color: '#ffe36a', transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide });
+    this.strikeMat = new THREE.MeshBasicMaterial({ color: '#ffe36a', transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
     this.ringGeo = new THREE.RingGeometry(FEATURES.lightning.radius * 0.75, FEATURES.lightning.radius, 20);
     this.ringGeo.rotateX(-Math.PI / 2);
     this.warns = [];
     this.boltMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     this.boltGeo = boltGeo();
     this.bolts = [];
-    this.fieldMat = new THREE.MeshBasicMaterial({ color: '#7fd4ff', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
-    this.heatMat = new THREE.MeshBasicMaterial({ color: '#ff7a2e', transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+    this.fieldMat = new THREE.MeshBasicMaterial({ color: '#7fd4ff', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
+    this.heatMat = new THREE.MeshBasicMaterial({ color: '#ff7a2e', transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
     this.glowMat = new THREE.MeshBasicMaterial({ color: '#ff5a1f', transparent: true, opacity: 0.32, depthWrite: false });
   }
 
@@ -241,12 +241,14 @@ export class FeaturesView {
 
   // Jedes Bild: Positionen relativ zum Ursprung, bewegliche Teile aus objects
   update(objects, time, originX) {
-    for (const e of this.statics) {
+    for (let i244 = 0; i244 < this.statics.length; i244++) {
+      const e = this.statics[i244];
       e.mesh.position.x = e.x - originX;
       if (e.y !== undefined) e.mesh.position.y = e.y;
     }
     const C = FEATURES.crusher;
-    for (const b of this.blocks) {
+    for (let i249 = 0; i249 < this.blocks.length; i249++) {
+      const b = this.blocks[i249];
       const lift = b.crusher ? b.crusher.lift : C.openY;
       const by = b.y0 + lift;
       b.mesh.position.set(b.x - originX, by, 0);
@@ -265,7 +267,8 @@ export class FeaturesView {
       c.field.position.set(m.hx - originX, m.hy, 0);
       c.field.material.opacity = 0.1 + 0.07 * Math.sin(time * 8);
     }
-    for (const s of this.shimmers) {
+    for (let i268 = 0; i268 < this.shimmers.length; i268++) {
+      const s = this.shimmers[i268];
       if (s.glow) { s.mesh.position.x = s.x - originX; s.mesh.material.opacity = 0.22 + 0.1 * Math.sin(time * 3); continue; }
       s.mesh.position.set(s.x - originX, s.mesh.userData.baseY + Math.sin(time * 1.3 + s.phase) * 0.4, s.z);
       s.mesh.scale.set(1 + 0.08 * Math.sin(time * 5 + s.phase), 1 + 0.12 * Math.sin(time * 3.3 + s.phase), 1);
@@ -274,7 +277,8 @@ export class FeaturesView {
     // Blitze: Warnring (pulsierend) bzw. Blitz
     let nw = 0, nb = 0;
     if (objects) {
-      for (const s of objects.strikes) {
+      for (let i277 = 0; i277 < objects.strikes.length; i277++) {
+        const s = objects.strikes[i277];
         if (s.t > 0) {
           const m = this.warns[nw] || this.addPooled(this.warns, new THREE.Mesh(this.ringGeo, this.strikeMat));
           m.visible = true;

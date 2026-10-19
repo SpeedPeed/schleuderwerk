@@ -1,7 +1,7 @@
 // Spielstand: Schema v3 (ARCHITEKTUR.md §10), Migrationskette v0/v1 → v2 → v3, Export/Import als Text.
 // Reine Logik (localStorage nur in loadSave/writeSave/clearSave/getBackup) – migrate() läuft auch in node --test.
 // migrate() repariert falsch typisierte Felder (Standardwert statt Absturz); nicht ladbare Stände werden gesichert.
-import { SAVE_VERSION, GARAGE } from '../data/balance.js';
+import { SAVE_VERSION, GARAGE, AUDIO, RENDER } from '../data/balance.js';
 import { sanitizeGarage } from '../garage/garage.js';
 import { isValidRun, normalizeRun } from '../run/runState.js';
 
@@ -26,12 +26,14 @@ export function defaultSave() {
     ascension: { unlocked: 0, best: 0, selected: 0, records: {} },
     codex: { items: {}, sets: {} },
     cosmetics: { owned: [], paint: null },
-    settings: { sound: true, vibration: true, shake: true, shadows: true },
+    // Phase 7: slowmo (Zeitlupe), sfxVol/musicVol (0…1), quality ('low' | 'mid' | 'high' → RENDER.pixelRatio)
+    settings: { sound: true, vibration: true, shake: true, shadows: true, slowmo: true, sfxVol: AUDIO.defaultSfx, musicVol: AUDIO.defaultMusic, quality: RENDER.defaultQuality },
     stats: { testDrives: 0, runs: 0, wins: 0, bestAct: 0, bestDist: 0, bestHeight: 0, bestTricks: 0, totalScrap: 0, totalBolts: 0, stagesCleared: 0, bossesBeaten: 0, totalFlips: 0 },
     history: [],          // letzte Runs (garage/progression.js → recordRunEnd), neueste zuerst
     // laufender Run (run/runState.js) oder null – nach App-Neustart fortsetzbar
     run: null,
-    tutorial: { runs: 0 },
+    // Tutorial (ui/tutorial.js): seen = schon gezeigte Hinweise { id: 1 }, off = alle Hinweise aus
+    tutorial: { runs: 0, seen: {}, off: false },
     createdAt: Date.now(),
     savedAt: Date.now(),
   };
@@ -103,8 +105,11 @@ export function migrate(data) {
     data.world = 'steppe';
     data.unlocked = ['steppe'];
   }
+  // Spielstände vor Phase 7 kennen den Tutorial-Fortschritt noch nicht: wer schon gespielt hat, bekommt keine Hinweise
+  const hadTutorial = isObj(data.tutorial) && isObj(data.tutorial.seen);
   if (v < 3) data = migrateV2toV3(data);
   fill(data, defaultSave());
+  if (!hadTutorial && (n0(data.stats.runs) > 0 || n0(data.stats.testDrives) > 0 || isObj(data.run))) data.tutorial.off = true;
   data.version = SAVE_VERSION;
   // Plausibilität: Zahlen ≥ 0, Listen nur mit gültigen Einträgen
   for (const k of ['scrap', 'blueprints', 'cores', 'totalPlaytime']) data.meta[k] = n0(data.meta[k]);
@@ -118,6 +123,10 @@ export function migrate(data) {
   }
   data.history = data.history.filter(isObj).slice(0, 50);
   data.tutorial.runs = n0(data.tutorial.runs);
+  for (const [k, t] of Object.entries(data.tutorial.seen)) if (t !== 1) delete data.tutorial.seen[k];
+  // Einstellungen: Lautstärken 0…1, Grafikqualität nur bekannte Stufen
+  for (const k of ['sfxVol', 'musicVol']) data.settings[k] = Math.max(0, Math.min(1, data.settings[k]));
+  if (!Object.prototype.hasOwnProperty.call(RENDER.pixelRatio, data.settings.quality)) data.settings.quality = RENDER.defaultQuality;
   data.research.done = [...new Set(data.research.done.filter((id) => typeof id === 'string'))];
   for (const [k, v] of Object.entries(data.research.levels)) {
     if (typeof v !== 'number' || !isFinite(v) || v < 1) delete data.research.levels[k];

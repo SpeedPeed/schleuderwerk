@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { BIOMES, biomeById } from './data/biomes.js';
-import { FX, CAMERA, CONTROLS, STAGE, PHYSICS, SAVE } from './data/balance.js';
+import { FX, CAMERA, STAGE, PHYSICS, SAVE, RESOURCES, TUTORIAL } from './data/balance.js';
 import * as BALANCE from './data/balance.js';
-import { PARTS, abilityById, chassisById, chassisVisual } from './data/index.js';
+import { PARTS, abilityById, chassisById, chassisVisual, partById } from './data/index.js';
+import { TAGS } from './data/tags.js';
 import { loadSave, writeSave, exportSave, importSave, clearSave, defaultSave, getLoadIssue, allowOverwrite, getBackup } from './save/save.js';
 import { buildLoadout, partIds } from './garage/loadout.js';
 import * as garageLogic from './garage/garage.js';
@@ -47,6 +48,9 @@ import * as researchLogic from './garage/research.js';
 import { confirmDialog, infoDialog } from './ui/dom.js';
 import { itemById, itemPools } from './data/items.js';
 import { setChainLog } from './items/triggerEngine.js';
+import { Tutorial, TutorialView, tutorialProgress, resetTutorial } from './ui/tutorial.js';
+import { backAction } from './ui/backButton.js';
+import { FxOverlay } from './ui/fxOverlay.js';
 
 // ---------- Grundaufbau ----------
 let save = loadSave();
@@ -95,6 +99,8 @@ for (const m of ['bronze', 'silver', 'gold']) {
   flags[m].visible = false;
   view.scene.add(flags[m]);
 }
+
+const FLAG_LIST = Object.values(flags);
 
 // ---------- Fahrzeug-Modell (Chassis + sichtbare Teile + Lackierung) ----------
 let carModel = null;
@@ -149,12 +155,14 @@ let state = 'garage';
 let mode = 'run';          // Etappe gehört zum Run ('run') oder ist eine Testfahrt aus dem Dev-Menü ('test')
 let paused = false;
 let stage = null;
-let flyHintTimer = 0;
+let flyPhaseT = -1;          // Sekunden seit dem Abschuss (-1 = noch nicht abgeschossen) – Tutorial-Hinweise im Flug
+let resHintDone = false;
 let cam = null;
 let garageSpin = CAMERA.garage.startAngle;
 let flashLevel = 0, flashTimer = 3;
 
 // ---------- Oberfläche ----------
+const fxOverlay = new FxOverlay(uiRoot);
 const popups = new Popups(uiRoot);
 const hud = new Hud(uiRoot, { onPause: () => pauseGame() });
 hud.abilityButtons.forEach((b, i) => input.bindButton(b, `ab${i}`));
@@ -187,11 +195,14 @@ const menus = new Menus(uiRoot, {
   onResume: () => resumeGame(),
   onQuit: () => quitStage(),
   getSettings: () => save.settings,
-  onSetting: (k, v) => { save.settings[k] = v; applySettings(); writeSave(save); },
+  onSetting: (k, v, persist = true) => { save.settings[k] = v; applySettings(); if (persist) writeSave(save); },
+  getTutorial: () => tutorialProgress(save),
+  onTutorialReset: () => { resetTutorial(save); writeSave(save); },
   onExport: () => exportSave(save),
   onImport: (text) => {
     try {
       save = importSave(text);
+      tutorial.clear();
       allowOverwrite();
       writeSave(save);
       afterSaveChange();
@@ -204,15 +215,31 @@ const menus = new Menus(uiRoot, {
     clearSave();
     save = defaultSave();
     writeSave(save);
+    tutorial.clear();
     afterSaveChange();
   },
   onDevMenu: () => { sfx.perfect(); devMenu.open(); },
   getBackup: () => getBackup(),
 });
+// Tutorial: Hinweise an den richtigen Momenten des ersten Runs (ui/tutorial.js), jeder nur einmal
+const tutorialView = new TutorialView(uiRoot, { onOk: () => { sfx.click(); tutorial.close(); }, onSkip: () => { sfx.click(); tutorial.skipAll(); popups.show('Hinweise aus – in den Einstellungen wieder einschaltbar', 'info'); } });
+const tutorial = new Tutorial({ getSave: () => save, persist: () => writeSave(save), view: tutorialView, onShow: () => sfx.tutorial() });
+
 const devMenu = new DevMenu(uiRoot, {
   getSave: () => save,
   getStage: () => stage,
-  onCurrency: (kind, n) => { save.meta[kind] += n; writeSave(save); refreshGarage(); },
+  onCurrency: (kind, n) => {
+    if (kind === 'bolts') { if (!save.run) return 'Kein Run aktiv'; save.run.bolts += n; writeSave(save); refreshGarage(); return `+${n} Schrauben (Run)`; }
+    save.meta[kind] += n; writeSave(save); refreshGarage(); return null;
+  },
+  onTutorial: (what) => {
+    if (what === 'reset') { resetTutorial(save); writeSave(save); return 'Tutorial zurückgesetzt – Hinweise erscheinen wieder'; }
+    tutorial.skipAll();
+    return 'Alle Hinweise aus';
+  },
+  getTutorial: () => tutorialProgress(save),
+  onPerf: (on) => setPerfOverlay(on),
+  getPerf: () => perfStats(),
   onUnlockAll: () => { garageLogic.unlockAll(save); writeSave(save); refreshGarage(); },
   onResearch: () => { garageLogic.completeResearch(save); writeSave(save); refreshGarage(); },
   onResearchAll: () => { researchLogic.completeAllResearch(save); writeSave(save); refreshGarage(); },
@@ -243,9 +270,14 @@ const devMenu = new DevMenu(uiRoot, {
 });
 
 function applySettings() {
-  sfx.setEnabled(save.settings.sound);
-  platform.vibration = save.settings.vibration;
-  view.setShadows(save.settings.shadows);
+  const st = save.settings;
+  sfx.setEnabled(st.sound);
+  sfx.setVolumes(st.sfxVol, st.musicVol);
+  platform.vibration = st.vibration;
+  view.setShadows(st.shadows);
+  view.setQuality(st.quality);
+  fxOverlay.enabled = st.shake;
+  if (stage) stage.slowmoEnabled = st.slowmo;
 }
 
 function afterSaveChange() {
@@ -339,7 +371,7 @@ function researchAction(id) {
   }
   markMilestone(save, 'firstResearch');
   writeSave(save);
-  sfx.buy();
+  sfx.research();
   platform.haptic('success');
   const node = researchLogic.researchById(id);
   popups.show(`🧪 ${node.icon} ${node.name}${node.repeatable ? ` – Stufe ${res.level}` : ''} erforscht!`, 'good');
@@ -364,6 +396,22 @@ function emitFx(kind, x, y, o = {}) {
     case 'explosion':
       particles.emit(x, y, PFX.explosion);
       if (save.settings.shake) camRig.shake(FX.shake.hit);
+      fxOverlay.flash('explosion');
+      sfx.explosion();
+      break;
+    case 'overheat':
+      particles.emit(x, y + 0.6, PFX.overheat);
+      fxOverlay.flash('crash');
+      break;
+    case 'landPerfect':
+      particles.emit(x, y + 0.2, PFX.landPerfect);
+      fxOverlay.flash('perfectLanding');
+      break;
+    case 'landClean':
+      particles.emit(x, y + 0.2, PFX.landClean);
+      break;
+    case 'victory':
+      particles.emit(x, y + 1, PFX.victory);
       break;
     case 'steamBurst':
       particles.emit(x, y, PFX.steamBurst);
@@ -379,6 +427,7 @@ function emitFx(kind, x, y, o = {}) {
     }
     case 'smash': {
       const s = PFX.smash;
+      if (o.type === 'car') fxOverlay.flash('crash');
       const cols = o.type === 'scrap' ? pal.wreck : s.colors[o.type] || [carVisual.color, carVisual.accent, '#cccccc'];
       particles.emit(x, y, { ...s, colors: cols });
       break;
@@ -388,15 +437,64 @@ function emitFx(kind, x, y, o = {}) {
       break;
     case 'shock':
       particles.emit(x, y, PFX.shock);
+      particles.emit(x, y, PFX.shock);
+      fxOverlay.flash('shock');
       break;
-    case 'medal':
-      particles.emit(x, y + 1, { ...PFX.confetti, colors: [MF.colors[o.medal] || '#ffd23f', '#ffffff', '#ff8a3d'] });
+    case 'medal': {
+      // Gold: doppelt so viel Konfetti
+      medalOpts.colors[0] = MF.colors[o.medal] || '#ffd23f';
+      medalOpts.n = PFX.confetti.n * (o.medal === 'gold' ? 2 : 1);
+      particles.emit(x, y + 1, medalOpts);
+      fxOverlay.flash('medal');
       break;
+    }
     case 'lightning':
       flashLevel = Math.max(flashLevel, FX.flash.strike);
       particles.emit(x, y + 0.5, PFX.strike);
       break;
   }
+}
+
+// Wiederverwendete Partikel-Einstellungen (keine neuen Objekte pro Effekt)
+const medalOpts = { ...PFX.confetti, colors: ['#ffd23f', '#ffffff', '#ff8a3d'] };
+const TB = PFX.tagBurst, CHN = PFX.chain;
+const tagOpts = { n: TB.n, colors: ['#ffffff', '#ffffff'], speed: TB.speed, life: TB.life, gravity: TB.gravity, size: TB.size, jitter: TB.jitter, zSpread: TB.zSpread };
+const chainOpts = { n: CHN.nBase, colors: CHN.colors, speed: CHN.speedBase, life: CHN.life, gravity: CHN.gravity, size: CHN.size, jitter: CHN.jitter, zSpread: CHN.zSpread };
+const tagCache = new Map();   // Quelle (uid) → Tag-Id oder ''
+function tagOfSource(src) {
+  let t = tagCache.get(src.uid);
+  if (t === undefined) {
+    const def = src.kind === 'item' ? itemById(src.id) : src.kind === 'part' ? partById(src.id) : null;
+    t = src.tag || (def && (def.tags ? def.tags[0] : def.tag)) || '';
+    tagCache.set(src.uid, t);
+  }
+  return t;
+}
+const lastBurst = new Map();  // Quelle → Zeit der letzten Funken (gegen Partikel-Flut)
+// Item/Set/Teil ausgelöst: Funken in der Tag-Farbe am Fahrzeug, Tag-Klang (höher mit der Kettentiefe)
+function itemJuice(src, depth) {
+  const v = stage && stage.vehicle;
+  if (!v) return;
+  const tag = tagOfSource(src);
+  sfx.tag(tag, depth);
+  const now = performance.now() / 1000;
+  if (now - (lastBurst.get(src.uid) || -1) < FX.tagBurstGap) return;
+  lastBurst.set(src.uid, now);
+  const c = (TAGS[tag] && TAGS[tag].color) || '#ffffff';
+  tagOpts.colors[0] = c;
+  tagOpts.n = Math.min(TB.nMax, TB.n + depth * TB.nPerDepth);
+  tagOpts.speed = TB.speed + depth * TB.speedPerDepth;
+  particles.emit(v.x, v.y, tagOpts);
+}
+// Kettenreaktion: Funkenring wächst mit der Kettenlänge, Bildschirm blitzt (n = Kettenglieder)
+function chainJuice(n) {
+  const v = stage && stage.vehicle;
+  if (v) {
+    chainOpts.n = Math.min(CHN.nMax, CHN.nBase + n * CHN.nPerLink);
+    chainOpts.speed = CHN.speedBase + n * CHN.speedPerLink;
+    particles.emit(v.x, v.y, chainOpts);
+  }
+  fxOverlay.flash('chain', n);
 }
 
 // Wiederverwendete Partikel-Einstellungen für Effekte, die jedes Bild entstehen
@@ -414,8 +512,9 @@ const hooks = {
   fx: (kind, x, y, o) => emitFx(kind, x, y, o),
   end: (r) => endStage(r),
   // Trigger-Engine: Item-Symbol hüpft, Feed-Zeile; ab Kettentiefe 3 „KETTENREAKTION ×n!“
-  triggered: (src, depth, info) => hud.itemTriggered(src, depth, info),
-  chain: (n) => { hud.chain(n); sfx.trick(n); platform.haptic('light'); },
+  triggered: (src, depth, info) => { hud.itemTriggered(src, depth, info); if (!info || !info.recharge) itemJuice(src, depth); },
+  // hud.chain() meldet false, wenn dieselbe Kette gerade schon gezeigt wurde (ITEMS.chainPopupGap)
+  chain: (n) => { if (hud.chain(n)) { sfx.chain(n); chainJuice(n); platform.haptic('light'); } },
 };
 
 // ---------- Etappe ----------
@@ -425,6 +524,9 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
   carModel.rotation.y = 0;
   setTrack(newSpec, biomeById(newSpec.biome));
   stage = new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods, inventory, runInfo, farEnd });
+  stage.slowmoEnabled = save.settings.slowmo;
+  flyPhaseT = -1;
+  resHintDone = false;
   featuresView.build(track, stage.objects);
   rain.setActive(!!stage.weather.rain);
   state = 'stage';
@@ -439,8 +541,9 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
   mapScreen.show(false);
   runScreens.hide();
   menus.showPause(false, mode);
+  fxOverlay.reset();
+  fxOverlay.veil();
   hud.show(true, {
-    tutorial: save.tutorial.runs < CONTROLS.tutorialRuns,
     weather: stage.weather,
     abilities: stage.abilities.slots.map((s) => s.def),
     goal: { target: stage.target, medals: stage.medals, medalList: stage.medalList },
@@ -457,11 +560,13 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
     flags[m].userData.x = x;
     if (x !== undefined) flags[m].userData.y = track.refHeightAt(x);
   }
-  flyHintTimer = 0;
   platform.keepAwake(true);
-  // Boss-Strecke: Erkennungsmelodie (Platzhalter) – im Run spielt sie schon das Intro, hier nur bei Neuversuch/Testfahrt
-  const retry = mode === 'run' && save.run && save.run.current && save.run.current.attempts > 0;
-  if (stage.boss && (mode === 'test' || retry)) sfx.bossTheme(stage.boss.music);
+  // Boss-Strecke: „BOSS“-Einblendung und Musik-Schleife (Platzhalter aus der Erkennungsmelodie)
+  if (stage.boss) {
+    fxOverlay.bossBanner(stage.boss.icon || '👹', stage.boss.name);
+    sfx.startMusic(stage.boss.music);
+  } else sfx.stopMusic();
+  tutorial.trigger('launch');
 }
 
 // Testfahrt (Dev-Menü): Etappe (Standard: Etage 0) des Bioms mit der Garage-Ausrüstung, Schrott wie in Phase 2.
@@ -497,6 +602,9 @@ function endStage(r) {
   state = 'results';
   input.captureKeys = false;
   platform.keepAwake(false);
+  tutorial.dropToasts();
+  fxOverlay.heat(0);
+  sfx.stopMusic();
   if (mode === 'test') {
     save.meta.scrap += r.testDrive.total;
     s.totalScrap += r.testDrive.total;
@@ -523,6 +631,7 @@ function showRunResult(r) {
   later(() => {
     hud.show(false);
     if (o.cleared) { sfx.record(); platform.haptic('success'); }
+    else if (!o.defeat) sfx.denied();
     reportRunEvents(o.events);
     runScreens.stageResult(r, o, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run), towPct: runLogic.towPenaltyPct(run) }, {
       onNext: () => {
@@ -581,6 +690,7 @@ function showChoices(then) {
     },
     onInventory: () => { sfx.click(); openInventory(); },
   });
+  tutorial.trigger('items');
 }
 
 // Voller Rucksack: ersetzen oder ablehnen
@@ -655,8 +765,12 @@ function openMap() {
   mapScreen.show(true);
   particles.clear();
   popups.clear();
+  tutorial.dropToasts();
+  fxOverlay.reset();
+  sfx.stopMusic();
   const G = CAMERA.garage;
   camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
+  if (!run.current && !runLogic.pendingChoice(run)) tutorial.trigger('map');
   // offene Item-Auswahl (z. B. nach einem Neustart der App), danach ein noch offener Sonderknoten (Fortsetzen im Shop)
   const shopOpen = () => run.current && !isStageType(run.current.type);
   if (runLogic.pendingChoice(run)) showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); });
@@ -688,12 +802,14 @@ function selectNode(id) {
       },
       onBack: () => { sfx.click(); runScreens.hide(); },
     });
+    tutorial.trigger('goal');
     return;
   }
   const e = runLogic.enterNode(run, id);
   if (!e.ok) return;
   writeSave(save);
   reportRunEvents(e.events);
+  sfx.shopEnter();
   openShop();
 }
 
@@ -773,7 +889,7 @@ function shopDealer(keep = false) {
     },
     onReroll: () => {
       const r = Dealer.reroll(run);
-      if (shopFeedback(r, `↻ Neu gewürfelt (−${fmtN(r.cost)} 🔩)`, 'info')) sfx.money();
+      if (shopFeedback(r, `↻ Neu gewürfelt (−${fmtN(r.cost)} 🔩)`, 'info')) sfx.reroll();
       shopDealer(false);
     },
     onReserve: (i) => {
@@ -785,6 +901,7 @@ function shopDealer(keep = false) {
     onLeave: () => leaveShop(),
     onInventory: () => { sfx.click(); openInventory(); },
   }, keep);
+  tutorial.trigger('shop');
 }
 
 function shopWorkbench(keep = false) {
@@ -794,7 +911,7 @@ function shopWorkbench(keep = false) {
     onFuse: (a, b, kind) => {
       const r = kind === 'tier' ? Workbench.fuseItems(run, save, a, b) : Workbench.hybridize(run, save, a, b);
       if (shopFeedback(r, kind === 'tier' ? `★ ${itemById(r.entry.itemId).name} → ★${r.entry.tier}` : `🧬 Hybrid: ${r.entry && r.entry.name}`, 'big')) {
-        sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1);
+        sfx.fusion(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1); fxOverlay.flash('medal');
       }
       shopWorkbench(true);
     },
@@ -803,11 +920,12 @@ function shopWorkbench(keep = false) {
       const yes = await confirmDialog(uiRoot, `${itemById(e.itemId).name} zerlegen? Das Item ist danach weg (+${fmtN(Workbench.scrapValue(run, e))} 🔩).`, 'Zerlegen');
       if (!yes || !save.run) return;
       const r = Workbench.scrapItem(run, i);
-      if (shopFeedback(r, `🔩 +${fmtN(r.bolts)} Schrauben`)) sfx.money();
+      if (shopFeedback(r, `🔩 +${fmtN(r.bolts)} Schrauben`)) sfx.sell();
       shopWorkbench(true);
     },
     onLeave: () => leaveShop(),
   }, keep);
+  tutorial.trigger('workbench');
 }
 
 function shopBlackMarket(keep = false) {
@@ -927,7 +1045,15 @@ function finishRun() {
   mapScreen.show(false);
   results.show(false);
   menus.showPause(false);
-  if (res.won) sfx.record(); else sfx.crash();
+  tutorial.dropToasts();
+  fxOverlay.reset();
+  sfx.stopMusic();
+  if (res.won) {
+    sfx.victory();
+    fxOverlay.confettiBurst();
+    emitFx('victory', carPos.x, carPos.y);
+    platform.haptic('success');
+  } else sfx.defeat();
   runScreens.runEnd(res, { onGarage: () => { sfx.click(); openGarage(); } });
 }
 
@@ -960,8 +1086,13 @@ function openGarage() {
   garage.show(true);
   particles.clear();
   popups.clear();
+  tutorial.dropToasts();
+  fxOverlay.reset();
+  sfx.stopMusic();
   const G = CAMERA.garage;
   camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
+  // erster Besuch: Garage erklären; nach dem ersten Run: das Labor
+  tutorial.trigger(save.stats.runs >= 1 ? 'lab' : 'garage');
 }
 
 function hideFlags() { for (const m in flags) flags[m].visible = false; }
@@ -972,7 +1103,8 @@ function pauseGame() {
   input.captureKeys = false;
   input.reset();
   menus.showPause(true, mode);
-  sfx.loop({ active: false });
+  sfx.loop(false);
+  sfx.pauseMusic(true);
 }
 
 function resumeGame() {
@@ -981,6 +1113,7 @@ function resumeGame() {
   menus.closeSettings();
   input.reset();
   input.captureKeys = state === 'stage';
+  sfx.pauseMusic(false);
 }
 
 // Pause → „Run aufgeben“ bzw. „Testfahrt beenden“
@@ -1102,33 +1235,73 @@ platform.onPauseResume(
   () => { sfx.resume(); },
 );
 
-// Android-Zurück-Taste: schließt immer die oberste Ebene
+// Android-Zurück-Taste (am PC: Esc): schließt immer die oberste Ebene. Die Entscheidung trifft ui/backButton.js.
+function backSnapshot() {
+  const rk = runScreens.open ? runScreens.kind : null;
+  return {
+    modal: !!uiRoot.querySelector('.modal'),
+    tutorial: tutorial.isOpen,
+    devMenu: devMenu.isOpen,
+    itemSheet: itemSheet.isOpen,
+    settings: menus.settingsOpen,
+    state,
+    paused,
+    run: rk,
+    runHasCont: !!(rk && runScreens.card.querySelector('[data-a=cont]')),
+    runHasBack: !!(rk && runScreens.card.querySelector('[data-a=back]')),
+    pickerOpen: state === 'garage' && garage.pickerOpen,
+    tab: garage.tab,
+    testResults: state === 'results' && !results.el.classList.contains('hidden'),
+  };
+}
 let exitAsked = false;
-platform.onBackButton(async () => {
-  const modal = uiRoot.querySelector('.modal');
-  if (modal) { (modal.querySelector('.btn-secondary') || modal.querySelector('.btn-primary'))?.click(); return; }
-  if (devMenu.isOpen) { devMenu.close(); return; }
-  if (itemSheet.isOpen) { itemSheet.close(); return; }
-  if (runScreens.open && runScreens.kind === 'replace') { runScreens.card.querySelector('[data-a=back]')?.click(); return; }
-  if (runScreens.open && runScreens.kind === 'choice') return;   // Auswahl nur über die Knöpfe beenden
-  if (runScreens.open && runScreens.kind === 'pick') { runScreens.card.querySelector('[data-a=back]')?.click(); return; }
-  if (runScreens.open && SHOP_KINDS.includes(runScreens.kind)) return;   // Shops nur über „Weiter“ verlassen
-  if (menus.settingsOpen) { menus.closeSettings(); return; }
-  if (state === 'garage' && garage.pickerOpen) { garage.closePicker(); return; }
-  if (state === 'garage' && garage.tab !== 'garage') { garage.setTab('garage'); return; }
-  if (state === 'stage') { paused ? resumeGame() : pauseGame(); return; }
-  if (state === 'map' && runScreens.kind === 'intro') { runScreens.hide(); return; }
-  if (state === 'map') { openGarage(); return; }
-  if (state === 'results' || state === 'runEnd') {
-    const b = (runScreens.open && runScreens.card.querySelector('.btn-primary')) || (!results.el.classList.contains('hidden') && results.el.querySelector('[data-id=garage]'));
-    if (b) b.click();
-    return;
+async function handleBack() {
+  const a = backAction(backSnapshot());
+  const click = (sel) => { const b = runScreens.card.querySelector(sel); if (b) b.click(); };
+  switch (a) {
+    case 'closeModal': { const m = uiRoot.querySelector('.modal'); (m.querySelector('.btn-secondary') || m.querySelector('.btn-primary'))?.click(); break; }
+    case 'closeTutorial': tutorial.close(); break;
+    case 'closeDev': devMenu.close(); break;
+    case 'closeItemSheet': itemSheet.close(); break;
+    case 'closeSettings': menus.closeSettings(); break;
+    case 'runBack': click('[data-a=back]'); break;
+    case 'runContinue': click('[data-a=cont]'); break;
+    case 'askLeaveShop': {
+      const kind = runScreens.kind;
+      const yes = await confirmDialog(uiRoot, kind === 'treasure' ? 'Den Schatz liegen lassen und weiter?' : 'Laden verlassen und weiter zur Karte?', kind === 'treasure' ? 'Liegen lassen' : 'Verlassen');
+      if (yes && runScreens.open && runScreens.kind === kind) click('[data-a=leave]');
+      break;
+    }
+    case 'choiceHint': popups.show('Wähle ein Item – oder überspringe', 'info'); break;
+    case 'shopHint': popups.show('Erst eine Entscheidung treffen', 'info'); break;
+    case 'introBack': click('[data-a=back]'); break;
+    case 'runPrimary': runScreens.card.querySelector('.btn-row .btn-primary')?.click(); break;
+    case 'closePicker': garage.closePicker(); break;
+    case 'garageTab': garage.setTab('garage'); break;
+    case 'pause': pauseGame(); break;
+    case 'resume': resumeGame(); break;
+    case 'mapToGarage': sfx.click(); openGarage(); break;
+    case 'testResultsGarage': results.el.querySelector('[data-id=garage]')?.click(); break;
+    case 'exitAsk': {
+      if (exitAsked) break;
+      exitAsked = true;
+      const yes = await confirmDialog(uiRoot, 'Spiel beenden? Dein Fortschritt ist gespeichert.', 'Beenden');
+      exitAsked = false;
+      if (yes) { writeSave(save); platform.exitApp(); }
+      break;
+    }
+    default: break;
   }
-  if (exitAsked) return;
-  exitAsked = true;
-  const yes = await confirmDialog(uiRoot, 'Spiel beenden?', 'Beenden');
-  exitAsked = false;
-  if (yes) { writeSave(save); platform.exitApp(); }
+  return a;
+}
+platform.onBackButton(() => { handleBack(); });
+// Esc am PC wirkt wie die Zurück-Taste (nicht beim Tippen in einem Textfeld)
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.repeat) return;
+  const t = e.target;
+  if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !['checkbox', 'range', 'button'].includes(t.type)))) return;
+  e.preventDefault();
+  handleBack();
 });
 platform.markNative();
 
@@ -1182,6 +1355,7 @@ const flashRng = makeRng('blitz-aufleuchten');
 
 function frame(now) {
   requestAnimationFrame(frame);
+  const t0 = performance.now();
   const dt = Math.min(STAGE.maxFrameDt, Math.max(0, (now - last) / 1000));
   last = now;
   const t = now / 1000;
@@ -1265,8 +1439,8 @@ function frame(now) {
   sling.root.visible = !!stage;   // in der Garage steht das Fahrzeug frei (Schleuder würde die Vorschau verdecken)
   sling.setOrigin(ox);
   sling.update(Math.max(vdt, 0.001), carPos, attached);
-  for (const m in flags) {
-    const f = flags[m];
+  for (let i = 0; i < FLAG_LIST.length; i++) {
+    const f = FLAG_LIST[i];
     if (f.visible) f.position.set(f.userData.x - ox, f.userData.y, MF.z);
   }
 
@@ -1341,25 +1515,69 @@ function frame(now) {
     hudView.tilt = input.tilt;
     hudView.indicator = cam.indicator;
     hud.update(stage, hudView);
-    if (stage.phase === 'fly' && save.tutorial.runs < CONTROLS.tutorialRuns) {
-      flyHintTimer += dt;
-      hud.showFlyHint(flyHintTimer < CONTROLS.flyHintTime);
-    }
+    if (playing && stage.phase === 'fly') {
+      // Tutorial: erst „Fliegen“, ein paar Sekunden später „Ressourcen“
+      if (flyPhaseT < 0) { flyPhaseT = 0; tutorial.trigger('fly'); }
+      flyPhaseT += dt;
+      if (!resHintDone && flyPhaseT > TUTORIAL.resourcesAfter) { resHintDone = true; tutorial.trigger('resources'); }
+      // roter Hitze-Rand: pulsiert bei Überhitzung
+      fxOverlay.heat(v.stall > 0 && !stage.rules.noOverheat ? 2 : v.heatFrac >= RESOURCES.heatWarn ? 1 : 0);
+    } else if (!playing) fxOverlay.heat(0);
   }
-  sfx.loop({
-    active: !!(v && playing && stage.phase === 'fly'),
-    speed: v ? v.speed : 0,
-    boosting: v ? v.boosting : false,
-    air: v ? !v.onGround : false,
-  });
+  sfx.loop(!!(v && playing && stage.phase === 'fly'), v ? v.speed : 0, v ? v.boosting : false, v ? !v.onGround : false);
 
+  const tUpd = performance.now();
   view.renderer.render(view.scene, view.camera);
+  perfSample(t0, tUpd - t0, performance.now() - tUpd);
+}
+
+// ---------- Leistungsmessung (Dev-Menü „Leistungsanzeige“, Rauchtest, docs/PHASEN.md) ----------
+// Gleitende Mittel: Bildzeit, Logik-Zeit (alles vor dem Rendern), Render-Zeit (Befehle an die GPU), Draw Calls
+const perf = { fps: 0, frameMs: 0, updateMs: 0, renderMs: 0, calls: 0, triangles: 0, lastT: 0, el: null, shownAt: 0 };
+function perfSample(now, upd, ren) {
+  const k = 0.05;
+  if (perf.lastT) {
+    const fm = now - perf.lastT;
+    perf.frameMs += (fm - perf.frameMs) * k;
+  }
+  perf.lastT = now;
+  perf.updateMs += (upd - perf.updateMs) * k;
+  perf.renderMs += (ren - perf.renderMs) * k;
+  const info = view.renderer.info.render;
+  perf.calls = info.calls;
+  perf.triangles = info.triangles;
+  if (perf.el && now - perf.shownAt > 500) {
+    perf.shownAt = now;
+    const p = perfStats();
+    perf.el.textContent = `${p.fps} fps · ${p.frameMs} ms · Logik ${p.updateMs} ms · Render ${p.renderMs} ms · ${p.calls} Draw Calls · ${p.triangles} Dreiecke · ${p.particles} Partikel · PR ${p.pixelRatio}`;
+  }
+}
+function perfStats() {
+  const m = view.renderer.info.memory;
+  const r1 = (x) => Math.round(x * 10) / 10;
+  return {
+    fps: perf.frameMs > 0 ? Math.round(1000 / perf.frameMs) : 0, frameMs: r1(perf.frameMs), updateMs: r1(perf.updateMs), renderMs: r1(perf.renderMs),
+    calls: perf.calls, triangles: perf.triangles, geometries: m.geometries, textures: m.textures, programs: view.renderer.info.programs.length,
+    particles: particles.count, pixelRatio: view.renderer.getPixelRatio(), quality: view.quality,
+  };
+}
+function setPerfOverlay(on) {
+  if (on && !perf.el) { perf.el = document.createElement('div'); perf.el.id = 'perf'; uiRoot.appendChild(perf.el); }
+  if (!on && perf.el) { perf.el.remove(); perf.el = null; }
+  return on ? 'Leistungsanzeige an (oben)' : 'Leistungsanzeige aus';
 }
 
 applySettings();
 openGarage();
 requestAnimationFrame(frame);
 reportLoadIssue();
+// Startbildschirm (index.html) ausblenden, sobald das erste Bild gezeichnet ist
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  const boot = document.getElementById('boot');
+  if (!boot) return;
+  boot.classList.add('done');
+  setTimeout(() => boot.remove(), 600);
+}));
 
 // Spielstand ließ sich nicht laden → Hinweis. Der Rohtext liegt im Backup (Einstellungen → „Backup anzeigen“).
 // Stammt er aus einer neueren Version, wird erst gespeichert, wenn die Person „Neu anfangen“ bestätigt.
@@ -1388,7 +1606,16 @@ window.__game = {
   get origin() { return origin.x; },
   get camera() { return cam; },
   get model() { return carModel; },
+  get view() { return view; },
   input,
+  tutorial,
+  fxOverlay,
+  sfx,
+  handleBack,
+  backSnapshot,
+  perf: perfStats,
+  setPerfOverlay,
+  applySettings,
   garage,
   devMenu,
   mapScreen,

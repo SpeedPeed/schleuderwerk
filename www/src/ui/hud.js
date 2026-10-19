@@ -9,6 +9,8 @@ export const MAX_ABILITY_BUTTONS = SOFTCAPS.abilitySlots.max + 1;
 // Anzeige während der Etappe: Distanz, Höhe, Schrauben, Treibstoff/Hitze/Haltbarkeit, Fähigkeits-Knöpfe,
 // Kombo, Boden-Pfeil und die Kraftleiste beim Zielen. Phase 4: Item-Leiste (Symbole hüpfen beim Auslösen),
 // Feed-Zeile der letzten Auslösungen, „KETTENREAKTION ×n!“ ab Kettentiefe ITEMS.chainPopupDepth, Drehzahl (Rasenmäher).
+// Phase 7: DOM wird nur bei Änderung angefasst (changed()), pro Bild entstehen keine neuen Objekte oder Funktionen;
+// die Ketten-Einblendung wächst mit der Kettenlänge (--n). Bedienhinweise kommen vom Tutorial (ui/tutorial.js).
 export class Hud {
   constructor(root, { onPause }) {
     const abBtns = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) =>
@@ -51,9 +53,7 @@ export class Hud {
         </div>
         <div class="aim-angle" data-id="angle">32°</div>
         <div class="weather" data-id="weather"></div>
-        <div class="aim-hint" data-id="aimhint"><b>Halten</b> = Kraft, <b>hoch/runter ziehen</b> = Winkel,<br><b>loslassen im grünen Bereich!</b></div>
       </div>
-      <div class="hint hidden" data-id="flyhint"><b>Links halten</b> = Nase hoch · <b>Rechts halten</b> = Nase runter · Knöpfe unten = Fähigkeiten</div>
     </div>`);
     root.appendChild(this.el);
     this.q = {};
@@ -93,35 +93,39 @@ export class Hud {
   }
 
   // Kettenreaktion ab ITEMS.chainPopupDepth: „KETTENREAKTION ×n!“ (n = Kettenglieder), nicht öfter als chainPopupGap
+  // → true, wenn die Einblendung (neu) gezeigt wurde
   chain(n) {
     const now = performance.now() / 1000;
     const c = this.chainShown;
-    if (now - c.t < ITEMS.chainPopupGap && n <= c.n) return;
+    if (now - c.t < ITEMS.chainPopupGap && n <= c.n) return false;
     c.n = n;
     c.t = now;
     const e = this.q.chain;
     e.textContent = `KETTENREAKTION ×${n}!`;
+    e.style.setProperty('--n', String(Math.min(8, n)));
     show(e, true);
     e.classList.remove('go');
     void e.offsetWidth;
     e.classList.add('go');
     clearTimeout(this.chainTimer);
     this.chainTimer = setTimeout(() => show(e, false), 1400);
+    return true;
   }
 
   // Fähigkeits-Knöpfe (werden von platform/input.js als 'ab0' … angemeldet)
   get abilityButtons() { return Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) => this.q[`ab${i}`]); }
 
-  set(key, value, fn) {
-    if (this.last[key] === value) return;
+  // true, wenn sich der Wert seit dem letzten Bild geändert hat (merkt ihn sich)
+  changed(key, value) {
+    if (this.last[key] === value) return false;
     this.last[key] = value;
-    fn(value);
+    return true;
   }
 
   // abilities: Fähigkeits-Definitionen in Knopf-Reihenfolge.
   // goal: { target, medals: {bronze, silver?, gold}, medalList } → Zielbalken mit Medaillen-Marken
   // items: { inventory, slots, napped } → Item-Leiste
-  show(on, { best = 0, tutorial = false, weather = null, abilities = [], goal = null, items = null } = {}) {
+  show(on, { best = 0, weather = null, abilities = [], goal = null, items = null } = {}) {
     show(this.el, on);
     this.last = {};
     this.feed = [];
@@ -164,81 +168,100 @@ export class Hud {
       b.classList.toggle('special', !!a.chassis);
       b.dataset.ability = a.id;
     }
-    this.tutorial = tutorial;
-    show(this.q.flyhint, false);
     show(this.q.combo, false);
     show(this.q.ground, false);
     show(this.q.tzl, false);
     show(this.q.tzr, false);
   }
 
-  showFlyHint(on) { show(this.q.flyhint, on); }
-
   // view: { tilt, indicator } aus Eingabe und Kamera
-  update(stage, view = {}) {
+  update(stage, view) {
     const q = this.q;
     const aiming = stage.phase === 'aim';
-    this.set('aiming', aiming, (v) => {
-      show(q.aim, v);
-      show(q.bars, !v);
-      for (let i = 0; i < MAX_ABILITY_BUTTONS; i++) show(q[`ab${i}`], !v && i < this.abilityCount);
-      show(q.aimhint, v && this.tutorial);
-    });
+    if (this.changed('aiming', aiming)) {
+      show(q.aim, aiming);
+      show(q.bars, !aiming);
+      for (let i = 0; i < MAX_ABILITY_BUTTONS; i++) show(q[`ab${i}`], !aiming && i < this.abilityCount);
+    }
     if (aiming) {
       const L = stage.launch;
-      q.fill.style.height = `${L.power * 100}%`;
-      this.set('band', L.sweet, () => {
+      const pw = Math.round(L.power * 200);
+      if (this.changed('power', pw)) q.fill.style.height = `${pw / 2}%`;
+      if (this.changed('band', L.sweet)) {
         q.band.style.bottom = `${L.sweetLo * 100}%`;
         q.band.style.height = `${L.width * 100}%`;
-      });
-      q.fill.classList.toggle('in-band', L.charging && L.inSweetSpot);
-      this.set('angle', Math.round(L.angle / DEG), (v) => { q.angle.textContent = `${v}°`; });
+      }
+      const inBand = L.charging && L.inSweetSpot;
+      if (this.changed('inBand', inBand)) q.fill.classList.toggle('in-band', inBand);
+      const ang = Math.round(L.angle / DEG);
+      if (this.changed('angle', ang)) q.angle.textContent = `${ang}°`;
       return;
     }
     const v = stage.vehicle;
     const tilt = stage.phase === 'fly' ? view.tilt || 0 : 0;
-    this.set('tilt', tilt, (t) => { show(q.tzl, t > 0); show(q.tzr, t < 0); });
+    if (this.changed('tilt', tilt)) { show(q.tzl, tilt > 0); show(q.tzr, tilt < 0); }
     const ind = view.indicator;
     const groundOn = !!(ind && ind.show);
-    this.set('groundOn', groundOn, (on) => show(q.ground, on));
-    if (groundOn) this.set('groundText', ind.text, (t) => { q.ground.textContent = t; });
+    if (this.changed('groundOn', groundOn)) show(q.ground, groundOn);
+    if (groundOn && this.changed('groundText', ind.text)) q.ground.textContent = ind.text;
 
-    this.set('dist', Math.max(0, Math.round(v.x)), (d) => { q.dist.textContent = fmt(d); });
+    const d = Math.max(0, Math.round(v.x));
+    if (this.changed('dist', d)) q.dist.textContent = fmt(d);
     if (this.goal) {
       const f = Math.max(0, Math.min(1, v.maxX / this.goalMax));
-      this.set('gfill', Math.round(f * 400), (p) => { q.gfill.style.width = `${p / 4}%`; q.gcar.style.left = `${p / 4}%`; });
-      for (const m of this.goal.medalList) {
-        this.set(`gm_${m}`, v.maxX >= this.goal.medals[m], (got) => q[`gm_${m}`].classList.toggle('got', got));
+      const p = Math.round(f * 400);
+      if (this.changed('gfill', p)) { q.gfill.style.width = `${p / 4}%`; q.gcar.style.left = `${p / 4}%`; }
+      const ml = this.goal.medalList;
+      for (let i = 0; i < ml.length; i++) {
+        const m = ml[i];
+        const got = v.maxX >= this.goal.medals[m];
+        if (this.changed(GM_KEY[m], got)) q[GM_KEY[m]].classList.toggle('got', got);
       }
     }
-    this.set('bolts', Math.floor(stage.bolts), (c) => { q.bolts.textContent = fmt(c); q.bolts.parentElement.classList.remove('bump'); void q.bolts.offsetWidth; q.bolts.parentElement.classList.add('bump'); });
-    this.set('alt', Math.max(0, Math.round(stage.altitude)), (a) => { q.alt.textContent = `↑ ${fmt(a)} m`; });
+    const bolts = Math.floor(stage.bolts);
+    if (this.changed('bolts', bolts)) {
+      q.bolts.textContent = fmt(bolts);
+      const b = q.bolts.parentElement;
+      b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
+    }
+    const alt = Math.max(0, Math.round(stage.altitude));
+    if (this.changed('alt', alt)) q.alt.textContent = `↑ ${fmt(alt)} m`;
     if (this.weather) {
       const w = Math.round(stage.env.wind);
-      this.set('wind', w, (x) => { q.wind.textContent = `${x > 0 ? '→' : x < 0 ? '←' : '·'} ${Math.abs(x)} m/s`; });
+      if (this.changed('wind', w)) q.wind.textContent = `${w > 0 ? '→' : w < 0 ? '←' : '·'} ${Math.abs(w)} m/s`;
     }
 
     // Ressourcen-Leisten
-    this.set('fuel', Math.round(v.fuelFrac * 200), (p) => {
-      q.fuel.style.width = `${p / 2}%`;
-      q.fuel.parentElement.parentElement.classList.toggle('empty', p <= 0);
-    });
+    const fp = Math.round(v.fuelFrac * 200);
+    if (this.changed('fuel', fp)) {
+      q.fuel.style.width = `${fp / 2}%`;
+      q.fuel.parentElement.parentElement.classList.toggle('empty', fp <= 0);
+    }
     const hf = Math.max(0, Math.min(1, v.heatFrac));
-    this.set('heat', Math.round(hf * 200), (p) => { q.heat.style.width = `${p / 2}%`; });
-    this.set('heatWarn', hf >= RESOURCES.heatWarn, (on) => q.heatrow.classList.toggle('warn', on));
-    this.set('stall', v.stall > 0, (on) => { show(q.stall, on); q.heatrow.classList.toggle('stalled', on); });
+    const hp = Math.round(hf * 200);
+    if (this.changed('heat', hp)) q.heat.style.width = `${hp / 2}%`;
+    const warn = hf >= RESOURCES.heatWarn;
+    if (this.changed('heatWarn', warn)) q.heatrow.classList.toggle('warn', warn);
+    const stall = v.stall > 0;
+    if (this.changed('stall', stall)) { show(q.stall, stall); q.heatrow.classList.toggle('stalled', stall); }
     const df = Math.max(0, Math.min(1, v.durabilityFrac));
-    this.set('dur', Math.round(df * 200), (p) => { q.dur.style.width = `${p / 2}%`; });
+    const dp = Math.round(df * 200);
+    if (this.changed('dur', dp)) q.dur.style.width = `${dp / 2}%`;
     // Farbe: grün → gelb unter RESOURCES.durWarn → rot unter RESOURCES.durCrit (Klassen in style.css)
-    this.set('durLevel', df < RESOURCES.durCrit ? 2 : df < RESOURCES.durWarn ? 1 : 0, (l) => {
-      q.durrow.classList.toggle('warn', l === 1);
-      q.durrow.classList.toggle('crit', l === 2);
-    });
-    this.set('durnum', Math.ceil(v.durability), (d) => { q.durnum.textContent = fmt(d); });
+    const dl = df < RESOURCES.durCrit ? 2 : df < RESOURCES.durWarn ? 1 : 0;
+    if (this.changed('durLevel', dl)) {
+      q.durrow.classList.toggle('warn', dl === 1);
+      q.durrow.classList.toggle('crit', dl === 2);
+    }
+    const dn = Math.ceil(v.durability);
+    if (this.changed('durnum', dn)) q.durnum.textContent = fmt(dn);
     // Drehzahl-Anzeige (Rasenmäher, Regel groundSpeedStacks)
     const rpm = stage.chassisStackFrac ? stage.chassisStackFrac() : null;
-    this.set('rpmOn', rpm !== null, (on) => show(q.rpmrow, on));
-    if (rpm !== null) this.set('rpm', Math.round(rpm * 100), (p) => { q.rpm.style.width = `${p}%`; });
+    if (this.changed('rpmOn', rpm !== null)) show(q.rpmrow, rpm !== null);
+    if (rpm !== null) {
+      const rp = Math.round(rpm * 100);
+      if (this.changed('rpm', rp)) q.rpm.style.width = `${rp}%`;
+    }
     // Feed: alte Zeilen ausblenden
     if (this.feed.length && performance.now() / 1000 - this.feed[0].t > ITEMS.feedTime) { this.feed.shift(); this.renderFeed(); }
 
@@ -246,22 +269,32 @@ export class Hud {
     const bar = stage.abilities;
     for (let i = 0; i < this.abilityCount && i < bar.length; i++) {
       const s = bar.view(i, v);
-      const b = q[`ab${i}`];
-      this.set(`abp${i}`, Math.round(s.frac * 100), (p) => b.style.setProperty('--p', String(p / 100)));
-      this.set(`abo${i}`, s.off, (on) => b.classList.toggle('off', on));
-      this.set(`aba${i}`, s.active, (on) => b.classList.toggle('active', on));
-      this.set(`abr${i}`, s.ready, (on) => b.classList.toggle('ready', on));
+      const b = q[AB_KEY[i]];
+      const k = AB_KEYS[i];
+      const p = Math.round(s.frac * 100);
+      if (this.changed(k.p, p)) b.style.setProperty('--p', String(p / 100));
+      if (this.changed(k.o, s.off)) b.classList.toggle('off', s.off);
+      if (this.changed(k.a, s.active)) b.classList.toggle('active', s.active);
+      if (this.changed(k.r, s.ready)) b.classList.toggle('ready', s.ready);
     }
 
     const ch = stage.chain;
-    this.set('comboOn', ch.pts > 0, (on) => show(q.combo, on));
-    if (ch.pts > 0) {
-      this.set('mult', ch.mult.toFixed(2), () => {
+    const comboOn = ch.pts > 0;
+    if (this.changed('comboOn', comboOn)) show(q.combo, comboOn);
+    if (comboOn) {
+      const mult = Math.round(ch.mult * 100);
+      if (this.changed('mult', mult)) {
         q.mult.textContent = `×${ch.mult.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}`;
         q.combo.classList.remove('pulse'); void q.combo.offsetWidth; q.combo.classList.add('pulse');
-      });
-      this.set('pts', ch.pts, (p) => { q.pts.textContent = `${fmt(p)} Punkte`; });
-      q.combo.style.setProperty('--t', String(Math.min(1, ch.timer / KOMBO.chainTimeout)));
+      }
+      if (this.changed('pts', ch.pts)) q.pts.textContent = `${fmt(ch.pts)} Punkte`;
+      const tq = Math.round(Math.min(1, ch.timer / KOMBO.chainTimeout) * 50);
+      if (this.changed('ctime', tq)) q.combo.style.setProperty('--t', String(tq / 50));
     }
   }
 }
+
+// Schlüssel einmal anlegen (keine Texte pro Bild zusammensetzen)
+const GM_KEY = { bronze: 'gm_bronze', silver: 'gm_silver', gold: 'gm_gold' };
+const AB_KEY = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) => `ab${i}`);
+const AB_KEYS = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) => ({ p: `abp${i}`, o: `abo${i}`, a: `aba${i}`, r: `abr${i}` }));
