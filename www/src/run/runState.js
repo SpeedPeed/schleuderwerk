@@ -18,6 +18,16 @@
 //   Phase 5: perks (Forschungs-Boni beim Run-Start), reserve: [{ itemId, price }] (beim Händler reserviert),
 //   seenEvents: [ids], current.shop (Zustand des offenen Sonderknotens – speicherbar, Fortsetzen mitten im Shop) }
 //
+// Paket A – Tempo & Belohnung:
+//   - jeder Versuch zahlt (run/rewards.js → stageRewards); Schrott/Blaupausen/Kerne gehen SOFORT in den Spielstand
+//     (settleRun, bezahlt-Zähler run.earned.paid), das Run-Ende zahlt nur noch den Rest (Schrauben-Rest → Schrott)
+//   - verfehlte Etappe/Elite: run.current.missed = true → Entscheidung resolveMiss(run, 'land' | 'retry'):
+//     „Notlandung“ (−RUN.emergency.penalty max. Haltbarkeit, Trostkiste mit Schrauben, weiter auf der Karte) oder
+//     „Nochmal“ (−RUN.towPenalty, NEUE Strecke: Seed mit run.current.attempts)
+//   - Boss verfehlt: Abschleppen (−RUN.towPenalty), Neuversuch mit neu gewürfelter Boss-Variante (neuer Seed) und
+//     Ziel −RUN.bossRetry.targetCut je Neuversuch (höchstens maxCuts) – „Der Boss ist auch müde“
+//   - Teile-Stufen gelten je Slot: run.parts = { slot: { id, level } } mit level = Slot-Stufe beim Run-Start
+//
 // Phase 4 – Items: Start-Item je Chassis (starterItem bzw. zufälliges base-Item des starterTag), nach jeder geschafften
 // Etappe eine Item-Auswahl (pendingChoices; Seltenheit je Etappe/Elite/Boss, run/rewards.js → rollItemChoices) plus je
 // eingesammelter Item-Kiste eine weitere; Überspringen gibt Schrauben, voller Rucksack → ersetzen oder ablehnen.
@@ -48,15 +58,15 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 // Pseudo-Spielstand für buildLoadout aus der Run-Ausrüstung (die Ausrüstung ist für den Run fest)
 export function runLoadoutSave(run, save = null) {
-  const parts = {}, partLevels = {};
+  const parts = {}, slotLevels = {};
   for (const slot of SLOTS) {
     const p = run.parts[slot];
     if (!p) continue;
     parts[slot] = p.id;
-    partLevels[p.id] = p.level || 0;
+    slotLevels[slot] = p.level || 0;
   }
   return {
-    garage: { chassis: run.chassisId, parts, partLevels, abilities: [...run.abilities] },
+    garage: { chassis: run.chassisId, parts, slotLevels, abilities: [...run.abilities] },
     research: { done: save && save.research ? [...save.research.done] : [...(run.research || [])] },
   };
 }
@@ -90,8 +100,15 @@ export function runAsc(run) {
   return ascCache.get(lv);
 }
 
-// Abschlepp-Strafe (Anteil der max. Haltbarkeit): RUN.towPenalty + Schrottstufe towPenaltyAdd
+// Abschlepp-Strafe (Anteil der max. Haltbarkeit): RUN.towPenalty + Schrottstufe towPenaltyAdd – gilt für „Nochmal“
+// und den Boss-Neuversuch
 export const towPenaltyPct = (run) => RUN.towPenalty + (runAsc(run).towPenaltyAdd || 0);
+// Notlandung (verfehlte Etappe/Elite, weiter auf der Karte): RUN.emergency.penalty + Schrottstufe towPenaltyAdd
+export const emergencyPenaltyPct = (run) => RUN.emergency.penalty + (runAsc(run).towPenaltyAdd || 0);
+// Trostkiste der Notlandung: Schrauben je Akt (× Schrottstufe boltMul)
+export const consolationBolts = (run) => boltIncome(run, RUN.emergency.crateBolts[Math.max(1, Math.min(RUN.acts, run.act | 0))] || 0);
+// Boss-Neuversuch: Ziel-Faktor („Der Boss ist auch müde“), attempts = bisherige Fehlversuche
+export const bossTiredMul = (attempts) => 1 - RUN.bossRetry.targetCut * Math.min(RUN.bossRetry.maxCuts, Math.max(0, attempts | 0));
 
 // Schrauben-Einnahmen × Schrottstufe boltMul (Etappen-Belohnung, Überspringen, Ereignisse, Zerlegen)
 export const boltIncome = (run, n) => (n > 0 ? Math.round(n * (runAsc(run).boltMul || 1)) : n);
@@ -159,7 +176,7 @@ export function newRun(save, opts = {}) {
       stages: 0, cleared: 0, tows: 0, medals: { bronze: 0, silver: 0, gold: 0 }, dist: 0, bestDist: 0,
       damage: 0, boltsEarned: 0, stations: 0, crates: 0, flips: 0, loops: 0, nodes: 0,
     },
-    earned: { scrap: 0, blueprints: 0, cores: 0, actScrap: 0 },
+    earned: { scrap: 0, blueprints: 0, cores: 0, actScrap: 0, paid: { scrap: 0, blueprints: 0, cores: 0 } },
     bossesBeaten: [],
     over: null,
     research: save && save.research ? [...save.research.done] : [],
@@ -209,6 +226,12 @@ export function normalizeRun(run) {
   run.reserve = run.reserve.filter((r) => isObj(r) && itemById(r.itemId)).map((r) => ({ itemId: r.itemId, price: Math.max(0, Number(r.price) || 0) }));
   if (!Array.isArray(run.seenEvents)) run.seenEvents = [];
   if (!Array.isArray(run.research)) run.research = [];
+  // Paket A: schon gutgeschriebene Run-Belohnung (ältere Runs: noch nichts – alles kommt am Run-Ende)
+  if (isObj(run.earned)) {
+    if (!isObj(run.earned.paid)) run.earned.paid = { scrap: 0, blueprints: 0, cores: 0 };
+    for (const k of ['scrap', 'blueprints', 'cores']) if (typeof run.earned.paid[k] !== 'number' || !isFinite(run.earned.paid[k])) run.earned.paid[k] = 0;
+  }
+  if (isObj(run.current)) { run.current.attempts = run.current.attempts | 0; run.current.missed = !!run.current.missed; }
   return run;
 }
 
@@ -256,18 +279,23 @@ export function nodeKind(run, node) {
   return run.current && run.current.node === n.id ? run.current.type : n.type;
 }
 
-// Etappen-Spezifikation eines Knotens (deterministisch: Run-Seed + Akt + Knoten → derselbe Neuversuch)
+// Etappen-Spezifikation eines Knotens (deterministisch: Run-Seed + Akt + Knoten). Paket A: jeder Neuversuch
+// (run.current.attempts > 0) bekommt einen NEUEN Strecken-Seed – keine identische Wiederholung; beim Boss zusätzlich
+// Ziel × bossTiredMul (die Boss-Variante würfelt applyStageResult neu).
 export function stageSpecFor(run, node) {
   const n = typeof node === 'string' ? mapNode(run.map, node) : node;
   const kind = n && nodeKind(run, n);
   if (!n || !isStageType(kind)) return null;
   const twin = kind === 'boss' && run.bossTwin ? ':zwilling' : '';
-  const rng = makeRng(hashSeed(`${run.seed}:${run.act}:${n.id}${twin}`));
+  const attempts = run.current && run.current.node === n.id ? run.current.attempts | 0 : 0;
+  const retry = attempts > 0 ? `:neu${attempts}` : '';
+  const rng = makeRng(hashSeed(`${run.seed}:${run.act}:${n.id}${twin}${retry}`));
   const am = runAsc(run);
+  const tired = kind === 'boss' ? bossTiredMul(attempts) : 1;
   return generateStageSpec({
     biome: currentBiome(run), kind, floor: n.floor, act: run.act, rng,
     bossId: kind === 'boss' ? run.bossIds[run.act] || n.bossId : null,
-    mods: { targetMul: am.targetMul || 1, bossTargetMul: am.bossTargetMul || 1, eliteHazards: !!am.eliteHazards },
+    mods: { targetMul: am.targetMul || 1, bossTargetMul: (am.bossTargetMul || 1) * tired, eliteHazards: !!am.eliteHazards },
   });
 }
 
@@ -279,6 +307,7 @@ export function stageSpecFor(run, node) {
 // abgeschlossen wird mit leaveNode. Ist der Knoten schon offen (Fortsetzen), bleibt sein Zustand erhalten.
 export function enterNode(run, id) {
   if (run.over) return { ok: false, reason: 'over' };
+  if (run.current && run.current.missed) return { ok: false, reason: 'decide' };   // erst Notlandung oder Nochmal
   if (run.current && run.current.node !== id) return { ok: false, reason: 'busy' };
   if (!run.current && !canEnter(run, id)) return { ok: false, reason: 'unreachable' };
   const node = mapNode(run.map, id);
@@ -315,14 +344,34 @@ export function completeNode(run) {
   return node;
 }
 
-// Ergebnis einer Etappe übernehmen. save (optional): Meilensteine stempeln, erste Boss-Siege → Kerne.
-// Ergebnis: { cleared, medal, rewards, towed, towPenalty, defeat, actComplete, nextAct, won, attempts }
+// Paket A: Run-Belohnung sofort gutschreiben – Summe laut runPayout (ohne Schrauben-Rest, außer final) minus schon
+// bezahlt (run.earned.paid). Ohne Spielstand passiert nichts (dann zahlt endRun alles). Ergebnis: gutgeschriebene Werte.
+export function settleRun(run, save, final = false) {
+  const e = run.earned;
+  if (!isObj(e.paid)) e.paid = { scrap: 0, blueprints: 0, cores: 0 };
+  const p = runPayout(run, { boltRest: final });
+  const d = { scrap: 0, blueprints: 0, cores: 0, payout: p };
+  if (!save || !save.meta) return d;
+  for (const k of ['scrap', 'blueprints', 'cores']) {
+    d[k] = Math.max(0, Math.round(p[k] - e.paid[k]));
+    e.paid[k] += d[k];
+    save.meta[k] += d[k];
+  }
+  if (save.stats) save.stats.totalScrap = (save.stats.totalScrap || 0) + d.scrap;
+  return d;
+}
+
+// Ergebnis einer Etappe übernehmen. save (optional): Meilensteine stempeln, erste Boss-Siege → Kerne, Belohnung sofort
+// gutschreiben (settleRun). Ergebnis: { cleared, medal, grade, rewards, credited, missed, towed, towPenalty, defeat,
+// actComplete, nextAct, won, attempts, bossReroll }
+// Verfehlt (Etappe/Elite): missed = true, run.current bleibt offen, bis resolveMiss entscheidet (Notlandung/Nochmal).
 export function applyStageResult(run, result, save = null) {
   const cur = run.current;
   if (!cur || !isStageType(cur.type)) return { ok: false, reason: 'noStage' };
+  if (cur.missed) return { ok: false, reason: 'decide' };
   const kind = cur.type;
   const s = run.stats;
-  const out = { ok: true, kind, cleared: !!result.cleared, medal: result.medal || null, towed: false, towPenalty: 0, defeat: false, actComplete: false, nextAct: null, won: false };
+  const out = { ok: true, kind, cleared: !!result.cleared, medal: result.medal || null, towed: false, missed: false, towPenalty: 0, defeat: false, actComplete: false, nextAct: null, won: false };
   run.durability = Math.max(0, Math.min(durabilityMax(run), result.durability));
   s.stages++;
   s.dist += result.dist || 0;
@@ -330,7 +379,9 @@ export function applyStageResult(run, result, save = null) {
   s.damage += result.damageTaken || 0;
   s.crates += result.crates || 0;
   if (result.stunts) { s.flips += result.stunts.flips || 0; s.loops += result.stunts.loops || 0; }
-  const rw = stageRewards(run.act, kind, result);
+  const roll = makeRng(hashSeed(`${run.seed}:blaupause:${s.stages}`)).next();
+  const rw = stageRewards(run.act, kind, result, { roll, firstEncounter: !(cur.attempts > 0) });
+  out.grade = rw.grade;
   // Schrottstufe 13: Schrauben-Belohnung der Etappe × boltMul (gesammelte Schrauben sind schon über boltGain gekürzt)
   if (rw.base.bolts) { const b = boltIncome(run, rw.base.bolts); rw.bolts += b - rw.base.bolts; rw.base.bolts = b; }
   out.rewards = rw;
@@ -339,15 +390,27 @@ export function applyStageResult(run, result, save = null) {
   s.boltsEarned += rw.bolts;
   run.earned.scrap += rw.scrap;
   run.earned.blueprints += rw.blueprints;
-  run.history.push({ act: run.act, node: cur.node, kind, dist: result.dist, target: result.target, medal: out.medal, reason: result.reason });
+  run.history.push({ act: run.act, node: cur.node, kind, dist: result.dist, target: result.target, medal: out.medal, grade: rw.grade, reason: result.reason });
+  const credit = () => { out.credited = settleRun(run, save); };
 
   if (result.reason === 'wreck' || run.durability <= 0) {
     out.defeat = true;
     run.over = { won: false, reason: 'wreck', act: run.act };
+    credit();
+    return out;
+  }
+  if (!out.cleared && kind !== 'boss') {
+    // Notlandung oder Nochmal: die Person entscheidet (resolveMiss); bis dahin bleibt der Knoten offen
+    cur.missed = true;
+    out.missed = true;
+    out.attempts = cur.attempts;
+    out.emergency = { penalty: Math.round(durabilityMax(run) * emergencyPenaltyPct(run) * 10) / 10, pct: emergencyPenaltyPct(run), bolts: consolationBolts(run) };
+    out.retry = { penalty: Math.round(durabilityMax(run) * towPenaltyPct(run) * 10) / 10, pct: towPenaltyPct(run) };
+    credit();
     return out;
   }
   if (!out.cleared) {
-    // Abschleppen: Strafe, dann Neuversuch derselben Etappe
+    // Boss: Abschleppen (Strafe), dann Neuversuch – neue Boss-Variante, neue Strecke, Ziel −5 % („auch müde“)
     const pen = Math.round(durabilityMax(run) * towPenaltyPct(run) * 10) / 10;
     out.towed = true;
     out.towPenalty = pen;
@@ -355,10 +418,17 @@ export function applyStageResult(run, result, save = null) {
     s.tows++;
     cur.attempts++;
     out.attempts = cur.attempts;
+    if (!run.bossTwin) {
+      const b = biomeForAct(run.act);
+      const pick = makeRng(hashSeed(`${run.seed}:boss-neu:${run.act}:${cur.attempts}`)).pick(b.bosses);
+      run.bossIds[run.act] = pick.id;
+      out.bossReroll = { id: pick.id, name: pick.name, icon: pick.icon, targetMul: bossTiredMul(cur.attempts) };
+    }
     if (run.durability <= 0) {
       out.defeat = true;
       run.over = { won: false, reason: 'tow', act: run.act };
     }
+    credit();
     return out;
   }
   s.cleared++;
@@ -386,6 +456,7 @@ export function applyStageResult(run, result, save = null) {
       out.cores = REWARDS.firstBossCores[act];
     }
     out.secondBoss = { id: other.id, name: other.name, icon: other.icon };
+    credit();
     return out;
   }
   if (kind === 'boss') {
@@ -409,6 +480,37 @@ export function applyStageResult(run, result, save = null) {
       setupAct(run, run.act + 1);
       if (save) markMilestone(save, `firstAct${run.act}`);
     }
+  }
+  credit();
+  return out;
+}
+
+// Entscheidung nach einer verfehlten Etappe/Elite (run.current.missed):
+//   'land'  – Notlandung: −emergencyPenaltyPct der max. Haltbarkeit, Trostkiste (Schrauben), Knoten gilt als besucht,
+//             weiter auf der Karte (keine Item-Auswahl)
+//   'retry' – Nochmal: −towPenaltyPct, neue Strecke (gleiche Art/Etage, anderer Seed), Knoten bleibt offen
+// Ergebnis: { ok, choice, penalty, bolts?, defeat, attempts? }
+export function resolveMiss(run, choice = 'land') {
+  const cur = run.current;
+  if (!cur || !cur.missed) return { ok: false, reason: 'none' };
+  const retry = choice === 'retry';
+  const pen = Math.round(durabilityMax(run) * (retry ? towPenaltyPct(run) : emergencyPenaltyPct(run)) * 10) / 10;
+  run.durability = Math.max(0, run.durability - pen);
+  cur.missed = false;
+  const out = { ok: true, choice: retry ? 'retry' : 'land', penalty: pen, defeat: false };
+  if (retry) {
+    run.stats.tows++;
+    cur.attempts++;
+    out.attempts = cur.attempts;
+  } else {
+    run.stats.emergencies = (run.stats.emergencies || 0) + 1;
+    out.bolts = addRunBolts(run, RUN.emergency.crateBolts[Math.max(1, Math.min(RUN.acts, run.act | 0))] || 0);
+    completeNode(run);
+  }
+  if (run.durability <= 0) {
+    out.defeat = true;
+    run.over = { won: false, reason: retry ? 'tow' : 'emergency', act: run.act };
+    run.current = null;
   }
   return out;
 }
@@ -626,13 +728,10 @@ export function endRun(save, run = save.run) {
     const c = ascensionCoreReward(save, run.ascension);
     if (c) { run.earned.cores += c; run.earned.ascCores = (run.earned.ascCores || 0) + c; }
   }
-  const payout = runPayout(run);
-  save.meta.scrap += payout.scrap;
-  save.meta.blueprints += payout.blueprints;
-  save.meta.cores += payout.cores;
+  // Rest gutschreiben (Schrauben-Rest, Run-Ende-Kerne; der Rest ging schon während des Runs in den Spielstand)
+  const payout = settleRun(run, save, true).payout;
   const st = save.stats;
   st.runs = (st.runs || 0) + 1;
-  st.totalScrap = (st.totalScrap || 0) + payout.scrap;
   st.totalBolts = (st.totalBolts || 0) + run.stats.boltsEarned;
   st.bestDist = Math.max(st.bestDist || 0, run.stats.bestDist);
   st.bestAct = Math.max(st.bestAct || 0, run.over.won ? RUN.acts + 1 : run.act);

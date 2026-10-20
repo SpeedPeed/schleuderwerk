@@ -99,22 +99,28 @@ test('Stufe 1 eliteWeightAdd: mehr Elite-Etappen auf der Karte', () => {
   assert.ok(b > a, `Run-Karten: ${a} → ${b}`);
 });
 
-test('Stufe 2 targetMul: alle Zielmarken × 1,08', () => {
+test('Stufe 2 targetMul: alle Zielmarken × 1,12', () => {
   const r0 = runAt(1).run, r2 = runAt(2).run;
   const n = r0.map.floors[0][0];
   const s0 = R.stageSpecFor(r0, n), s2 = R.stageSpecFor(r2, r2.map.floors[0][0]);
-  assert.equal(s2.target, Math.round((biomeForAct(1).targets.stage[0] * 1.08) / 5) * 5);
+  assert.equal(s2.target, Math.round((biomeForAct(1).targets.stage[0] * 1.12) / 5) * 5);
   assert.ok(s2.target > s0.target);
 });
 
-test('Stufe 3 towPenaltyAdd: Abschleppen kostet 20 % statt 15 %', () => {
+test('Stufe 3 towPenaltyAdd: Nochmal kostet 20 % statt 15 %, Notlandung 15 % statt 10 %', () => {
   const { save, run } = runAt(3);
   near(R.towPenaltyPct(run), RUN.towPenalty + 0.05);
+  near(R.emergencyPenaltyPct(run), RUN.emergency.penalty + 0.05);
   const e = R.enterNode(run, run.map.floors[0][0].id);
   const max = R.durabilityMax(run);
   const o = R.applyStageResult(run, fake(run, e.spec, 'miss'), save);
-  assert.ok(o.towed);
-  near(o.towPenalty, Math.round(max * 0.2 * 10) / 10);
+  assert.ok(o.missed && !o.towed);
+  near(o.retry.penalty, Math.round(max * 0.2 * 10) / 10);
+  near(o.emergency.penalty, Math.round(max * 0.15 * 10) / 10);
+  const before = run.durability;
+  const res = R.resolveMiss(run, 'retry');
+  near(res.penalty, Math.round(max * 0.2 * 10) / 10);
+  near(run.durability, before - res.penalty);
 });
 
 test('Stufe 4 priceMul: Händler-, Reroll- und Fluch-Entfernen-Preise × 1,1', () => {
@@ -150,12 +156,12 @@ test('Stufe 6 startCurse: jeder Run startet mit einem verfluchten Item', () => {
   assert.equal(runAt(5).run.inventory.filter((e) => itemById(e.itemId).rarity === 'cursed').length, 0);
 });
 
-test('Stufe 7 bossTargetMul: Boss-Zielmarken zusätzlich × 1,15', () => {
+test('Stufe 7 bossTargetMul: Boss-Zielmarken zusätzlich × 1,22', () => {
   const b = biomeForAct(1);
   const { run } = runAt(7);
   const spec = R.stageSpecFor(run, run.map.boss);
-  assert.equal(spec.target, Math.round((b.targets.boss * 1.15 * 1.08) / 5) * 5);
-  assert.equal(stageTarget(b, 'stage', 0, ascensionMods(7)), Math.round((b.targets.stage[0] * 1.08) / 5) * 5, 'normale Etappen nur × targetMul');
+  assert.equal(spec.target, Math.round((b.targets.boss * 1.22 * 1.12) / 5) * 5);
+  assert.equal(stageTarget(b, 'stage', 0, ascensionMods(7)), Math.round((b.targets.stage[0] * 1.12) / 5) * 5, 'normale Etappen nur × targetMul');
 });
 
 test('Stufe 8 damageMul: erlittener Schaden × 1,15 (Etappe und Ereignisse)', () => {
@@ -336,7 +342,7 @@ test('Schrottstufen-Belohnung: +10 % Schrott je Stufe, erster Sieg auf 5/10/15 �
   const run = save.run;
   const scrap = Math.round(run.earned.scrap) + Math.floor(run.bolts * REWARDS.boltsToScrap);
   const cores0 = save.meta.cores;
-  const coresRun = run.earned.cores;
+  const coresRun = run.earned.cores - run.earned.paid.cores;   // Paket A: Kerne aus dem Run sind schon gutgeschrieben
   const res = R.endRun(save, run);
   const row = res.payout.rows.find((r) => /Schrottstufe 5 \(\+50 %/.test(r.label));
   assert.ok(row, 'Zeile Schrottstufe');
@@ -388,7 +394,7 @@ test('Meilensteine: Zielzeiten, alle Chassis, Schrottstufen 5/10/15', () => {
     assert.ok(MILESTONES.some((m) => m.id === id), id);
   }
   const t = milestoneTarget(MILESTONES.find((m) => m.id === 'firstWin'));
-  assert.deepEqual(t, { min: 6 * 3600, max: 10 * 3600 });
+  assert.deepEqual(t, { min: 3 * 3600, max: 5 * 3600 });   // Paket A: OVERHAUL §6
   const save = defaultSave();
   save.meta.totalPlaytime = 1234;
   assert.equal(checkAllChassis(save), false);

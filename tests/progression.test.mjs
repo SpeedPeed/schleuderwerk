@@ -14,7 +14,7 @@ const CAREERS = 5;
 let careers = null;
 const getCareers = () => (careers ||= Array.from({ length: CAREERS }, (_, i) => simulateCareer(model, { seed: i + 1 })));
 
-test('Simulator-Modell: alle Akte, Teile-Stufen 0–20, Zellen mit Messwerten; Items wirken positiv', () => {
+test('Simulator-Modell: alle Akte, Slot-Stufen 0–10, Zellen mit Messwerten; Items wirken positiv', () => {
   assert.deepEqual(model.levels, SIM.fitLevels);
   for (const act of [1, 2, 3]) {
     for (const L of model.levels) {
@@ -23,9 +23,10 @@ test('Simulator-Modell: alle Akte, Teile-Stufen 0–20, Zellen mit Messwerten; I
         assert.ok(cell && cell.lr.length >= 10 && isFinite(cell.mu) && cell.sd > 0, `Akt ${act} Stufe ${L} ${c}`);
       }
     }
-    // mehr Teile-Stufen → weiter (Etage 0 und Boss)
-    assert.ok(model.base[act][20].s0.mu > model.base[act][0].s0.mu);
-    assert.ok(model.base[act][20].b.mu > model.base[act][0].b.mu);
+    // mehr Slot-Stufen → weiter (Etage 0 und Boss)
+    const top = model.levels[model.levels.length - 1];
+    assert.ok(model.base[act][top].s0.mu > model.base[act][0].s0.mu);
+    assert.ok(model.base[act][top].b.mu > model.base[act][0].b.mu);
     // Set 6 wirkt stärker als 6 zufällige Items
     assert.ok(model.items[act].set[6] > model.items[act].random[6] - 0.05);
   }
@@ -40,7 +41,7 @@ test('Simulator: Etappen-Ergebnis hat die Form von stage.finish und berücksicht
   const spec = R.stageSpecFor(run, run.map.floors[0][0]);
   const r = simStageResult(model, run, spec, save, makeRng('x'));
   for (const k of ['reason', 'cleared', 'medal', 'dist', 'target', 'medals', 'kind', 'bolts', 'scrap', 'crates', 'damageTaken', 'durability']) assert.ok(k in r, k);
-  // gleiche Würfel, höhere Zielmarke (Schrottstufe 2: Ziele × 1,08) → seltener geschafft (Etage 4, Akt 1)
+  // gleiche Würfel, höhere Zielmarke (Schrottstufe 2: Ziele × 1,12) → seltener geschafft (Etage 4, Akt 1)
   let a = 0, b = 0;
   const s2 = defaultSave();
   s2.run = R.newRun(s2, { seed: 4, ascension: 2 });

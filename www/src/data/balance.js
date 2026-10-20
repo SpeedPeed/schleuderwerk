@@ -145,11 +145,20 @@ export const SOFTCAPS = {
 };
 
 // ---------- Garage (Chassis & Teile) ----------
+// Paket A: Stufen gelten je SLOT (save.garage.slotLevels), nicht je Teil – ein Teilwechsel behält die Stufe.
+// Wirkung einer Stufe = levelEffectMul × perLevel des ausgerüsteten Teils (abnehmender Ertrag, items/statMods.js →
+// partDimLevels): eff(L) = levelEffectMul × L / (1 + L / dimDivisor) → Stufe 10 = 12 „alte“ Stufen (wie früher Stufe 20).
+// Kosten der nächsten Stufe = slotUpgradeBase × costGrowth^L (60, 79, 105 … Summe bis 10 ≈ 2.800 ⚙ je Slot).
 export const GARAGE = {
-  costGrowth: 1.15,        // Preis der nächsten Stufe = Basispreis × costGrowth^Stufe
-  maxPartLevel: 20,
-  dimDivisor: 30,          // Wirkung = perLevel × L / (1 + L / dimDivisor) → Stufe 20 ≈ 12 effektive Stufen
-  starterUpgradeBase: 40,  // Basispreis der Startteile (kosten 0 Schrott)
+  costGrowth: 1.32,        // Preis der nächsten Stufe = slotUpgradeBase × costGrowth^Stufe
+  maxPartLevel: 10,        // höchste Slot-Stufe (Name aus Schema v3: gilt jetzt je Slot)
+  dimDivisor: 15,          // abnehmender Ertrag: L / (1 + L / dimDivisor)
+  levelEffectMul: 2,       // doppelte Wirkung je Stufe (perLevel × 2) gegenüber den Stufen 0–20 bis v1.0
+  slotUpgradeBase: 60,     // Preis der ersten Slot-Stufe (für jedes Teil gleich)
+  starterUpgradeBase: 40,  // Schema v3: Basispreis der Teile-Stufen von Startteilen (nur noch für die Migration v3 → v4)
+  v3CostGrowth: 1.15,      // Schema v3: Kostenwachstum der Teile-Stufen (Migration v3 → v4: bezahlten Schrott nachrechnen)
+  v3MaxPartLevel: 20,      // Schema v3: höchste Teile-Stufe
+  v3DimDivisor: 30,        // Schema v3: abnehmender Ertrag der Teile-Stufen
   chassisCoreMul: 0.4,     // Faktor auf die Kern-Preise der Chassis (data/chassis.js → unlock.cores; data/index.js → chassisUnlock,
                            // gerundet, mind. 1 → 1/1/1/1/2/2/2/2 💠). Phase 6: Simulator – alle Chassis nach ≈ 26 h (V2-DESIGN §8: ≈ 25 h)
   starterChassis: 'seifenkiste',
@@ -242,13 +251,22 @@ export const MAP = {
   floors: 6,               // Etagen 0–5, danach die Boss-Strecke (Etage 6)
   floorSizes: [[2, 0.5], [3, 0.4], [4, 0.1]], // Knoten je Etage mit Gewicht (≈ 15 Knoten je Akt)
   extraEdgeChance: 0.35,   // zusätzliche (kreuzungsfreie) Verbindung je Knotenpaar
+  autoAdvanceDelay: 0.6,   // Paket A: nur ein Nachfolger → die Karte fährt nach so vielen Sekunden selbst weiter
 };
 
 // ---------- Run (run/runState.js) ----------
 export const RUN = {
   acts: 3,
-  towPenalty: 0.15,        // nicht geschafft: Abschleppen kostet 15 % der max. Haltbarkeit, dann Neuversuch
+  towPenalty: 0.15,        // Neuversuch („Nochmal“ nach verfehlter Etappe, Boss-Neuversuch): 15 % der max. Haltbarkeit
   version: 1,              // Format von save.run (älteres/fremdes Format wird verworfen)
+  // Paket A: Verfehlte Etappe/Elite = „Notlandung“ – weiter auf der Karte statt dieselbe Strecke nochmal
+  emergency: {
+    penalty: 0.1,          // −10 % der max. Haltbarkeit
+    crateBolts: { 1: 10, 2: 14, 3: 18 }, // Trostkiste: Schrauben je Akt (× Schrottstufe boltMul)
+    boltMul: 0.5,          // Teil-Belohnung: Schrauben der Etappe × 0,5 (Schrott über REWARDS.gradeMul.miss)
+  },
+  // Boss verfehlt: Neuversuch mit neu gewürfelter Boss-Variante (neuer Strecken-Seed) und Ziel −5 % je Neuversuch
+  bossRetry: { targetCut: 0.05, maxCuts: 3 }, // „Der Boss ist auch müde“ – höchstens 3 × 5 % = −15 %
 };
 
 // ---------- Schrottstufen (data/ascension.js: Regeln je Stufe; hier nur die Parameter der Sonderregeln) ----------
@@ -262,24 +280,33 @@ export const ASCENSION_RULES = {
 export const PROGRESSION = {
   // Zielzeiten laut V2-DESIGN §8 in Stunden Spielzeit [von, bis] – Anzeige im Dev-Menü, Prüfung im Simulator
   targets: {
-    firstRun: [10 / 60, 15 / 60],   // erster Run beendet (meist in Akt 1–2)
-    firstBossAct1: [1, 2],          // erster Akt-1-Boss besiegt
-    firstWin: [6, 10],              // erster Run-Sieg
-    allChassis: [20, 30],           // alle Chassis (≈ 25 h)
+    firstRun: [8 / 60, 15 / 60],    // erster Run beendet (meist in Akt 1–2; Paket A: schnellere Etappen → ab 8 min)
+    firstBossAct1: [0.5, 1],        // erster Akt-1-Boss besiegt (Paket A: ≤ 45 min statt 1–2 h)
+    firstWin: [3, 5],               // erster Run-Sieg (Paket A / OVERHAUL §6: 3–5 h statt 6–10 h)
+    allChassis: [15, 25],           // alle Chassis (Paket A: mehr Siege → mehr Kerne; OVERHAUL §6 zielt mit Paket E auf 15–20 h)
     ascension15: [30, 50],          // alles inkl. Schrottstufe 15
   },
   historySize: 10,         // Garage → Statistik: so viele letzte Runs
 };
 
 // ---------- Run-Belohnungen (run/rewards.js) ----------
-// Schrauben (Run-Währung) und Meta-Schrott je geschaffter Etappe: Grundwert je Akt × Medaillen-Faktor × Knoten-Faktor.
+// Schrauben (Run-Währung) je geschaffter Etappe: Grundwert je Akt × Medaillen-Faktor × Knoten-Faktor.
+// Paket A „Jeder Versuch zahlt“: Meta-Schrott je Etappe (auch verfehlt) = scrapPerM[Akt] × Weite × gradeMul[Wertung]
+// × scrapKindMul[Knotenart] (+ Schrott-Pickups, + Kombo). Er wird SOFORT gutgeschrieben (run/runState.js → settleRun),
+// das Run-Ende zeigt nur die Summe (+ Schrauben-Rest).
 export const REWARDS = {
   bolts: { 1: 18, 2: 26, 3: 36 },
-  scrap: { 1: 14, 2: 24, 3: 36 },
-  medalMul: { bronze: 1, silver: 1.4, gold: 1.8 },
-  kindMul: { stage: 1, elite: 1.6, boss: 3 },
-  bossGoldBonus: 0.5,      // Boss: Gold gibt +50 % obendrauf (Boss kennt nur Bronze und Gold)
-  blueprints: { elite: 1, boss: { 1: 3, 2: 4, 3: 5 } },
+  scrapPerM: { 1: 0.12, 2: 0.16, 3: 0.22 },
+  // Wertung: verfehlt · Bronze · Silber · Gold · Platin (Gold × 1,5) · Schrottkönig (Gold × 2 = Ende 'far')
+  gradeMul: { miss: 0.5, bronze: 1, silver: 1.25, gold: 1.5, platin: 2, king: 3 },
+  gradeMarks: { platin: 1.5, king: 2 },   // Platin/Schrottkönig-Marke = Gold-Marke × …
+  scrapKindMul: { stage: 1, elite: 1, boss: 1 },   // Knotenart-Faktor auf den Weiten-Schrott (Elite/Boss zahlen über Ziel & Bonus)
+  medalMul: { bronze: 1, silver: 1.4, gold: 1.8 },   // Schrauben
+  kindMul: { stage: 1, elite: 1.6, boss: 3 },        // Schrauben
+  bossGoldBonus: 0.5,      // Boss: Gold gibt +50 % Schrauben obendrauf (Boss kennt nur Bronze und Gold)
+  // Blaupausen: Elite geschafft 2, Boss besiegt 3/4/5 – jede verlorene Boss-Begegnung 1 (Neuversuche derselben
+  // Begegnung nicht), Gold oder besser 25 % Chance auf 1
+  blueprints: { elite: 2, boss: { 1: 3, 2: 4, 3: 5 }, bossLost: 1, goldChance: 0.25 },
   firstBossCores: { 2: 1, 3: 1 }, // erster Boss-Sieg in Akt 2/3: Kerne
   winCores: 1,             // Run gewonnen: Kern(e)
   boltsToScrap: 0.1,       // übrige Schrauben → 10 % als Schrott am Run-Ende (V2-DESIGN §6: Senke der Run-Währung)
@@ -351,7 +378,9 @@ export const TREASURE = {
 
 // Erfinder-Labor (garage/research.js): Kosten stehen je Knoten in data/research.js (Blaupausen 📘).
 export const RESEARCH = {
-  costMul: 1,              // globaler Faktor auf alle Forschungskosten
+  costMul: 1.5,            // globaler Faktor auf alle Forschungskosten (gerundet). Paket A: 1 → 1,5 – es gibt viel mehr
+                           // Blaupausen (Gold-Chance, jede Boss-Begegnung, Elite 2); ohne den Faktor wäre der Baum nach
+                           // ≈ 10 h fertig und die Schrottstufen-Kurve (30–50 h) bräche ein (Simulator)
 };
 
 // ---------- Items, Effekte, Ereignis-Warteschlange ----------
@@ -549,6 +578,14 @@ export const STAGE = {
   ringFuelRefill: 0.25,    // Anteil des maximalen Treibstoffs
   milestoneEvery: 100,     // Ereignis milestone alle 100 m
   bossWarnLead: 45,        // Boss-Strecken: Warnhinweis (data/biomes.js → bosses[].warnings) so viele m vor jedem Baustein
+  // Paket A: Vorspulen & Hochrechnung. Ist die Kiste ≥ minGroundTime s am Boden und wird kein Boost gehalten, läuft die
+  // Etappe mit ×scale (gleiche Physik-Schritte, nur mehr pro Bild). Tippen/Leertaste beim Vorspulen (oder am Boden
+  // langsamer als maxSpeedForFinish) = Sofort-Ende: der Rest wird ohne Darstellung gerechnet (Ergebnis identisch).
+  // Ohne Treibstoff und ohne Bronze rechnet eine Schatten-Etappe (Wiederholung aller Eingaben) das Ende hoch: bleibt
+  // Bronze unerreichbar → „Knapp: NN %“ und Ende nach knappDelay s.
+  // Steht das Ergebnis auch mit Bronze fest (Tank leer, Hochrechnung: kein Sprung mehr mit ≥ minAir s Flugzeit),
+  // endet die Etappe nach settleDelay mit „Hochgerechnet: NN m“ (nur noch Ausrollen – nichts mehr zu steuern).
+  fastForward: { minGroundTime: 0.8, scale: 4, maxSpeedForFinish: 6, knappDelay: 1, settleDelay: 0.4, minAir: 0.3, finishFrame: 0.05, maxSteps: 60000 },
   gust: { freqA: 0.8, freqB: 0.31, phaseB: 2, phaseRange: 10 },
   defaultWeather: { name: 'Windstill', icon: '☀️', weight: 1, wind: [0, 0] },
 };
@@ -591,6 +628,8 @@ export const RENDER = {
 // ---------- Kombos und Tricks (pts = Trickpunkte, mult = Erhöhung des Kombo-Multiplikators) ----------
 export const KOMBO = {
   chainTimeout: 2.5,       // Sekunden am Boden ohne Aktion -> Kombo wird gesichert
+  boltsPer: 15,            // Paket A: gesicherte Trickpunkte zählen im Run – 1 🔩 je 15 Punkte …
+  scrapPer: 40,            // … und 1 ⚙ je 40 Punkte (run/rewards.js → stageRewards)
   minAirForLanding: 1.2,   // Landebonus erst ab dieser Flugzeit
   flipLeniencyDeg: 25,     // 335° zählen schon als Salto
   heightMarks: [50, 100, 250, 500, 1000],
@@ -622,7 +661,7 @@ export const FX = {
   landDustDiv: 20,         // Staubmenge = Aufprall / landDustDiv
   landSoundDiv: 25,
   landHapticImpact: 8,
-  resultDelay: 0.7,        // Sekunden bis zur Auswertung
+  resultDelay: 0.5,        // Sekunden bis zur Auswertung (Paket A: 0,7 → 0,5; nach Sofort-Ende nur 15 % davon)
   resultCount: { base: 500, perScrap: 4, max: 1400 }, // Hochzählen der Belohnung: Dauer in ms
   garageWheelSpin: 2,      // Raddrehung in der Garage (rad/s)
   idleSpinnerMul: 0.3,     // Propeller/Turbinen drehen ohne Antrieb mit diesem Anteil weiter (Garage, Zeitlupe)
@@ -632,7 +671,7 @@ export const FX = {
   rain: { drops: 260, color: '#c9d8f0', opacity: 0.45, speed: 38, windMul: 1.4, depth: 30, minLen: 0.8, maxLen: 3, lenPerHeight: 0.025 },
   // Blitz-Aufleuchten (Gewittersteppe): zufällig im Hintergrund alle every [min, max] s, bei Einschlägen stärker
   flash: { every: [4, 11], ambient: 0.55, strike: 1, decay: 5, hemiMul: 2.2 },
-  medalFlags: { z: -2.4, colors: { bronze: '#cd7f32', silver: '#c9d1da', gold: '#ffd23f' } },
+  medalFlags: { z: -2.4, colors: { bronze: '#cd7f32', silver: '#c9d1da', gold: '#ffd23f', platin: '#e8f0f5', king: '#ff5a1f' } },
   windStreak: { chancePerWind: 0.12, colors: ['#ffffff', '#e8f4ff'] },
   particles: {
     bolt: { n: 6, colors: ['#d7dde3', '#ffffff', '#9aa4ae'], speed: 5, life: 0.4, size: 0.35 },
@@ -701,5 +740,5 @@ export const AUDIO = {
 export const TUTORIAL = {
   showDelay: 0.35,         // Sekunden, bis ein ausgelöster Hinweis erscheint (Bildschirm baut sich erst auf)
   toastTime: 7,            // Hinweise während der Etappe verschwinden nach so vielen Sekunden von selbst
-  resourcesAfter: 3.5,     // Hinweis „Ressourcen“ so viele Sekunden nach dem Abschuss
+  // Paket A: Etappen-Hinweise (Sprechblasen) nur beim Zielen oder in einer Zeitlupe – nie im Flug über dem HUD
 };

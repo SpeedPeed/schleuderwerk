@@ -2,7 +2,7 @@ import { PHYSICS as P, LAUNCH, KOMBO, FX, STAGE, CONTROLS, SPAWN, RESOURCES as R
 import { Vehicle } from '../physics/vehicle.js';
 import { Objects } from '../physics/objects.js';
 import { Track, PLATEAU_H } from '../physics/track.js';
-import { generateStageSpec, medalFor } from '../physics/trackGen.js';
+import { generateStageSpec, medalFor, gradeFor } from '../physics/trackGen.js';
 import { BIOMES } from '../data/biomes.js';
 import { makeRng } from '../core/rng.js';
 import { DEG } from '../core/math.js';
@@ -27,7 +27,23 @@ function warnEvent(name) {
   warnedEvents.add(name);
   console.warn(`Unbekanntes Ereignis „${name}“ (Effekt emit) – verworfen`);
 }
-const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, end: NOOP, event: NOOP, triggered: NOOP, chain: NOOP };
+const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, end: NOOP, event: NOOP, triggered: NOOP, chain: NOOP, launched: NOOP, knapp: NOOP };
+const FF = STAGE.fastForward;
+const copyJson = (v) => (v === undefined || v === null ? v : JSON.parse(JSON.stringify(v)));
+
+// Eingaben eines Bildes als reine Daten (Paket A): die Etappe zeichnet sie auf, damit eine Schatten-Etappe den Lauf
+// Bild für Bild exakt wiederholen kann (Hochrechnung „Knapp“). Leeres Bild = keine Eingabe (Sofort-Ende).
+// (readAbilityInput fragt jede Fähigkeit genau einmal je Bild ab, takeAimDrag höchstens einmal.)
+function frameInput(f) {
+  return {
+    hold: f.hold, tilt: f.tilt, aimKey: f.aimKey, boost: false,
+    takeAimDrag: () => f.drag,
+    abilityHeld: (i) => !!f.held[i],
+    takeAbilityPress: (i) => f.presses[i] || 0,
+  };
+}
+const EMPTY = [];
+export const neutralFrame = (dt) => ({ dt, hold: false, tilt: 0, aimKey: 0, drag: 0, held: EMPTY, presses: EMPTY, tap: 0 });
 
 // Eine Etappe: Abschuss → Flug/Fahrt → Ende. Reine Logik ohne DOM und three.js.
 // Alles Sichtbare geht über `hooks` nach außen (Popups, Sound, Effekte, Ereignisse, Ende).
@@ -53,6 +69,12 @@ const NO_HOOKS = { popup: NOOP, sfx: NOOP, shake: NOOP, haptic: NOOP, fx: NOOP, 
 // (spec.medals: bronze = Ziel, silver, gold). Endgründe: 'stop' (steht), 'wreck' (Haltbarkeit 0), 'fall'
 // (Schluchtsturz, + FEATURES.gap.fallDamage), 'time' (STAGE.maxTime), 'far' (Gold × STAGE.farMul erreicht, Phase 4).
 // Ergebnis nach ARCHITEKTUR.md §7.
+//
+// Paket A – Vorspulen, Sofort-Ende, Hochrechnung (STAGE.fastForward): update() liest die Eingaben eines Bildes als
+// Daten (frames, aufgezeichnet) und rechnet stepFrame(). Am Boden ohne Boost läuft die Etappe vorgespult (fastForward,
+// gleiche Physik-Schritte, nur mehr je Bild). instantFinish() rechnet den Rest ohne Eingaben und ohne Darstellung
+// (stumme Hooks) – das Ergebnis ist dasselbe wie beim Zusehen ohne Eingabe. project() baut eine Schatten-Etappe aus
+// denselben Startwerten, wiederholt alle aufgezeichneten Bilder und rechnet sie zu Ende (Hochrechnung „Knapp: NN %“).
 export class Stage {
   // biome (alt: world): Biom aus data/biomes.js. spec: StageSpec (sonst einfache Etappe Etage 0 des Bioms).
   // track: fertige Strecke (sonst aus spec). loadout: garage/loadout.js buildLoadout; alternativ nur `stats` (Tests).
@@ -60,7 +82,16 @@ export class Stage {
   // inventory: Run-Inventar [{ itemId, tier, hybrid? }]. runInfo: { bolts (Run-Schrauben beim Start), counters (perRun-
   // Zähler der Trigger, wird verändert) } – null bei Testfahrten.
   // farEnd: Ende 'far' bei Gold × STAGE.farMul (Dev-Testfahrten schalten es ab).
-  constructor({ biome, world, spec = null, track = null, loadout = null, stats = null, seed = 1, hooks = {}, durability, runMods = {}, inventory = null, runInfo = null, farEnd = true }) {
+  constructor({ biome, world, spec = null, track = null, loadout = null, stats = null, seed = 1, hooks = {}, durability, runMods = {}, inventory = null, runInfo = null, farEnd = true, shadow = false }) {
+    // Startwerte für die Schatten-Etappe (Hochrechnung): veränderliche Eingaben als Kopie
+    this.shadow = shadow;
+    if (!shadow) {
+      this.initArgs = {
+        biome: biome || world, spec, loadout, stats, seed, durability, farEnd,
+        runMods: copyJson(runMods) || {}, inventory: copyJson(inventory),
+        runInfo: runInfo ? { bolts: runInfo.bolts, counters: copyJson(runInfo.counters) || {} } : null,
+      };
+    }
     this.rng = makeRng(seed >>> 0);
     this.biome = biome || world || (track && track.biome) || BIOMES[0];
     this.world = this.biome;   // alter Name (Phase 1–2)
@@ -186,6 +217,20 @@ export class Stage {
     this.inThermal = false;
     this.chuteOpen = false;
     this.stunts = { flips: 0, perfectLandings: 0, cleanLandings: 0, crashes: 0, nearMisses: 0, maxAirTime: 0, rings: 0, loops: 0 };
+    // Paket A: Vorspulen, Sofort-Ende, Hochrechnung
+    this.grade = 'miss';           // bisher erreichte Wertung (Platin/Schrottkönig = Überweite)
+    this.groundTime = 0;           // so lange ununterbrochen am Boden (Spielzeit)
+    this.fastForwardEnabled = true;
+    this.fastForward = false;      // läuft die Etappe gerade vorgespult?
+    this.instant = false;          // Sofort-Ende läuft (stumme Hooks, keine Eingaben)
+    this.instantDone = false;      // Etappe wurde per Sofort-Ende beendet
+    this.frames = shadow ? null : [];   // aufgezeichnete Bilder (Eingaben als Daten)
+    this.upgradeLog = [];          // Ergebnisse von hooks.upgradeItem (die Schatten-Etappe bekommt dieselben)
+    this.projected = false;        // Hochrechnung für den aktuellen „Tank leer“-Abschnitt schon gemacht
+    this.projection = null;        // letztes Ergebnis der Hochrechnung
+    this.knapp = null;             // { pct, dist, timer } – Bronze unerreichbar, Ende nach STAGE.fastForward.knappDelay
+    this.settle = null;            // Ergebnis steht fest (Knapp oder ausgerollt ohne weiteren Sprung): { kind, pct, dist, grade, timer }
+    this.airTotal = 0;             // Flugzeit gesamt (Hochrechnung: kommt noch ein Sprung?)
     this.emit('stageStart', {});
   }
 
@@ -359,10 +404,18 @@ export class Stage {
       },
       maxHp: (n) => st.addRunMod('durabilityMax', n),
       maxFuel: (n) => st.addRunMod('fuelMax', n),
-      upgradeItem: () => (st.hooks.upgradeItem ? st.hooks.upgradeItem() : false),
+      upgradeItem: () => st.upgradeItemHook(),
       maxDurability: () => st.stats.durabilityMax,
     };
     return ctx;
+  }
+
+  // Effekt upgradeItem (Run-Item ★+1, macht main.js): Ergebnis merken; die Schatten-Etappe bekommt dieselben Ergebnisse
+  upgradeItemHook() {
+    if (this.shadow) return this.upgradeLog.length ? this.upgradeLog.shift() : false;
+    const r = this.hooks.upgradeItem ? !!this.hooks.upgradeItem() : false;
+    this.upgradeLog.push(r);
+    return r;
   }
 
   // Schrauben + (× boltGain) bzw. − (n < 0: verbrennen, Regel boltsAreFuel – nie unter 0)
@@ -412,6 +465,7 @@ export class Stage {
     const speed = this.stats.launchSpeed * L.power * (perfect ? 1 + this.stats.launchPerfectBonus : 1);
     this.vehicle.launch(speed, L.angle, perfect);
     this.phase = 'fly';
+    this.hooks.launched();
     this.perfectLaunch = perfect;
     this.emit('launch', { power: L.power, perfect, angle: L.angle });
     if (perfect) this.emit('perfectLaunch', { power: L.power });
@@ -428,6 +482,8 @@ export class Stage {
   // Sofort abschießen (Tests, Dev-Menü): Kraft 0…1, Winkel in Grad
   launchNow(power = 1, angleDeg = LAUNCH.angleDefault, perfect = false) {
     if (this.phase !== 'aim') return;
+    // als Bild aufzeichnen, damit die Schatten-Etappe (Hochrechnung) denselben Abschuss wiederholt
+    if (this.frames) this.frames.push({ ...neutralFrame(0), launch: [power, angleDeg, perfect] });
     const L = this.launch;
     L.power = power;
     L.angle = angleDeg * DEG;
@@ -524,7 +580,47 @@ export class Stage {
   }
 
   // ---------- Hauptschleife ----------
+  // Ein Bild: Eingaben als Daten lesen (und aufzeichnen), dann rechnen
   update(realDt, input) {
+    if (this.phase === 'over') return;
+    const f = this.readFrame(realDt, input);
+    this.stepFrame(f);
+    if (this.frames) this.frames.push(f);
+  }
+
+  // Eingaben eines Bildes (gleiche Abfragen wie bisher: Zieh-Weg nur beim Zielen, jede Fähigkeit einmal)
+  readFrame(realDt, input) {
+    const n = this.abilities.length;
+    const held = n ? new Array(n) : EMPTY, presses = n ? new Array(n) : EMPTY;
+    const aim = this.phase === 'aim';
+    const f = { dt: realDt, hold: !!input.hold, tilt: input.tilt || 0, aimKey: aim ? input.aimKey || 0 : 0, drag: aim && input.takeAimDrag ? input.takeAimDrag() : 0, held, presses, tap: input.takeTap ? input.takeTap() : 0 };
+    for (let i = 0; i < n; i++) {
+      presses[i] = input.takeAbilityPress ? input.takeAbilityPress(i) : 0;
+      held[i] = input.abilityHeld ? !!input.abilityHeld(i) : (i === this.abilities.boostSlot && !!input.boost);
+    }
+    return f;
+  }
+
+  // Tank leer (auch keine Schrauben-Reserve der Regel boltsAreFuel)
+  get fuelOut() {
+    const v = this.vehicle;
+    return v.fuel <= 1e-6 && !(v.fuelBackup && v.fuelBackup.available());
+  }
+
+  // Darf gerade per Tippen/Leertaste sofort beendet werden? (Ausrollen: Vorspulen oder langsam am Boden)
+  get canFinish() {
+    if (this.phase !== 'fly' || this.instant || this.wreckTimer >= 0 || this.fallTimer >= 0) return false;
+    const v = this.vehicle;
+    return this.fastForward || !!this.settle || (v.onGround && !v.loop && Math.abs(v.s) < FF.maxSpeedForFinish);
+  }
+
+  // Tempo der Darstellung (Zeitlupe × Vorspulen) – main.js für Partikel, Räder, Kamera
+  get playScale() { return this.timeScale * (this.fastForward ? FF.scale : 1); }
+
+  stepFrame(f) {
+    const realDt = f.dt;
+    if (f.launch) { if (this.phase === 'aim') this.launchNow(...f.launch); return; }
+    const input = frameInput(f);
     if (this.phase === 'aim') {
       this.updateAim(realDt, input);
       this.readAbilityInput(input, false);
@@ -532,14 +628,25 @@ export class Stage {
       return;
     }
     if (this.phase !== 'fly') return;
+    // Sofort-Ende per Tippen (Ausrollen) bzw. nach „Knapp“
+    if (f.tap > 0 && this.canFinish) { this.instantFinish(); return; }
+    if (this.settle && !this.instant) {
+      this.settle.timer -= realDt;
+      if (this.settle.timer <= 0) { this.instantFinish(); return; }
+    }
+    this.checkProjection();
 
+    // Ergebnis steht fest („Knapp“ bzw. hochgerechnet): bis zum Ende keine Eingaben mehr (Hochrechnung = Ende)
+    const live = this.settle || this.instant ? frameInput(neutralFrame(realDt)) : input;
+    this.readAbilityInput(live, true);
     if (this.slowmo > 0) { this.slowmo -= realDt; this.timeScale = FX.slowmoScale; }
     else this.timeScale = Math.min(1, this.timeScale + realDt * FX.slowmoRecover);
-    this.acc += Math.min(realDt, STAGE.maxFrameDt) * this.timeScale;
+    const v0 = this.vehicle;
+    this.fastForward = this.fastForwardEnabled && v0.onGround && !v0.loop && this.groundTime >= FF.minGroundTime && !this.abilities.boostHeld;
+    this.acc += Math.min(realDt, STAGE.maxFrameDt) * this.timeScale * (this.fastForward ? FF.scale : 1);
 
-    this.readAbilityInput(input, true);
     const ctl = this.ctl;
-    ctl.tilt = input.tilt;
+    ctl.tilt = live.tilt;
 
     const v = this.vehicle;
     const ev = this.ev;
@@ -561,6 +668,68 @@ export class Stage {
       if (this.phase !== 'fly') return;
     }
     this.objects.spawnUntil(v.x + SPAWN.ahead);
+  }
+
+  // Sofort-Ende: den Rest ohne Eingaben und ohne Darstellung rechnen (gleiche Physik-Schritte wie beim Zusehen).
+  // Nur end/event/upgradeItem bleiben aktiv, alle sichtbaren Hooks sind stumm. Ergebnis über hooks.end.
+  instantFinish() {
+    if (this.phase !== 'fly' || this.instant) return;
+    const real = this.hooks;
+    this.hooks = { ...NO_HOOKS, end: real.end, event: real.event, upgradeItem: real.upgradeItem };
+    this.instant = true;
+    this.readAbilityInput(frameInput(neutralFrame(0)), true);   // gehaltene Fähigkeiten loslassen
+    const fr = neutralFrame(FF.finishFrame);
+    let n = 0;
+    while (this.phase === 'fly' && n++ < FF.maxSteps) this.stepFrame(fr);
+    this.instantDone = true;
+    this.hooks = real;
+    if (this.phase === 'fly') this.finish('time');
+  }
+
+  // Hochrechnung: ohne Treibstoff am Boden (sobald die Kiste aufsetzt) einmal je „Tank leer“-Abschnitt hochrechnen
+  // (Schatten-Etappe).
+  //  - Bronze bleibt unerreichbar → „Knapp: NN %“ und Ende nach STAGE.fastForward.knappDelay
+  //  - kein weiterer Sprung mehr (Flugzeit < fastForward.minAir) → das Ergebnis steht fest: „Hochgerechnet: NN m“,
+  //    Ende nach knappDelay (sonst rollt die Kiste nur noch aus – Paket A: Auslaufen ≤ 15 % der Etappe)
+  checkProjection() {
+    if (this.shadow || !this.frames || this.settle || this.instant) return;
+    const v = this.vehicle;
+    if (!this.fuelOut) { this.projected = false; return; }
+    // (ohne Mindest-Bodenzeit: die Hochrechnung sieht auch, ob die Kiste noch einmal abhebt)
+    if (this.projected || !v.onGround || v.loop || this.wreckTimer >= 0 || this.fallTimer >= 0) return;
+    this.projected = true;
+    const r = this.project();
+    this.projection = r;
+    if (!r || r.reason === 'wreck') return;
+    const pct = Math.min(99, Math.floor((r.dist / Math.max(1, this.target)) * 100));
+    if (!r.medal) {
+      this.knapp = { pct, dist: r.dist, timer: FF.knappDelay };
+      this.settle = { kind: 'knapp', pct, dist: r.dist, grade: 'miss', timer: FF.knappDelay };
+      this.hooks.popup(`KNAPP: ${pct} %`, 'bad');
+      this.hooks.knapp(pct, r);
+    } else if (r.moreAir < FF.minAir) {
+      this.settle = { kind: 'done', pct, dist: r.dist, grade: r.grade, timer: FF.settleDelay };
+      this.hooks.popup(`HOCHGERECHNET: ${r.dist} m ${MEDAL_ICON[r.grade] || ''}`, 'info');
+    }
+  }
+
+  // Schatten-Etappe: gleiche Startwerte, alle bisherigen Bilder wiederholen, dann ohne Eingaben zu Ende rechnen.
+  // Ergebnis: Etappen-Ergebnis oder null (Schatten nicht deckungsgleich, z. B. nach Eingriffen aus dem Dev-Menü).
+  project() {
+    if (!this.initArgs || !this.frames) return null;
+    let result = null;
+    const a = this.initArgs;
+    const sh = new Stage({ ...a, runMods: copyJson(a.runMods), inventory: copyJson(a.inventory), runInfo: a.runInfo ? { bolts: a.runInfo.bolts, counters: copyJson(a.runInfo.counters) } : null, shadow: true, hooks: { end: (r) => { result = r; } } });
+    sh.slowmoEnabled = this.slowmoEnabled;
+    sh.fastForwardEnabled = this.fastForwardEnabled;
+    sh.upgradeLog = [...this.upgradeLog];
+    for (const f of this.frames) { sh.stepFrame(f); if (sh.phase === 'over') break; }
+    const v = this.vehicle, w = sh.vehicle;
+    if (sh.phase !== 'fly' || sh.time !== this.time || w.x !== v.x || w.y !== v.y || w.vx !== v.vx || w.durability !== v.durability) return null;
+    const air0 = sh.airTotal;
+    sh.instantFinish();
+    if (result) result.moreAir = sh.airTotal - air0;   // Flugzeit, die noch kommt
+    return result;
   }
 
   // Umgebung an der Fahrzeug-Position: Wetter-Wind (+ Böen) + Windzone, Biom-Hitze + Hitzefeld, Magnetkran
@@ -600,7 +769,17 @@ export class Stage {
       this.hooks.fx('medal', v.x, v.y, { medal: md });
       this.hooks.haptic('success');
     }
+    // Überweite: Platin (Gold × 1,5) – Schrottkönig (Gold × 2) beendet die Etappe ('far')
+    if (this.medal === 'gold' && this.medals.platin && this.grade !== 'platin' && this.grade !== 'king' && v.maxX >= this.medals.platin) {
+      this.grade = 'platin';
+      this.hooks.popup(`PLATIN! ${MEDAL_ICON.platin}`, 'big');
+      this.hooks.sfx('medal', this.medalList.length);
+      this.hooks.fx('medal', v.x, v.y, { medal: 'platin' });
+    }
     if (alt > this.maxAlt) this.maxAlt = alt;
+    if (v.onGround && !v.loop) this.groundTime += dt;
+    else this.groundTime = 0;
+    if (!v.onGround && !v.loop) this.airTotal += dt;
     if (!v.onGround && v.airTime > this.stunts.maxAirTime) this.stunts.maxAirTime = v.airTime;
     // Fallschirm zu (gekappt, gelandet, abgelaufen) → sein Auftriebs-Buff endet mit ihm
     const chute = v.parachute > 0;
@@ -643,7 +822,7 @@ export class Stage {
     if (this.time > STAGE.maxTime) this.finish('time');
     // Ziel weit übertroffen (Gold × STAGE.farMul) → Etappe endet, statt endlos weiterzulaufen
     else if (this.farEnd && this.medals && this.medals.gold && v.maxX >= this.medals.gold * STAGE.farMul) {
-      this.hooks.popup('ZIEL WEIT ÜBERTROFFEN! 🏁', 'big');
+      this.hooks.popup(`SCHROTTKÖNIG! ${MEDAL_ICON.king}`, 'big');
       this.finish('far');
     }
   }
@@ -910,12 +1089,14 @@ export class Stage {
     const dist = Math.max(0, Math.round(v.maxX));
     const height = Math.max(0, Math.round(this.maxAlt));
     const medal = reason === 'wreck' ? null : medalFor(dist, this.medals);
+    const grade = medal ? gradeFor(dist, this.medals) : 'miss';
     this.emit('stageEnd', { medal, dist });
     this.flushEvents();
     const r = {
       reason,
       cleared: !!medal,
       medal,
+      grade,
       dist,
       target: this.target,
       medals: { ...this.medals },
@@ -941,6 +1122,9 @@ export class Stage {
       fuelLeft: Math.round(v.fuel),
       stunts: { ...this.stunts },
       time: this.time,
+      instant: this.instant,
+      knapp: this.knapp ? this.knapp.pct : null,
+      settled: !!this.settle,
       biome: this.biome.id,
       world: this.biome.id,
     };
@@ -951,4 +1135,4 @@ export class Stage {
   }
 }
 
-const MEDAL_ICON = { bronze: '🥉', silver: '🥈', gold: '🥇' };
+const MEDAL_ICON = { bronze: '🥉', silver: '🥈', gold: '🥇', platin: '💿', king: '👑' };

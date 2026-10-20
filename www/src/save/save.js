@@ -17,7 +17,7 @@ export function defaultSave() {
       ownedChassis: [GARAGE.starterChassis],
       parts: { ...GARAGE.starterParts },
       ownedParts: Object.values(GARAGE.starterParts),
-      partLevels: {},
+      slotLevels: {},      // Paket A: Stufe je Slot { drive: 0…10, … } – gilt für jedes Teil in diesem Slot
       abilities: [...GARAGE.starterAbilities],
     },
     research: { done: [], levels: {} },   // levels: Stufen der wiederholbaren Forschung (Feinschliff)

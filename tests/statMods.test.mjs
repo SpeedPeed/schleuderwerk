@@ -80,15 +80,15 @@ test('perfectLandDeg nie größer als landTolDeg', () => {
   assert.ok(s.perfectLandDeg <= s.landTolDeg);
 });
 
-test('Teile-Stufen: abnehmender Ertrag L / (1 + L / dimDivisor), Stufe 20 ≈ 12', () => {
+test('Slot-Stufen: doppelte Wirkung, abnehmender Ertrag 2 × L / (1 + L / dimDivisor), Stufe 10 = 12', () => {
   near(partDimLevels(0), 0);
-  near(partDimLevels(20), 20 / (1 + 20 / GARAGE.dimDivisor));
-  near(partDimLevels(20), 12, 1e-9);
+  near(partDimLevels(10), GARAGE.levelEffectMul * 10 / (1 + 10 / GARAGE.dimDivisor));
+  near(partDimLevels(10), 12, 1e-9);
   assert.equal(partDimLevels(99), partDimLevels(GARAGE.maxPartLevel), 'über Höchststufe wird gekappt');
   const wheels = partById('wheels_bobbycar');
   const s0 = computeStats({ parts: { wheels: { id: wheels.id, level: 0 } } });
-  const s20 = computeStats({ parts: { wheels: { id: wheels.id, level: 20 } } });
-  near(s20.landTolDeg - s0.landTolDeg, wheels.perLevel.landTolDeg.add * 12, 1e-9);
+  const s10 = computeStats({ parts: { wheels: { id: wheels.id, level: 10 } } });
+  near(s10.landTolDeg - s0.landTolDeg, wheels.perLevel.landTolDeg.add * 12, 1e-9);
 });
 
 test('Item-Stufen (★) skalieren add/mul, nicht xmul', () => {

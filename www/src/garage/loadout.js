@@ -14,7 +14,8 @@ function partInput(garage, override = {}) {
     let p = partById(id);
     if (!p || p.slot !== slot) { p = starterPartFor(slot); id = p ? p.id : null; }
     if (!p) continue;
-    const lvl = ov && typeof ov === 'object' && ov.level !== undefined ? ov.level : (garage.partLevels && garage.partLevels[id]) || 0;
+    // Stufe gilt je Slot (Schema v4: garage.slotLevels); ov.level überschreibt (Vorschau „nächste Stufe“, Run-Ausrüstung)
+    const lvl = ov && typeof ov === 'object' && ov.level !== undefined ? ov.level : (garage.slotLevels && garage.slotLevels[slot]) || 0;
     out[slot] = { id, level: Math.max(0, Math.min(GARAGE.maxPartLevel, lvl)) };
   }
   return out;

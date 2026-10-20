@@ -15,7 +15,7 @@ import { wrapAngle } from '../../www/src/core/math.js';
 
 // Eingabe-Attrappe (wie platform/input.js)
 export function botInput(n = 4) {
-  const st = { held: Array(n).fill(false), presses: Array(n).fill(0), tilt: 0, hold: false };
+  const st = { held: Array(n).fill(false), presses: Array(n).fill(0), tilt: 0, hold: false, taps: 0 };
   return {
     st,
     get hold() { return st.hold; },
@@ -24,14 +24,16 @@ export function botInput(n = 4) {
     takeAimDrag: () => 0,
     abilityHeld: (i) => !!st.held[i],
     takeAbilityPress: (i) => { const k = st.presses[i]; st.presses[i] = 0; return k; },
+    takeTap: () => { const k = st.taps; st.taps = 0; return k; },
     press(i) { st.presses[i]++; },
   };
 }
 
-// Spielstände für die Simulation: 'start' = neuer Spielstand, 'gut' = Startteile auf Stufe 10
+// Spielstände für die Simulation: 'start' = neuer Spielstand, 'gut' = alle Slots auf Stufe 5 von 10
+// (Paket A; entspricht der früheren Teile-Stufe 10 von 20)
 export function simSave(kind = 'start') {
   const s = defaultSave();
-  if (kind === 'gut') for (const id of Object.values(GARAGE.starterParts)) s.garage.partLevels[id] = 10;
+  if (kind === 'gut') for (const slot of Object.keys(GARAGE.starterParts)) s.garage.slotLevels[slot] = 5;
   return s;
 }
 
@@ -47,7 +49,11 @@ export function makeSimStage({ spec, biome, save, seed = 1, durability, runMods,
 }
 
 // Eine Etappe mit dem Bot spielen. Ergebnis: Etappen-Ergebnis (stage.finish)
-export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1, tricks = false, trickTime = 1.7 } = {}) {
+// tapAfter (Paket A, Messung tools/playtest/anatomy.mjs): läuft die Etappe so viele Sekunden (Echtzeit) vorgespult und
+// ist voraus nichts mehr zu sehen (keine Rampe/Schlucht/Looping in 80 m, kein Hindernis/keine Presse in 25 m – sonst
+// käme noch ein Sprung bzw. würde der Bot Anlauf nehmen oder hüpfen), tippt der Bot – Sofort-Ende wie eine Person, die das Ausrollen nicht abwarten will
+// (null = nie). Ab da rechnet die Etappe ohne Eingaben zu Ende.
+export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1, tricks = false, trickTime = 1.7, tapAfter = null } = {}) {
   const r = makeRng(`bot:${seed}`);
   const input = botInput(stage.abilities.length);
   const bar = stage.abilities;
@@ -65,7 +71,17 @@ export function playStage(stage, getResult, { seed = 1, maxTime = 200, skill = 1
   const R = stage.rules || {};
   const heatFree = !!(R.overheatAfterburner || R.noOverheat || R.heatIsResource);
   const heatOk = (v, st, f) => heatFree || v.heat < st.heatMax * f;
+  let ffFor = 0;
   while (!getResult() && stage.time < maxTime) {
+    if (tapAfter !== null) {
+      const v = stage.vehicle, o = stage.objects;
+      // sichtbar voraus (≈ 80 m): Rampe, Schlucht, Looping → da kommt noch ein Sprung; Hindernis/Presse → hüpfen
+      const busy = (stage.spec.features || []).some((f) => (f.type === 'ramp' || f.type === 'gap' || f.type === 'loop') && f.x1 > v.x && f.x0 - v.x < 80)
+        || stage.track.gaps.some((g) => g.edge > v.x && g.rs - 60 < v.x)
+        || o.obstacles.some((ob) => ob.alive && ob.x > v.x && ob.x - v.x < 25) || o.crushers.some((c) => c.x > v.x && c.x - v.x < 25);
+      ffFor = stage.fastForward && !busy ? ffFor + dt : 0;
+    }
+    if (tapAfter !== null && ffFor >= tapAfter) input.st.taps = 1;
     const v = stage.vehicle;
     const st = stage.stats;
     const o = stage.objects;

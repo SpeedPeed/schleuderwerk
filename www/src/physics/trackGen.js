@@ -6,7 +6,7 @@
 //     length, features: [{ type, x0, x1, … }], hazards: [type…], weather: {…}, blueprintX }
 // Bausteine (features) überlappen sich nie ([x0, x1] = ganzer Platzbedarf inkl. Übergängen), die ersten
 // FEATURES.firstFree Meter bleiben frei. Alle Positionen liegen auf dem 2-m-Raster der Strecke (TRACK.step).
-import { FEATURES as F, TRACK, PICKUPS, ASCENSION_RULES as AR } from '../data/balance.js';
+import { FEATURES as F, TRACK, PICKUPS, ASCENSION_RULES as AR, REWARDS } from '../data/balance.js';
 import { FEATURE_DEFAULTS, FEATURE_INFO, biomeById } from '../data/biomes.js';
 import { clamp, lerp, DEG } from '../core/math.js';
 
@@ -52,12 +52,26 @@ export function stageTarget(biome, kind, floor, mods = {}) {
 }
 
 // Medaillen-Marken. Boss-Strecken kennen nur Bronze (= geschafft) und Gold (Bonus).
+// Paket A: dazu die Überweite-Marken Platin (Gold × 1,5) und Schrottkönig (Gold × 2) – sie stehen in medals, aber nicht
+// in medalList (die Medaille selbst bleibt Gold; die Wertung gradeFor zählt für die Belohnung).
 export function stageMedals(biome, kind, target) {
   const m = biome.medals;
   const medals = { bronze: target, gold: Math.round(target * m.gold) };
   if (kind !== 'boss') medals.silver = Math.round(target * m.silver);
+  medals.platin = Math.round(medals.gold * REWARDS.gradeMarks.platin);
+  medals.king = Math.round(medals.gold * REWARDS.gradeMarks.king);
   const medalList = kind === 'boss' ? ['bronze', 'gold'] : ['bronze', 'silver', 'gold'];
   return { medals, medalList };
+}
+
+// Wertung einer Distanz: 'king' | 'platin' | 'gold' | 'silver' | 'bronze' | 'miss' (Belohnung REWARDS.gradeMul)
+export const GRADES = ['miss', 'bronze', 'silver', 'gold', 'platin', 'king'];
+export function gradeFor(dist, medals) {
+  const m = medalFor(dist, medals);
+  if (!m) return 'miss';
+  if (m === 'gold' && medals.king !== undefined && dist >= medals.king) return 'king';
+  if (m === 'gold' && medals.platin !== undefined && dist >= medals.platin) return 'platin';
+  return m;
 }
 
 // Medaille für eine Distanz (oder null)

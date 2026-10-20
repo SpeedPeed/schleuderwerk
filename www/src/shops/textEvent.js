@@ -122,9 +122,9 @@ export function applyEffect(run, save, fx, rng, log, st = { pending: [] }) {
     const d = addRunBolts(run, fx.bolts);
     log.push({ icon: '🔩', text: `${d >= 0 ? '+' : '−'}${fmtN(Math.abs(d))} Schrauben`, good: d >= 0 });
   }
-  if (typeof fx.scrap === 'number') { run.earned.scrap += Math.max(0, fx.scrap); log.push({ icon: '⚙', text: `+${fmtN(fx.scrap)} Schrott (am Run-Ende)`, good: true }); }
+  if (typeof fx.scrap === 'number') { run.earned.scrap += Math.max(0, fx.scrap); log.push({ icon: '⚙', text: `+${fmtN(fx.scrap)} Schrott`, good: true }); }
   if (typeof fx.blueprints === 'number') { run.earned.blueprints += Math.max(0, fx.blueprints); log.push({ icon: '📘', text: `+${fx.blueprints} Blaupause`, good: true }); }
-  if (typeof fx.cores === 'number') { run.earned.cores += Math.max(0, fx.cores); log.push({ icon: '💠', text: `+${fx.cores} Kern (am Run-Ende)`, good: true }); }
+  if (typeof fx.cores === 'number') { run.earned.cores += Math.max(0, fx.cores); log.push({ icon: '💠', text: `+${fx.cores} Kern`, good: true }); }
   if (typeof fx.hpPct === 'number') {
     if (fx.hpPct >= 0) log.push({ icon: '🔧', text: `+${fmtN(healRun(run, fx.hpPct))} Haltbarkeit`, good: true });
     else log.push({ icon: '🔧', text: `−${fmtN(damageRun(run, -fx.hpPct, EVENTS.minDurability))} Haltbarkeit`, good: false });

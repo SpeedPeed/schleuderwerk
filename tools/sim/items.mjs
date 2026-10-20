@@ -151,7 +151,8 @@ export function simulateRun(seed, policy) {
     const stage = new Stage({ biome, spec: e.spec, track: new Track(e.spec, biome), loadout: su.loadout, seed: hashSeed(`${seed}:${node.id}:${run.current.attempts}`), durability: run.durability, runMods: run.runMods, inventory: su.inventory, runInfo: su.runInfo, hooks: { end: (r) => { result = r; } } });
     playStage(stage, () => result, { seed: seed * 31 + stages, tricks: wantsTricks(run.inventory) });
     stages++;
-    RS.applyStageResult(run, result, save);
+    const o = RS.applyStageResult(run, result, save);
+    if (o.missed) RS.resolveMiss(run, 'land');   // Paket A: verfehlt → Notlandung, weiter auf der Karte
     while (RS.pendingChoice(run)) {
       const ch = RS.pendingChoice(run);
       const i = choose(run, ch, policy, rng);

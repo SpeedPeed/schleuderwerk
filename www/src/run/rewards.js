@@ -1,46 +1,90 @@
-// Belohnungen im Run (reine Logik). Alle Zahlen: data/balance.js → REWARDS, ITEMS.
-//  - stageRewards: Schrauben + Meta-Schrott + Blaupausen einer Etappe (nach Akt, Medaille, Knotenart)
-//  - runPayout: Meta-Auszahlung am Run-Ende (gesammelter Schrott, Schrauben-Rest → Schrott, Forschungs-Bonus
-//    Feinschliff I auf allen Schrott, Blaupausen, Kerne)
+// Belohnungen im Run (reine Logik). Alle Zahlen: data/balance.js → REWARDS, KOMBO, RUN.emergency, ITEMS.
+//  - stageRewards: Schrauben + Meta-Schrott + Blaupausen einer Etappe (nach Akt, Wertung, Knotenart) – Paket A
+//    „Jeder Versuch zahlt“: Schrott = scrapPerM[Akt] × Weite × gradeMul[Wertung] × scrapKindMul[Knotenart], auch verfehlt
+//    (Wertung 'miss'); gesicherte Trickpunkte → Schrauben/Schrott (KOMBO.boltsPer/scrapPer). Einzige Stelle der Regel.
+//  - runPayout: Meta-Auszahlung des Runs (gesammelter Schrott, Schrauben-Rest → Schrott, Forschungs-Bonus
+//    Feinschliff I auf allen Schrott, Blaupausen, Kerne). Paket A: Schrott/Blaupausen/Kerne werden schon während des
+//    Runs gutgeschrieben (run/runState.js → settleRun); runPayout liefert die Summe (das Run-Ende zeigt sie nur noch)
 //  - itemPool / rarityWeights / rollItemChoices: Item-Auswahl nach einer Etappe (Etappe/Elite/Boss/Item-Kiste)
-import { REWARDS, ITEMS as BAL } from '../data/balance.js';
+import { REWARDS, KOMBO, RUN, ITEMS as BAL } from '../data/balance.js';
 import { ITEMS } from '../data/items.js';
 import { ascensionScrapBonus } from '../garage/progression.js';
+import { gradeFor } from '../physics/trackGen.js';
 
 const actKey = (act) => Math.max(1, Math.min(3, act | 0));
+const GOLDISH = new Set(['gold', 'platin', 'king']);
 
-// result: Etappen-Ergebnis (stage.finish). kind: 'stage' | 'elite' | 'boss'.
-// Ergebnis: { bolts, scrap, blueprints, base: { bolts, scrap, blueprints } } – inkl. der in der Etappe gesammelten.
-export function stageRewards(act, kind, result) {
+// Wertung eines Etappen-Ergebnisses: 'miss' (verfehlt/Totalschaden) | 'bronze' | 'silver' | 'gold' | 'platin' | 'king'
+export function resultGrade(result) {
+  if (!result || !result.cleared || !result.medal) return 'miss';
+  if (result.grade && result.grade !== 'miss') return result.grade;
+  return result.medals ? gradeFor(result.dist || 0, result.medals) : result.medal;
+}
+
+// Meta-Schrott für die Weite: scrapPerM[Akt] × Weite × gradeMul[Wertung] × scrapKindMul[Knotenart] (gerundet)
+export function distanceScrap(act, kind, dist, grade = 'miss') {
   const a = actKey(act);
-  const base = { bolts: 0, scrap: 0, blueprints: 0 };
-  if (result.cleared && result.medal) {
+  const g = REWARDS.gradeMul[grade] ?? REWARDS.gradeMul.miss;
+  return Math.max(0, Math.round(REWARDS.scrapPerM[a] * Math.max(0, dist || 0) * g * (REWARDS.scrapKindMul[kind] || 1)));
+}
+
+// HUD-Zähler „Schrott dieser Etappe“ während des Flugs: Weite bisher + Wertung bisher (+ Pickups)
+export function liveStageScrap(act, kind, dist, medals, pickups = 0) {
+  return distanceScrap(act, kind, dist, medals ? gradeFor(dist, medals) : 'miss') + Math.max(0, Math.round(pickups || 0));
+}
+
+// Kombo: gesicherte Trickpunkte → Schrauben und Schrott
+export const comboRewards = (tricks) => ({
+  bolts: Math.floor(Math.max(0, tricks || 0) / KOMBO.boltsPer),
+  scrap: Math.floor(Math.max(0, tricks || 0) / KOMBO.scrapPer),
+});
+
+// result: Etappen-Ergebnis (stage.finish). kind: 'stage' | 'elite' | 'boss'. roll (0…1): Zufallszahl für die
+// Blaupausen-Chance bei Gold oder besser (deterministisch aus dem Run, run/runState.js).
+// Ergebnis: { bolts, scrap, blueprints, grade, combo: { bolts, scrap }, base: { bolts, scrap, blueprints } } –
+// inkl. der in der Etappe gesammelten Schrauben/Schrott/Blaupausen.
+// firstEncounter: erste Begegnung mit diesem Boss im Run (nur dann zahlt ein verlorener Boss eine Blaupause)
+export function stageRewards(act, kind, result, { roll = 1, firstEncounter = true } = {}) {
+  const a = actKey(act);
+  const grade = resultGrade(result);
+  const base = { bolts: 0, scrap: distanceScrap(a, kind, result.dist, grade), blueprints: 0 };
+  const km = REWARDS.kindMul[kind] || 1;
+  if (grade !== 'miss') {
     const mm = REWARDS.medalMul[result.medal] || 1;
-    const km = REWARDS.kindMul[kind] || 1;
     const gold = kind === 'boss' && result.medal === 'gold' ? 1 + REWARDS.bossGoldBonus : 1;
     // Boss: Bronze zählt voll, Gold gibt den Bonus (Medaillen-Faktor gilt dort nicht)
     const mul = kind === 'boss' ? km * gold : km * mm;
     base.bolts = Math.round(REWARDS.bolts[a] * mul);
-    base.scrap = Math.round(REWARDS.scrap[a] * mul);
     if (kind === 'elite') base.blueprints = REWARDS.blueprints.elite;
     if (kind === 'boss') base.blueprints = REWARDS.blueprints.boss[a] || 0;
+    if (GOLDISH.has(grade) && roll < REWARDS.blueprints.goldChance) base.blueprints += 1;
+  } else if (kind === 'boss') {
+    // jede Boss-Begegnung zahlt eine Blaupause – auch verloren (Neuversuche gehören zur selben Begegnung)
+    base.blueprints = firstEncounter ? REWARDS.blueprints.bossLost : 0;
+  } else if (result.reason !== 'wreck') {
+    // Notlandung: Teil-Belohnung (Schrauben × RUN.emergency.boltMul)
+    base.bolts = Math.round(REWARDS.bolts[a] * km * RUN.emergency.boltMul);
   }
+  const combo = comboRewards(result.tricks);
   return {
-    bolts: base.bolts + Math.max(0, Math.floor(result.bolts || 0)),
-    scrap: base.scrap + Math.max(0, Math.round(result.scrap || 0)),
+    bolts: base.bolts + combo.bolts + Math.max(0, Math.floor(result.bolts || 0)),
+    scrap: base.scrap + combo.scrap + Math.max(0, Math.round(result.scrap || 0)),
     blueprints: base.blueprints + Math.max(0, result.blueprints || 0),
+    grade,
+    combo,
     base,
   };
 }
 
-// Meta-Auszahlung am Run-Ende. run.earned: { scrap, blueprints, cores } (während des Runs gesammelt).
+// Meta-Auszahlung des Runs. run.earned: { scrap, blueprints, cores } (während des Runs gesammelt).
+// boltRest: Schrauben-Rest → Schrott mitrechnen (erst am Run-Ende; während des Runs zahlt settleRun ohne ihn).
 // Ergebnis: { scrap, blueprints, cores, rows: [{ label, scrap?, blueprints?, cores? }] }
-export function runPayout(run) {
+export function runPayout(run, { boltRest = true } = {}) {
   const e = run.earned || { scrap: 0, blueprints: 0, cores: 0 };
   const rows = [];
-  rows.push({ label: 'Etappen & Pickups', scrap: Math.round(e.scrap - (e.actScrap || 0)) });
+  rows.push({ label: 'Etappen, Pickups & Kombos', scrap: Math.round(e.scrap - (e.actScrap || 0)) });
   if (e.actScrap) rows.push({ label: 'Akte abgeschlossen', scrap: e.actScrap });
-  const boltScrap = Math.floor(Math.max(0, run.bolts) * REWARDS.boltsToScrap);
+  const boltScrap = boltRest ? Math.floor(Math.max(0, run.bolts) * REWARDS.boltsToScrap) : 0;
   if (boltScrap > 0) rows.push({ label: `Schrauben-Rest (${Math.floor(run.bolts)} 🔩 × ${Math.round(REWARDS.boltsToScrap * 100)} %)`, scrap: boltScrap });
   // Forschung (Feinschliff I, Perk scrapGain): + Anteil auf allen Schrott des Runs
   const gain = (run.perks && run.perks.scrapGain) || 0;

@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SAVE_VERSION, GARAGE, AUDIO, RENDER } from '../www/src/data/balance.js';
+import { SLOTS } from '../www/src/data/index.js';
 import { defaultSave, migrate, exportSave, importSave, SaveError } from '../www/src/save/save.js';
 import { markMilestone, addPlaytime } from '../www/src/garage/progression.js';
 import { newRun, reachableNodes, enterNode } from '../www/src/run/runState.js';
@@ -29,7 +30,7 @@ test('Standard-Spielstand hat das Schema v3', () => {
   assert.equal(s.version, 3);
   for (const k of ['meta', 'garage', 'research', 'ascension', 'codex', 'cosmetics', 'settings', 'stats', 'run', 'tutorial']) assert.ok(k in s, k);
   assert.deepEqual(Object.keys(s.meta).sort(), ['blueprints', 'cores', 'milestones', 'scrap', 'totalPlaytime']);
-  assert.deepEqual(Object.keys(s.garage).sort(), ['abilities', 'chassis', 'ownedChassis', 'ownedParts', 'partLevels', 'parts']);
+  assert.deepEqual(Object.keys(s.garage).sort(), ['abilities', 'chassis', 'ownedChassis', 'ownedParts', 'parts', 'slotLevels']);
   assert.equal(s.garage.chassis, GARAGE.starterChassis);
   assert.deepEqual(s.garage.parts, GARAGE.starterParts);
   assert.deepEqual(s.research.done, []);
@@ -37,7 +38,7 @@ test('Standard-Spielstand hat das Schema v3', () => {
   assert.ok(!('money' in s));
   // migrate auf einem frischen Stand ändert nichts Wesentliches
   const m = migrate(JSON.parse(JSON.stringify(s)));
-  assert.deepEqual(m.garage, s.garage);
+  assert.deepEqual(m.garage, { ...s.garage, slotLevels: Object.fromEntries(SLOTS.map((k) => [k, 0])) });
   assert.deepEqual(m.meta, s.meta);
 });
 
@@ -79,7 +80,7 @@ test('Export/Import-Rundlauf mit Präfix SW3:', () => {
   s.meta.cores = 2;
   s.garage.ownedParts.push('tank_gurkenfass');
   s.garage.parts.tank = 'tank_gurkenfass';
-  s.garage.partLevels.tank_gurkenfass = 7;
+  s.garage.slotLevels.tank = 7;
   s.research.done.push('r_ability_magnetzug');
   s.garage.abilities = ['magnetzug', 'boost'];
   s.meta.milestones.firstTestDrive = 42;
@@ -88,7 +89,7 @@ test('Export/Import-Rundlauf mit Präfix SW3:', () => {
   assert.match(text, /^SW3:[A-Za-z0-9+/=]+$/);
   const back = importSave(`  ${text.slice(0, 20)}\n${text.slice(20)}  `);
   delete back.savedAt; delete s.savedAt;
-  assert.deepEqual(back, s);
+  assert.deepEqual(back, { ...s, garage: { ...s.garage, slotLevels: { ...Object.fromEntries(SLOTS.map((k) => [k, 0])), tank: 7 } } });
 });
 
 test('Import alter SW2-Texte über die Migration', () => {

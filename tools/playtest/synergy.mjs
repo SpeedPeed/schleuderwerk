@@ -128,6 +128,7 @@ function simulateRun(seed, research, saveKind) {
         playStage(stage, () => result, { seed: seed * 31 + st.stages, tricks: wantsTricks(run.inventory) });
         st.stages++; st.chainsTotal += chains; if (chains) st.stagesWithChain++;
         const o = RS.applyStageResult(run, result, save);
+        if (o.missed) { RS.resolveMiss(run, 'land'); st.tows++; break; }   // Paket A: Notlandung
         if (o.towed) st.tows++;
         if (!o.towed || o.defeat) break;
       }

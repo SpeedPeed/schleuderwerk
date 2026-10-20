@@ -273,7 +273,7 @@ export const BIOMES = [
       obstacles: { tires: 0.6, scrap: 0.4 },
     },
     pickups: { fuel: 0.3, cool: 0.1, repair: 0.1, scrap: 0.32, crate: 0.18 },
-    targets: { stage: [565, 570, 615, 615, 650, 670], eliteMult: 1.3, boss: 740 },
+    targets: { stage: [565, 570, 615, 615, 650, 670], eliteMult: 1.3, boss: 830 },   // Paket A: Boss 740 → 830 (Neuversuch mit −5 %/Versuch)
     medals: { silver: 1.25, gold: 1.5 },
     bosses: [
       {

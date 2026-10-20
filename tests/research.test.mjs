@@ -68,8 +68,8 @@ test('Forschung: Voraussetzungen, Kosten mit Blaupausen, Zustände gesperrt/verf
   assert.equal(buyResearch(save, hy.id).reason, 'locked');
   assert.equal(buyResearch(save, 'gibtsNicht').reason, 'unknown');
   const r = buyResearch(save, wb.id);
-  assert.ok(r.ok && r.cost === wb.cost * BAL.costMul);
-  assert.equal(save.meta.blueprints, 3 - wb.cost);
+  assert.ok(r.ok && r.cost === Math.round(wb.cost * BAL.costMul));
+  assert.equal(save.meta.blueprints, 3 - r.cost);
   assert.equal(researchState(save, wb).status, 'done');
   assert.equal(buyResearch(save, wb.id).reason, 'maxed');
   assert.equal(researchState(save, hy).status, 'available');
@@ -86,7 +86,7 @@ test('Forschung: wiederholbare Feinschliff-Knoten – Kosten × costGrowth je St
   assert.equal(researchState(save, fs).status, 'available', 'nach Stufe 1 weiter kaufbar');
   for (let k = 1; k < 4; k++) {
     const c = researchCost(fs, k);
-    assert.equal(c, Math.round(fs.cost * Math.pow(fs.repeatable.costGrowth, k)));
+    assert.equal(c, Math.round(fs.cost * Math.pow(fs.repeatable.costGrowth, k) * BAL.costMul));
     const bp = save.meta.blueprints;
     assert.ok(buyResearch(save, fs.id).ok);
     assert.equal(save.meta.blueprints, bp - c);

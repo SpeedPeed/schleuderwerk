@@ -1,8 +1,12 @@
-// Garage-Aktionen auf dem Spielstand (Schema v3): Chassis kaufen/wählen, Teile kaufen/ausrüsten/verbessern,
+// Garage-Aktionen auf dem Spielstand (Schema v4): Chassis kaufen/wählen, Teile kaufen/ausrüsten, Slots verbessern,
 // Fähigkeiten wählen. Reine Logik ohne three.js und DOM – die Oberfläche ruft nur diese Funktionen auf.
 // Alle Aktionen geben { ok, reason?, cost? } zurück und verändern `save` nur bei Erfolg.
+// Paket A: Stufen gelten je Slot (save.garage.slotLevels, 0 … GARAGE.maxPartLevel = 10) – ein Teilwechsel behält die
+// Stufe; jede Stufe wirkt doppelt (GARAGE.levelEffectMul) und kostet GARAGE.slotUpgradeBase × costGrowth^Stufe.
 import { GARAGE } from '../data/balance.js';
 import { PAINTS } from '../data/cosmetics.js';
+import { LEVEL_GAINS } from '../data/levelGains.js';
+import { partDimLevels } from '../items/statMods.js';
 import {
   SLOTS, CHASSIS, PARTS, ABILITIES, chassisById, partById, abilityById, chassisUnlock, partUnlock, abilityUnlock,
   isStarterPart, starterPartFor, isSlotAbility, referencedResearch,
@@ -14,18 +18,44 @@ const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 
 export const researchDone = (save, id) => !id || (save.research && save.research.done.includes(id));
 
-// Basispreis eines Teils für Stufen: Kaufpreis, bei Startteilen GARAGE.starterUpgradeBase
+// Schema v3 (bis v1.0): Basispreis der Teile-Stufen = Kaufpreis, bei Startteilen GARAGE.starterUpgradeBase
+// (nur noch für die Migration v3 → v4: bezahlten Schrott nachrechnen)
 export function partBasePrice(part) {
   const s = partUnlock(part).scrap;
   return s > 0 ? s : GARAGE.starterUpgradeBase;
 }
 
-// Preis, um ein Teil von Stufe `level` auf `level + 1` zu bringen
-export function upgradeCost(part, level) {
-  return Math.round(partBasePrice(part) * Math.pow(GARAGE.costGrowth, level));
+// Preis, um einen Slot von Stufe `level` auf `level + 1` zu bringen (für jedes Teil gleich)
+export function upgradeCost(level) {
+  return Math.round(GARAGE.slotUpgradeBase * Math.pow(GARAGE.costGrowth, Math.max(0, level | 0)));
+}
+// Summe der Preise bis Stufe `level`
+export function upgradeCostTotal(level) {
+  let c = 0;
+  for (let l = 0; l < level; l++) c += upgradeCost(l);
+  return c;
 }
 
-export const partLevel = (save, id) => Math.max(0, Math.min(GARAGE.maxPartLevel, (save.garage.partLevels && save.garage.partLevels[id]) || 0));
+const clampLevel = (l) => Math.max(0, Math.min(GARAGE.maxPartLevel, Math.floor(Number(l) || 0)));
+export const slotLevel = (save, slot) => clampLevel(save.garage.slotLevels && save.garage.slotLevels[slot]);
+// Stufe eines Teils = Stufe seines Slots
+export const partLevel = (save, id) => { const p = partById(id); return p ? slotLevel(save, p.slot) : 0; };
+
+// Meter, die die nächste Stufe dieses Teils auf der Bezugs-Etappe bringt (Bot-Messung data/levelGains.js, abnehmender
+// Ertrag wie in der Stat-Pipeline). Ergebnis: { m (gerundet, 0 = nicht messbar), ref (Bezugs-Etappe) }
+export function levelGain(partId, level) {
+  const per = LEVEL_GAINS.parts[partId] || 0;
+  const L = Math.max(0, Math.min(GARAGE.maxPartLevel - 1, level | 0));
+  return { m: Math.round(per * (partDimLevels(L + 1) - partDimLevels(L))), ref: LEVEL_GAINS.ref };
+}
+
+// Slot verbessern: { level, maxed, cost, canUpgrade }
+export function slotState(save, slot) {
+  const level = slotLevel(save, slot);
+  const maxed = level >= GARAGE.maxPartLevel;
+  const cost = maxed ? 0 : upgradeCost(level);
+  return { level, maxed, cost, canUpgrade: !maxed && save.meta.scrap >= cost };
+}
 
 export function chassisState(save, c) {
   const u = chassisUnlock(c);
@@ -44,10 +74,10 @@ export function chassisState(save, c) {
 export function partState(save, p) {
   const u = partUnlock(p);
   const owned = save.garage.ownedParts.includes(p.id);
-  const level = partLevel(save, p.id);
+  const level = slotLevel(save, p.slot);
   const maxed = level >= GARAGE.maxPartLevel;
   const researchOk = researchDone(save, u.research);
-  const upCost = maxed ? 0 : upgradeCost(p, level);
+  const upCost = maxed ? 0 : upgradeCost(level);
   return {
     owned,
     equipped: save.garage.parts[p.slot] === p.id,
@@ -111,16 +141,24 @@ export function equipPart(save, id) {
   return { ok: true };
 }
 
+// Slot verbessern (Stufe gilt für jedes Teil in diesem Slot)
+export function upgradeSlot(save, slot) {
+  if (!SLOTS.includes(slot)) return { ok: false, reason: 'unknown' };
+  const st = slotState(save, slot);
+  if (st.maxed) return { ok: false, reason: 'maxed' };
+  if (save.meta.scrap < st.cost) return { ok: false, reason: 'scrap' };
+  save.meta.scrap -= st.cost;
+  if (!isObj(save.garage.slotLevels)) save.garage.slotLevels = {};
+  save.garage.slotLevels[slot] = st.level + 1;
+  return { ok: true, cost: st.cost, level: st.level + 1, slot };
+}
+
+// Verbessern über ein Teil (Oberfläche, Simulator): verbessert dessen Slot – nur mit einem eigenen Teil
 export function upgradePart(save, id) {
   const p = partById(id);
   if (!p) return { ok: false, reason: 'unknown' };
-  const st = partState(save, p);
-  if (!st.owned) return { ok: false, reason: 'locked' };
-  if (st.maxed) return { ok: false, reason: 'maxed' };
-  if (save.meta.scrap < st.upgradeCost) return { ok: false, reason: 'scrap' };
-  save.meta.scrap -= st.upgradeCost;
-  save.garage.partLevels[id] = st.level + 1;
-  return { ok: true, cost: st.upgradeCost, level: st.level + 1 };
+  if (!save.garage.ownedParts.includes(p.id)) return { ok: false, reason: 'locked' };
+  return upgradeSlot(save, p.slot);
 }
 
 // ---------- Fähigkeiten ----------
@@ -209,7 +247,7 @@ export function sanitizeGarage(save) {
   const g = save.garage;
   for (const k of ['ownedChassis', 'ownedParts', 'abilities']) if (!Array.isArray(g[k])) g[k] = [];
   if (!isObj(g.parts)) g.parts = {};
-  if (!isObj(g.partLevels)) g.partLevels = {};
+  if (!isObj(g.slotLevels)) g.slotLevels = {};
   g.ownedChassis = [...new Set(g.ownedChassis.filter((id) => chassisById(id)))];
   if (!g.ownedChassis.includes(GARAGE.starterChassis) && chassisById(GARAGE.starterChassis)) g.ownedChassis.unshift(GARAGE.starterChassis);
   if (!chassisById(g.chassis) || !g.ownedChassis.includes(g.chassis)) g.chassis = g.ownedChassis[0] || CHASSIS[0].id;
@@ -225,10 +263,9 @@ export function sanitizeGarage(save) {
   }
   g.ownedParts = [...owned];
   const levels = {};
-  for (const [id, l] of Object.entries(g.partLevels)) {
-    if (partById(id) && typeof l === 'number' && isFinite(l)) levels[id] = Math.max(0, Math.min(GARAGE.maxPartLevel, Math.floor(l)));
-  }
-  g.partLevels = levels;
+  for (const slot of SLOTS) levels[slot] = typeof g.slotLevels[slot] === 'number' && isFinite(g.slotLevels[slot]) ? clampLevel(g.slotLevels[slot]) : 0;
+  g.slotLevels = levels;
+  delete g.partLevels;   // Schema v3 (Stufen je Teil) – Umrechnung in save/save.js → migrateV3toV4
   const ab = g.abilities.map((id) => {
     const a = abilityById(id);
     return a && isSlotAbility(a) && researchDone(save, abilityUnlock(a).research) ? id : null;

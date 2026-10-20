@@ -6,7 +6,9 @@ import { CHASSIS, PARTS, ABILITIES, SLOTS, partsForSlot, chassisById, partById, 
 import { buildLoadout } from '../www/src/garage/loadout.js';
 import * as G from '../www/src/garage/garage.js';
 import { defaultSave } from '../www/src/save/save.js';
-import { STATS } from '../www/src/items/statMods.js';
+import { STATS, partDimLevels } from '../www/src/items/statMods.js';
+
+const near = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) <= eps, `${a} ≈ ${b}`);
 
 // Plausible Grenzen je Stat (großzügig; prüft, dass keine Kombination aus dem Ruder läuft)
 const BOUNDS = {
@@ -24,7 +26,7 @@ function saveWith(chassis, slot, partId, level) {
   if (slot) {
     s.garage.parts[slot] = partId;
     s.garage.ownedParts.push(partId);
-    s.garage.partLevels[partId] = level;
+    s.garage.slotLevels[slot] = level;
   }
   return s;
 }
@@ -42,7 +44,7 @@ test('Daten: 9 Chassis, 7 Slots mit je genau einem Startteil, IDs eindeutig', ()
   for (const id of GARAGE.starterAbilities) assert.ok(abilityById(id), id);
 });
 
-test('jede Chassis × je ein Teil pro Slot auf Stufe 0 und 20: alle Stats endlich und plausibel', () => {
+test('jede Chassis × je ein Teil pro Slot auf Stufe 0 und Höchststufe: alle Stats endlich und plausibel', () => {
   let n = 0;
   for (const c of CHASSIS) {
     for (const p of PARTS) {
@@ -103,36 +105,59 @@ test('Fähigkeiten im Loadout: nur freigeschaltete, höchstens abilitySlots, kei
   assert.deepEqual(buildLoadout(s).abilities, ['magnetzug', 'boost']);
 });
 
-test('Garage-Aktionen: kaufen, ausrüsten, verbessern (Preis × 1,15 je Stufe)', () => {
+test('Garage-Aktionen: kaufen, ausrüsten, Slot verbessern (60 × 1,32^Stufe, Stufe gilt je Slot)', () => {
   const s = defaultSave();
-  const kan = partById('tank_kanister');
-  assert.equal(G.upgradeCost(kan, 0), GARAGE.starterUpgradeBase);
-  assert.equal(G.upgradeCost(kan, 1), Math.round(GARAGE.starterUpgradeBase * GARAGE.costGrowth));
-  assert.equal(G.upgradeCost(partById('tank_gurkenfass'), 3), Math.round(400 * GARAGE.costGrowth ** 3));
+  assert.equal(G.upgradeCost(0), 60);
+  assert.equal(G.upgradeCost(1), Math.round(60 * 1.32));
+  assert.equal(G.upgradeCost(3), Math.round(GARAGE.slotUpgradeBase * GARAGE.costGrowth ** 3));
+  const total = G.upgradeCostTotal(GARAGE.maxPartLevel);
+  assert.ok(total > 2700 && total < 2900, `Summe bis Stufe 10 ≈ 2.800 ⚙ (${total})`);
 
   assert.deepEqual(G.upgradePart(s, 'tank_kanister'), { ok: false, reason: 'scrap' });
   s.meta.scrap = 1000;
   const up = G.upgradePart(s, 'tank_kanister');
   assert.equal(up.ok, true);
-  assert.equal(s.meta.scrap, 1000 - GARAGE.starterUpgradeBase);
+  assert.equal(up.slot, 'tank');
+  assert.equal(s.meta.scrap, 1000 - 60);
   assert.equal(G.partLevel(s, 'tank_kanister'), 1);
+  assert.equal(G.slotLevel(s, 'tank'), 1);
   assert.equal(buildLoadout(s).stats.fuelMax > BASE_STATS.fuelMax, true);
+  assert.equal(G.upgradePart(s, 'tank_gurkenfass').reason, 'locked', 'nur über ein eigenes Teil');
 
   assert.equal(G.equipPart(s, 'tank_gurkenfass').ok, false, 'nicht gekauft');
   const b = G.buyPart(s, 'tank_gurkenfass');
   assert.equal(b.ok, true);
-  assert.equal(s.meta.scrap, 1000 - GARAGE.starterUpgradeBase - 400);
+  assert.equal(s.meta.scrap, 1000 - 60 - 400);
   assert.equal(G.buyPart(s, 'tank_gurkenfass').reason, 'owned');
   assert.equal(G.equipPart(s, 'tank_gurkenfass').ok, true);
   assert.equal(s.garage.parts.tank, 'tank_gurkenfass');
-  assert.equal(buildLoadout(s).stats.fuelMax, BASE_STATS.fuelMax + 40);
+  // Teilwechsel behält die Slot-Stufe (kein Rückschritt): Gurkenfass +40, dazu Stufe 1 seines perLevel × 2
+  const gurke = partById('tank_gurkenfass');
+  assert.equal(G.partLevel(s, 'tank_gurkenfass'), 1);
+  near(buildLoadout(s).stats.fuelMax, BASE_STATS.fuelMax + 40 + gurke.perLevel.fuelMax.add * 2 / (1 + 1 / GARAGE.dimDivisor), 1e-6);
 
   // Forschung fehlt
   assert.equal(G.buyPart(s, 'drive_elektromotor').reason, 'research');
   // Höchststufe
   s.meta.scrap = 1e9;
-  s.garage.partLevels.tank_kanister = GARAGE.maxPartLevel;
+  s.garage.slotLevels.tank = GARAGE.maxPartLevel;
   assert.equal(G.upgradePart(s, 'tank_kanister').reason, 'maxed');
+  assert.equal(G.upgradeSlot(s, 'quatsch').reason, 'unknown');
+});
+
+test('Slot-Stufen: doppelte Wirkung je Stufe, Höchststufe 10 = alte Stufe 20; Meter-Anzeige aus der Bot-Messung', () => {
+  assert.equal(GARAGE.maxPartLevel, 10);
+  // Wirkung: 2 × L / (1 + L / 15) → Stufe 10 = 12 effektive Stufen (wie früher Stufe 20 mit 20 / (1 + 20 / 30))
+  near(partDimLevels(1), 2 / (1 + 1 / 15), 1e-9);
+  near(partDimLevels(GARAGE.maxPartLevel), 12, 1e-9);
+  // jede Stufe wirkt spürbar: Stufe 1 bringt so viel wie früher fast 2 Stufen
+  assert.ok(partDimLevels(1) > 1.8);
+  // Meter je Stufe: Antrieb bringt messbar Weite, abnehmender Ertrag
+  const g0 = G.levelGain('drive_rasenmaehermotor', 0), g9 = G.levelGain('drive_rasenmaehermotor', 9);
+  assert.ok(g0.m >= 1, `Rasenmäher Stufe 1: +${g0.m} m`);
+  assert.ok(g9.m <= g0.m, 'abnehmender Ertrag');
+  assert.ok(typeof g0.ref === 'string' && g0.ref.length > 3);
+  for (const p of PARTS) assert.ok(G.levelGain(p.id, 0).m >= 0, p.id);
 });
 
 test('Chassis kaufen: Forschung + Kerne; Fähigkeiten tauschen', () => {
@@ -169,13 +194,15 @@ test('sanitizeGarage repariert unbekannte IDs', () => {
   s.garage.chassis = 'gibtsnicht';
   s.garage.parts.drive = 'wheels_bobbycar';
   s.garage.parts.tank = 'tank_gurkenfass';   // nicht besessen
-  s.garage.partLevels = { tank_kanister: 99, quatsch: 3 };
+  s.garage.slotLevels = { tank: 99, drive: 2.7, quatsch: 3 };
+  s.garage.partLevels = { tank_kanister: 5 };   // Schema v3 – wird ohne Migration verworfen
   s.garage.abilities = ['quatsch', 'sprung', 'sprung'];
   G.sanitizeGarage(s);
   assert.equal(s.garage.chassis, GARAGE.starterChassis);
   assert.equal(s.garage.parts.drive, GARAGE.starterParts.drive);
   assert.equal(s.garage.parts.tank, GARAGE.starterParts.tank);
-  assert.deepEqual(s.garage.partLevels, { tank_kanister: GARAGE.maxPartLevel });
+  assert.deepEqual(s.garage.slotLevels, { drive: 2, wheels: 0, aero: 0, armor: 0, tank: GARAGE.maxPartLevel, cooling: 0, gadget: 0 });
+  assert.equal(s.garage.partLevels, undefined);
   assert.deepEqual(s.garage.abilities, [null, 'sprung', null]);
 });
 

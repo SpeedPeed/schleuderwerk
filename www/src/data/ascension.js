@@ -32,13 +32,13 @@ export const ASCENSION = [
   {
     level: 2,
     name: 'Neu geeichter Zollstock',
-    desc: 'Alle Zielmarken +8 %. Opa hat den Zollstock nachgemessen – zu deinen Ungunsten.',
-    mods: { targetMul: 1.08 },
+    desc: 'Alle Zielmarken +12 %. Opa hat den Zollstock nachgemessen – zu deinen Ungunsten.',
+    mods: { targetMul: 1.12 },   // Paket A: 1,08 → 1,12 (Notlandung/neue Strecken machen Runs leichter)
   },
   {
     level: 3,
     name: 'Teurer Abschleppdienst',
-    desc: 'Abschleppen kostet 20 % statt 15 % der max. Haltbarkeit. Der Fahrer will jetzt Trinkgeld.',
+    desc: 'Nochmal kostet 20 % statt 15 %, eine Notlandung 15 % statt 10 % der max. Haltbarkeit. Der Fahrer will jetzt Trinkgeld.',
     mods: { towPenaltyAdd: 0.05 },
   },
   {
@@ -62,8 +62,8 @@ export const ASCENSION = [
   {
     level: 7,
     name: 'Bosse mit Muckis',
-    desc: 'Boss-Zielmarken +15 %. Die Endgegner waren den ganzen Winter im Fitnessstudio.',
-    mods: { bossTargetMul: 1.15 },
+    desc: 'Boss-Zielmarken +22 %. Die Endgegner waren den ganzen Winter im Fitnessstudio.',
+    mods: { bossTargetMul: 1.22 },   // Paket A: 1,15 → 1,22 (Boss-Neuversuche mit neuer Variante und „müdem“ Boss)
   },
   {
     level: 8,

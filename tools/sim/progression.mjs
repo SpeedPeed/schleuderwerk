@@ -49,8 +49,11 @@ export const MARK = '<!-- progression -->';
 export const SIM = {
   // Spielzeit in Sekunden (inkl. Menüs, Intro, Auswertung)
   sec: {
-    stage: 75,          // Etappe: Intro + Abschuss + Flug ≈ 20–25 s + Auswertung + Karte (V2-Aufgabe: 60–90 s)
-    retry: 55,          // Neuversuch derselben Etappe (Intro entfällt)
+    // Paket A (neu gemessen, docs/OVERHAUL.md „Umsetzungsstand Paket A“): Etappe ≈ 12 s Echtzeit (Vorspulen,
+    // Hochrechnung), Intro als Banner beim Zielen (≈ 4 s), Ergebnis + Beute auf einem Bildschirm, Karte fährt bei nur
+    // einem Weg selbst weiter. Lesezeit für Menschen wie bisher ≈ ×2,5 auf die Bot-Zeit der Menüs. (v1.0: 75 / 55 s)
+    stage: 45,          // Etappe: Zielen mit Banner + Flug ≈ 16 s + Ergebnis lesen + Karte
+    retry: 35,          // „Nochmal“ / Boss-Neuversuch (Karte entfällt)
     choice: 10,         // Item-Auswahl (je Auswahl)
     dealer: 35, workbench: 30, blackmarket: 20, event: 30, treasure: 15, station: 15,
     runStart: 10, runEnd: 25,   // Run-Start, Run-Ende-Bildschirm
@@ -62,7 +65,7 @@ export const SIM = {
   // Weite × (1 − (1 − start) · e^(−Spielzeit / tau))
   skill: { start: 0.88, tauH: 1.5 },
   maxHours: 90,
-  fitLevels: [0, 5, 10, 15, 20],
+  fitLevels: [0, 3, 5, 8, 10],   // Slot-Stufen (Paket A: 0–10; früher Teile-Stufen 0/5/10/15/20)
 };
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -78,10 +81,10 @@ const fmtPct = (x) => `${Math.round(x * 100)} %`;
 const cellOf = (kind, floor) => (kind === 'boss' ? 'b' : kind === 'elite' ? 'e' : `s${clamp(floor | 0, 0, 5)}`);
 const CELLS = [['stage', 0], ['stage', 1], ['stage', 2], ['stage', 3], ['stage', 4], ['stage', 5], ['elite', 3], ['boss', 6]];
 
-// Spielstand mit allen Startteilen auf Stufe L
+// Spielstand mit allen Slots (Startteile) auf Stufe L
 export function levelSave(L) {
   const s = defaultSave();
-  for (const id of Object.values(GARAGE.starterParts)) s.garage.partLevels[id] = L;
+  for (const slot of Object.keys(GARAGE.starterParts)) s.garage.slotLevels[slot] = L;
   return s;
 }
 
@@ -137,13 +140,13 @@ export async function fitModel({ n = 12, nItems = 10, log = console.log } = {}) 
       log(`Fit Akt ${b.act} Stufe ${String(L).padStart(2)}: ${Object.entries(cells).map(([k, c]) => `${k} ×${Math.exp(c.mu).toFixed(2)}`).join(' ')}`);
     }
   }
-  // b) Items (Stufe 10): zufällige Builds je Anzahl, je Seltenheit (4 Items), Set-Builds eines Tags (2/4/6)
-  const save10 = levelSave(10);
+  // b) Items (Slot-Stufe 5 = Mitte): zufällige Builds je Anzahl, je Seltenheit (4 Items), Set-Builds eines Tags (2/4/6)
+  const save10 = levelSave(5);
   const pool = ITEMS.filter((i) => i.rarity !== 'cursed');
   const tags = [...new Set(pool.flatMap((i) => i.tags))];
   const cellsI = [['stage', 2], ['boss', 6]];
   for (const b of BIOMES) {
-    const base = (kind, floor) => model.base[b.act][10][cellOf(kind, floor)].mu;
+    const base = (kind, floor) => model.base[b.act][5][cellOf(kind, floor)].mu;
     const meas = (label, mk) => {
       const vals = [];
       for (const [kind, floor] of cellsI) {
@@ -166,15 +169,15 @@ export async function fitModel({ n = 12, nItems = 10, log = console.log } = {}) 
     model.items[b.act] = m;
     log(`Fit Items Akt ${b.act}: zufällig ${JSON.stringify(m.random)} Seltenheit ${JSON.stringify(m.rarity)} Set ${JSON.stringify(m.set)}`);
   }
-  // c) Physik-Erschwerungen der Schrottstufen (Stufe 10, Akt 2 Etage 3 + Akt 3 Etage 0)
+  // c) Physik-Erschwerungen der Schrottstufen (Slot-Stufe 5, Akt 2 Etage 3 + Akt 3 Etage 0)
   const ascCells = [[biomeForAct(2), 'stage', 3], [biomeForAct(3), 'stage', 0]];
-  const ascMeas = (runMods) => r3(mean(ascCells.map(([b, kind, floor]) => mean(playCell(bot, { biome: b, kind, floor, save: save10, n, runMods, tag: 'fita' }).map((r) => r.lr)) - model.base[b.act][10][cellOf(kind, floor)].mu)));
+  const ascMeas = (runMods) => r3(mean(ascCells.map(([b, kind, floor]) => mean(playCell(bot, { biome: b, kind, floor, save: save10, n, runMods, tag: 'fita' }).map((r) => r.lr)) - model.base[b.act][5][cellOf(kind, floor)].mu)));
   model.asc.heat = ascMeas({ heatGainMul: 1.15 });
   model.asc.fuel = ascMeas({ fuelMaxMul: 0.9 });
   log(`Fit Schrottstufen: Hitze +15 % → ${model.asc.heat}, Treibstoff −10 % → ${model.asc.fuel} (log-Weite)`);
   // d) Streuung beim Neuversuch: dieselbe Strecke mit anderen Abschüssen (Anteil der Varianz innerhalb einer Strecke)
   const within = [];
-  for (const [act, kind, floor, L] of [[1, 'boss', 6, 0], [1, 'stage', 3, 5], [2, 'stage', 2, 10], [2, 'boss', 6, 10], [3, 'stage', 0, 15], [3, 'boss', 6, 20]]) {
+  for (const [act, kind, floor, L] of [[1, 'boss', 6, 0], [1, 'stage', 3, 3], [2, 'stage', 2, 5], [2, 'boss', 6, 5], [3, 'stage', 0, 8], [3, 'boss', 6, 10]]) {
     const biome = biomeForAct(act);
     const save = levelSave(L);
     const vs = [];
@@ -371,16 +374,22 @@ function pickNode(ctx, reach) {
   return best;
 }
 
-// Etappe (inkl. Neuversuche) spielen
+// Etappe (inkl. Neuversuche) spielen. Paket A: verfehlte Etappe/Elite → Notlandung (weiter auf der Karte); Boss →
+// Neuversuch mit neuer Variante. ctx.stats.identical zählt Etappen-Starts mit derselben Strecke wie der Versuch davor.
 function playStageNode(ctx, nodeId) {
   const { run, save, model, rng } = ctx;
+  let prevKey = null;
   for (let guard = 0; guard < 40 && !run.over; guard++) {
     const cur = run.current;
     const spec = RS.stageSpecFor(run, mapNode(run.map, nodeId));
+    const key = `${spec.seed}:${spec.bossId || ''}:${spec.target}`;
+    if (key === prevKey) ctx.stats.identical = (ctx.stats.identical || 0) + 1;
+    prevKey = key;
     ctx.tick((cur && cur.attempts > 0 ? SIM.sec.retry : SIM.sec.stage) + (ctx.stats.runs < CONTROLS.tutorialRuns ? SIM.sec.tutorial : 0));
     const result = simStageResult(model, run, spec, save, rng, ctx.stageOpts);
     const o = RS.applyStageResult(run, result, save);
     ctx.stats.stages++;
+    if (o.missed) { RS.resolveMiss(run, ctx.retryMissed ? 'retry' : 'land'); if (run.current && !run.over) continue; return o; }
     if (o.towed && !o.defeat) continue;
     handleChoices(ctx);
     if (o.secondBoss) continue;   // Schrottstufe 15: Zwillingsboss
@@ -668,6 +677,7 @@ export async function botBadCheck(n = 12) {
         const stage = new Stage({ biome, spec, track: new Track(spec, biome), loadout: su.loadout, seed: hashSeed(`${run.seed}:${run.current.node}:${run.current.attempts}`), durability: run.durability, runMods: run.runMods, inventory: su.inventory, runInfo: su.runInfo, hooks: { end: (r) => { result = r; } } });
         bot.playStage(stage, () => result, { seed: i * 31 + stages++ });
         const o = RS.applyStageResult(run, result, save);
+        if (o.missed) RS.resolveMiss(run, 'land');
         while (RS.pendingChoice(run)) RS.skipChoice(run);
         if (!o.towed && !o.secondBoss) break;
       }

@@ -165,8 +165,10 @@ const ASCENSION_KEYS = new Set(['level', 'name', 'desc', 'mods']);
 
 // Design-Werte (V2-DESIGN.md §4) – Schrottstufen: Stufe → einziger mods-Schlüssel und Wert
 const ASCENSION_DESIGN = {
-  1: ['eliteWeightAdd', null], 2: ['targetMul', 1.08], 3: ['towPenaltyAdd', 0.05], 4: ['priceMul', 1.1],
-  5: ['repairMul', 0.75], 6: ['startCurse', 1], 7: ['bossTargetMul', 1.15], 8: ['damageMul', 1.15],
+  // Paket A (docs/OVERHAUL.md „Umsetzungsstand Paket A“): Stufe 2 1,08 → 1,12, Stufe 7 1,15 → 1,22 – Notlandung und
+  // Neuversuche mit neuer Strecke/müdem Boss machen Runs leichter; so bleibt Schrottstufe 15 bei 30–50 h (Simulator)
+  1: ['eliteWeightAdd', null], 2: ['targetMul', 1.12], 3: ['towPenaltyAdd', 0.05], 4: ['priceMul', 1.1],
+  5: ['repairMul', 0.75], 6: ['startCurse', 1], 7: ['bossTargetMul', 1.22], 8: ['damageMul', 1.15],
   9: ['itemChoicesAdd', -1], 10: ['startDurabilityMul', 0.9], 11: ['heatGainMul', 1.15], 12: ['eliteHazards', true],
   13: ['boltMul', 0.85], 14: ['fuelMaxMul', 0.9], 15: ['doubleBossAct3', true],
 };

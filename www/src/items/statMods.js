@@ -71,8 +71,8 @@ export function baseStats() {
   return finalize(emptyAcc());
 }
 
-// Effektive Stufen eines Teils (abnehmender Ertrag)
-export const partDimLevels = (level) => dimLevels(Math.max(0, Math.min(GARAGE.maxPartLevel, level || 0)), GARAGE.dimDivisor);
+// Effektive Stufen eines Teils (abnehmender Ertrag, Paket A: × GARAGE.levelEffectMul – doppelte Wirkung je Stufe)
+export const partDimLevels = (level) => GARAGE.levelEffectMul * dimLevels(Math.max(0, Math.min(GARAGE.maxPartLevel, level || 0)), GARAGE.dimDivisor);
 
 // Modifikatoren eines Teils auf Stufe `level` in den Sammler legen
 export function applyPart(acc, part, level = 0) {
