@@ -3,7 +3,7 @@
 // Einheiten: Meter, Sekunden, Radiant – außer wo „Deg“/„Grad“ dabeisteht.
 // Diese Datei importiert nichts und wird auch von node --test geladen.
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 export const GAME_VERSION = '1.0.0';
 
 // ---------- Speichern ----------

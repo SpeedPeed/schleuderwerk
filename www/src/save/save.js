@@ -1,8 +1,9 @@
-// Spielstand: Schema v3 (ARCHITEKTUR.md §10), Migrationskette v0/v1 → v2 → v3, Export/Import als Text.
+// Spielstand: Schema v4 (ARCHITEKTUR.md §10), Migrationskette v0/v1 → v2 → v3 → v4, Export/Import als Text.
 // Reine Logik (localStorage nur in loadSave/writeSave/clearSave/getBackup) – migrate() läuft auch in node --test.
 // migrate() repariert falsch typisierte Felder (Standardwert statt Absturz); nicht ladbare Stände werden gesichert.
 import { SAVE_VERSION, GARAGE, AUDIO, RENDER } from '../data/balance.js';
-import { sanitizeGarage } from '../garage/garage.js';
+import { sanitizeGarage, partBasePrice, upgradeCostTotal } from '../garage/garage.js';
+import { SLOTS, partById } from '../data/index.js';
 import { isValidRun, normalizeRun } from '../run/runState.js';
 
 const KEY = 'schleuderwerk.save';
@@ -17,7 +18,7 @@ export function defaultSave() {
       ownedChassis: [GARAGE.starterChassis],
       parts: { ...GARAGE.starterParts },
       ownedParts: Object.values(GARAGE.starterParts),
-      slotLevels: {},      // Paket A: Stufe je Slot { drive: 0…10, … } – gilt für jedes Teil in diesem Slot
+      slotLevels: {},      // Paket A (v4): Stufe je Slot { drive: 0…10, … } – gilt für jedes Teil in diesem Slot
       abilities: [...GARAGE.starterAbilities],
     },
     research: { done: [], levels: {} },   // levels: Stufen der wiederholbaren Forschung (Feinschliff)
@@ -91,6 +92,66 @@ function migrateV2toV3(old) {
   return n;
 }
 
+// ---------- Migration Schema v3 → v4 (Paket A) ----------
+// v3: Stufen 0–20 je Teil, Wirkung L / (1 + L / 30), Kosten Basis × 1,15^L. v4: Stufen 0–10 je Slot,
+// Wirkung 2 × L / (1 + L / 15), Kosten 60 × 1,32^L.
+const v3Eff = (L) => L / (1 + L / GARAGE.v3DimDivisor);
+const v4Eff = (n) => GARAGE.levelEffectMul * n / (1 + n / GARAGE.dimDivisor);
+// Kleinste v4-Slot-Stufe, die mindestens so stark wirkt wie die v3-Teile-Stufe L (niemand wird schwächer)
+export function v3LevelToSlot(L) {
+  const old = v3Eff(Math.max(0, Math.min(GARAGE.v3MaxPartLevel, Math.floor(Number(L) || 0))));
+  for (let n = 0; n <= GARAGE.maxPartLevel; n++) if (v4Eff(n) >= old - 1e-9) return n;
+  return GARAGE.maxPartLevel;
+}
+// In v3 für ein Teil bis Stufe L bezahlter Schrott
+export function v3SpentFor(part, L) {
+  let c = 0;
+  for (let l = 0; l < Math.min(GARAGE.v3MaxPartLevel, Math.floor(Number(L) || 0)); l++) c += Math.round(partBasePrice(part) * Math.pow(GARAGE.v3CostGrowth, l));
+  return c;
+}
+// garage.partLevels (v3) → garage.slotLevels (v4): je Slot die beste Stufe aller (eigenen) Teile dieses Slots, auf 0–10
+// umgerechnet; was in diesem Slot insgesamt mehr bezahlt wurde, als die neue Stufe kostet, kommt als Schrott zurück.
+// Ergebnis: { slotLevels, refund, spent }
+export function convertPartLevels(partLevels) {
+  const slotLevels = {};
+  let refund = 0, spent = 0;
+  for (const slot of SLOTS) {
+    let best = 0, paid = 0;
+    for (const [id, l] of Object.entries(isObj(partLevels) ? partLevels : {})) {
+      const p = partById(id);
+      if (!p || p.slot !== slot || typeof l !== 'number' || !isFinite(l) || l <= 0) continue;
+      best = Math.max(best, Math.min(GARAGE.v3MaxPartLevel, Math.floor(l)));
+      paid += v3SpentFor(p, l);
+    }
+    const n = v3LevelToSlot(best);
+    slotLevels[slot] = n;
+    spent += paid;
+    refund += Math.max(0, paid - upgradeCostTotal(n));
+  }
+  return { slotLevels, refund, spent };
+}
+
+// v3 → v4 (Paket A): Teile-Stufen 0–20 je Teil → Slot-Stufen 0–10 je Slot (garage/garage.js → convertPartLevels:
+// beste Stufe je Slot, mindestens gleich stark; zu viel bezahlter Schrott kommt zurück). Ein laufender Run behält seine
+// Ausrüstung, die Stufen darin werden genauso umgerechnet. Alles andere bleibt unverändert.
+function migrateV3toV4(data) {
+  const g = isObj(data.garage) ? data.garage : null;
+  if (!g || !isObj(g.partLevels)) return data;
+  const c = convertPartLevels(g.partLevels);
+  g.slotLevels = c.slotLevels;
+  delete g.partLevels;
+  if (c.refund > 0) {
+    if (!isObj(data.meta)) data.meta = {};
+    data.meta.scrap = n0(data.meta.scrap) + c.refund;
+  }
+  // Hinweis für die Oberfläche (main.js zeigt ihn einmal und löscht ihn)
+  data.migrationNote = { v: 4, refund: c.refund, slotLevels: { ...c.slotLevels } };
+  if (isObj(data.run) && isObj(data.run.parts)) {
+    for (const p of Object.values(data.run.parts)) if (isObj(p)) p.level = v3LevelToSlot(p.level);
+  }
+  return data;
+}
+
 export function migrate(data) {
   if (!isObj(data)) throw new SaveError('Kein gültiger Spielstand', 'invalid');
   // Versionsnummer als Zahl lesen; Unlesbares gilt als uralter Stand (läuft durch die ganze Migration)
@@ -108,6 +169,7 @@ export function migrate(data) {
   // Spielstände vor Phase 7 kennen den Tutorial-Fortschritt noch nicht: wer schon gespielt hat, bekommt keine Hinweise
   const hadTutorial = isObj(data.tutorial) && isObj(data.tutorial.seen);
   if (v < 3) data = migrateV2toV3(data);
+  if (v < 4) migrateV3toV4(data);
   fill(data, defaultSave());
   if (!hadTutorial && (n0(data.stats.runs) > 0 || n0(data.stats.testDrives) > 0 || isObj(data.run))) data.tutorial.off = true;
   data.version = SAVE_VERSION;
@@ -201,14 +263,14 @@ export function writeSave(data) {
   }
 }
 
-// Export als Text (zum Sichern, z. B. in einer Notiz-App): „SW3:“ + Base64(JSON)
+// Export als Text (zum Sichern, z. B. in einer Notiz-App): „SW4:“ + Base64(JSON)
 export function exportSave(data) {
   const json = JSON.stringify(data);
   const b64 = btoa(unescape(encodeURIComponent(json)));
   return `SW${SAVE_VERSION}:${b64}`;
 }
 
-// Import: akzeptiert SW3:… und ältere Texte (SW2:…), die über die Migration auf v3 gebracht werden
+// Import: akzeptiert SW4:… und ältere Texte (SW3:…, SW2:…), die über die Migration auf v4 gebracht werden
 export function importSave(text) {
   const s = String(text || '').trim();
   const m = s.match(/^SW(\d+):(.+)$/s);
