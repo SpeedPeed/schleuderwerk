@@ -165,6 +165,9 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
         for (let k = 0; k < 6; k++) {
           const kind = await runKind();
           if (kind !== 'result' && kind !== 'choice') return;
+          // erste Beute erst später (z. B. nach einer Notlandung): Hinweis „Items & Tags“ zuerst schließen
+          const t = await tut();
+          if (t) { seenTut.add(t); await okTut(); continue; }
           if (await g(() => !!document.querySelector('#runui [data-pick]'))) await tapRun('[data-pick="0"]');
           else if (await g(() => !!document.querySelector('#runui [data-a=next]'))) await tapRun('[data-a=next]');
           else if (await g(() => !!document.querySelector('#runui [data-a=land]'))) await tapRun('[data-a=land]');
@@ -340,8 +343,12 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       if (single) {
         const auto = await page.waitForFunction(() => window.__game.state === 'stage' || window.__game.runScreens.open, null, { timeout: 4000 }).then(() => true).catch(() => false);
         check(auto, `[${tag}] nur ein Weg: die Karte fährt selbst weiter`);
+        // weitergefahren in einen Sonderknoten (Laden, Ereignis …): verlassen, zurück zur Karte
+        if ((await runKind()) !== null) {
+          await g(() => { const gm = window.__game; const c = gm.run && gm.run.current; if (c && !['stage', 'elite', 'boss'].includes(c.type)) gm.runLogic.leaveNode(gm.run); gm.runScreens.hide(); gm.openMap({ auto: false }); });
+          await sleep(400);
+        }
         await toMap().catch(() => {});
-        if ((await runKind()) !== null) { await back(); await sleep(400); }
       }
       await g(() => { window.__game.balance.MAP.autoAdvanceDelay = 3600; });
 
