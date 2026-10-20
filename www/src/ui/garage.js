@@ -14,8 +14,8 @@ import { ascensionState, ascensionSummary, fmtPlaytime, MAX_ASCENSION } from '..
 import { ITEMS } from '../data/items.js';
 import { TAG_IDS, TAGS, SET_LEVELS, setId, tagById } from '../data/tags.js';
 import { RESEARCH } from '../data/research.js';
-import { workshopState, levelCost, nextReward, contractById, albumProgress } from '../garage/workshop.js';
-import { ALBUM, WORKSHOP } from '../data/workshop.js';
+import { workshopState, levelCost, nextReward, contractById, albumProgress, masteryOf } from '../garage/workshop.js';
+import { ALBUM, WORKSHOP, MASTERY } from '../data/workshop.js';
 import { dailyInfo, DAILY } from '../garage/daily.js';
 import { mutatorById } from '../data/mutators.js';
 
@@ -257,8 +257,11 @@ export class GarageScreen {
     const ci = CHASSIS.findIndex((c) => c.id === this.viewId);
     const c = CHASSIS[ci];
     const cs = chassisState(save, c);
-    q.cname.innerHTML = `${c.icon} ${esc(c.name)} <small>${ci + 1}/${CHASSIS.length}</small>`;
-    q.cdesc.textContent = c.desc;
+    // Paket E5: Chassis-Meisterschaft als Sterne-Plakette (nur besessene Chassis)
+    const ms = cs.owned ? masteryOf(save, c.id) : null;
+    const mstars = ms ? `<span class="g-mastery" title="${esc(TXT.mastery.title(ms.level, ms.next ? `${fmt(ms.xp)}/${fmt(ms.next)} XP` : ''))}">${'★'.repeat(ms.level)}${'☆'.repeat(MASTERY.xp.length - ms.level)}</span>` : '';
+    q.cname.innerHTML = `${c.icon} ${esc(c.name)} <small>${ci + 1}/${CHASSIS.length}</small>${mstars}`;
+    q.cdesc.textContent = ms && ms.next ? `${c.desc} ${TXT.mastery.next(MASTERY.perks[ms.level])}` : c.desc;
     show(q.clock, !cs.owned);
     if (!cs.owned) {
       const need = [];

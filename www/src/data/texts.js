@@ -243,6 +243,13 @@ export const TXT = {
     albumDone: 'Sammelalbum',
   },
 
+  // Paket E5: Chassis-Meisterschaft
+  mastery: {
+    title: (lv, xp) => `Meisterschaft Stufe ${lv}${xp ? ` · ${xp}` : ''}`,
+    next: (perk) => `Nächste Meister-Stufe: ${perk}.`,
+    up: (name, lv, perk) => `${name}: Meister-Stufe ${lv} – ${perk}`,
+  },
+
   // Paket E: Tagesstrecke
   daily: {
     title: 'TAGESSTRECKE',

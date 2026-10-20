@@ -1562,3 +1562,4 @@ html.kbd .tz-right span::before { content: "→ "; font-size: 32px; }
 .gw-daily small { font-size: 12px; color: var(--chalk-dim); }
 .gw-daily .ic { width: 15px; height: 15px; }
 .me-code { font-family: var(--font-body); font-size: 13px; user-select: all; }
+.g-mastery { margin-left: 6px; color: var(--stamp-gold); font-size: 13px; letter-spacing: 1px; }

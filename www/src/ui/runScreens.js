@@ -8,6 +8,8 @@ import { FX, RUN, REWARDS } from '../data/balance.js';
 import { ascensionSummary, fmtPlaytime } from '../garage/progression.js';
 import { choiceCardsHtml, entryRowHtml, itemCardHtml } from './items.js';
 import { itemById } from '../data/items.js';
+import { chassisById } from '../data/index.js';
+import { MASTERY } from '../data/workshop.js';
 import { TXT, NARRATOR, pickLine } from '../data/texts.js';
 import { inkOn } from './dom.js';
 
@@ -63,9 +65,10 @@ function metaHtml(m) {
   const lv = m.levels.map((l) => `<div class="me-row up"><span>${icon('stern')} ${W.levelUp(l.level)}</span><b>${rwHtml(l.reward)}</b></div>`).join('');
   const cs = m.contracts.map((c) => `<div class="me-row done"><span>${icon('haken')} ${W.contractDone}: ${esc(c.text)}</span><b>${rwHtml(c.reward)}</b></div>`).join('');
   const al = m.album.map((a) => `<div class="me-row done"><span>${icon('buch')} ${W.albumDone}: ${esc(a.text)}</span><b>${rwHtml(a.reward)}</b></div>`).join('');
+  const ms = m.mastery && m.mastery.level > m.mastery.from ? `<div class="me-row up"><span>${icon('wagen')} ${esc(TXT.mastery.up((chassisById(m.mastery.chassis) || {}).name || '', m.mastery.level, MASTERY.perks[m.mastery.level - 1]))}</span></div>` : '';
   return `<h4>${icon('schluessel')} ${W.level} ${m.levelTo} <small>${W.runXp(m.xp)}</small></h4>
     <div class="sheet-paper me-box"><div class="sb-track"><div class="sb-fill" style="width:${pct}%"></div></div>
-      <div class="me-xp">${fmt(m.xpNow)} / ${fmt(m.xpNeed)} XP</div>${lv}${cs}${al}</div>`;
+      <div class="me-xp">${fmt(m.xpNow)} / ${fmt(m.xpNeed)} XP</div>${lv}${ms}${cs}${al}</div>`;
 }
 
 export function introBannerHtml(d) {

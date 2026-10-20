@@ -42,7 +42,7 @@ import { generateActMap, mapNode, isStageType, BOSS_FLOOR } from '../map/mapGen.
 import { generateStageSpec } from '../physics/trackGen.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { markMilestone, ascensionMods, ascensionState, ascensionCoreReward, recordRunEnd } from '../garage/progression.js';
-import { grantMeta } from '../garage/workshop.js';
+import { grantMeta, masteryPerks } from '../garage/workshop.js';
 import { dailyMutator, dailySeed, finishDaily } from '../garage/daily.js';
 import { computeStats } from '../items/statMods.js';
 import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts, MAX_TIER } from '../items/inventory.js';
@@ -192,7 +192,14 @@ export function newRun(save, opts = {}) {
   // Paket C: Bauplan-Start (opts.blueprint, main.js und Simulatoren) – 1 aus 3 Bauplänen (Episch-„Motor“-Item eines
   // Tags, Lieblings-Tag des Chassis immer dabei) als erste Auswahl (context 'blueprint'); ohne opts.blueprint (Tests,
   // Dev) das Start-Item des Chassis wie bisher
-  const plans = opts.blueprint ? blueprintOptions(lo.chassis, run.seed) : [];
+  // Paket E5: Chassis-Meisterschaft – Start-Schrauben, Start-Item, vierter Bauplan
+  const mp = masteryPerks(save, lo.chassis.id);
+  run.bolts += mp.bolts;
+  const plans = opts.blueprint ? blueprintOptions(lo.chassis, run.seed, mp.extraBlueprint ? 1 : 0) : [];
+  if (plans.length && mp.starterItem) {
+    const commons = ITEMS.filter((it) => it.pool === 'base' && it.rarity === 'common' && it.tags[0] === lo.chassis.starterTag && !plans.includes(it.id));
+    if (commons.length) giveItem(run, save, makeRng(hashSeed(`${run.seed}:meister-item`)).pick(commons).id);
+  }
   if (plans.length) {
     run.pendingChoices.push({ context: 'blueprint', items: plans, skipBolts: 0 });
     for (const id of plans) codexItem(save, id, 1);
@@ -214,7 +221,7 @@ export function newRun(save, opts = {}) {
 // Paket C – Bauplan-Start: SYNERGY.blueprint.options Baupläne = je das Grundpool-Item der Seltenheit
 // SYNERGY.blueprint.rarity („Motor“) eines Tags; der Lieblings-Tag des Chassis (starterTag) ist immer dabei, die übrigen
 // Tags werden aus dem Run-Seed gezogen. Ergebnis: Item-IDs (Reihenfolge: Chassis-Tag zuerst)
-export function blueprintOptions(chassis, seed) {
+export function blueprintOptions(chassis, seed, extra = 0) {
   const B = SYNERGY.blueprint;
   const motor = (tag) => ITEMS.find((it) => it.pool === 'base' && it.rarity === B.rarity && it.tags[0] === tag) || null;
   const rng = makeRng(hashSeed(`${seed}:bauplan`));
@@ -222,7 +229,7 @@ export function blueprintOptions(chassis, seed) {
   const fav = chassis && tags.includes(chassis.starterTag) ? chassis.starterTag : null;
   const rest = tags.filter((t) => t !== fav);
   rng.shuffle(rest);
-  return [...(fav ? [fav] : []), ...rest].slice(0, B.options).map((t) => motor(t).id);
+  return [...(fav ? [fav] : []), ...rest].slice(0, B.options + extra).map((t) => motor(t).id);
 }
 
 // Start-Item: chassis.starterItem, sonst ein zufälliges 'base'-Item des starterTag (deterministisch aus dem Seed)

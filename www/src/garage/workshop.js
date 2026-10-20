@@ -2,7 +2,7 @@
 // Einzige Stelle der Regeln; aufgerufen am Run-Ende (run/runState.js → endRun → grantMeta). Reine Logik, kein DOM.
 // Spielstand: save.workshop = { xp, level, contracts: { active: [ids], done, rolls }, album: { id: 1 } }
 //   xp    Erfahrung innerhalb der aktuellen Stufe (läuft je Stufe von 0 bis levelCost(level))
-import { WORKSHOP, workshopReward, WORKSHOP_PAINTS, CONTRACTS, CONTRACT_RULES, ALBUM } from '../data/workshop.js';
+import { WORKSHOP, workshopReward, WORKSHOP_PAINTS, CONTRACTS, CONTRACT_RULES, ALBUM, MASTERY } from '../data/workshop.js';
 import { ITEMS } from '../data/items.js';
 import { RECIPES } from '../data/recipes.js';
 import { TAG_IDS, SET_LEVELS } from '../data/tags.js';
@@ -26,8 +26,25 @@ export function workshopState(save) {
   c.done = Math.max(0, Math.floor(Number(c.done) || 0));
   c.rolls = Math.max(0, Math.floor(Number(c.rolls) || 0));
   if (!isObj(w.album)) w.album = {};
+  if (!isObj(w.mastery)) w.mastery = {};
+  for (const [k, v] of Object.entries(w.mastery)) if (!(Number(v) >= 0)) delete w.mastery[k]; else w.mastery[k] = Math.floor(Number(v));
   fillContracts(w);
   return w;
+}
+
+// Chassis-Meisterschaft: { xp, level (0–5), next (XP bis zur nächsten Stufe oder null) }
+export function masteryOf(save, chassisId) {
+  const w = workshopState(save);
+  const xp = w.mastery[chassisId] || 0;
+  let level = 0;
+  while (level < MASTERY.xp.length && xp >= MASTERY.xp[level]) level++;
+  return { xp, level, next: level < MASTERY.xp.length ? MASTERY.xp[level] : null };
+}
+
+// Start-Vorteile der Meisterschaft für newRun (run/runState.js): { bolts, starterItem, extraBlueprint }
+export function masteryPerks(save, chassisId) {
+  const { level } = save && save.meta ? masteryOf(save, chassisId) : { level: 0 };
+  return { bolts: (level >= 1 ? MASTERY.startBolts : 0) + (level >= 4 ? MASTERY.startBolts2 : 0), starterItem: level >= 2, extraBlueprint: level >= 3, level };
 }
 
 // Auftragsbrett auffüllen: aus den freigeschalteten (minLevel) Aufträgen, keine doppelten
@@ -148,8 +165,13 @@ export function grantMeta(save, run, res = {}) {
     levels.push({ level: w.level, reward: rw });
   }
   if (w.level >= WORKSHOP.maxLevel) w.xp = 0;
+  // Chassis-Meisterschaft: das gefahrene Chassis bekommt dieselbe XP
+  const cid = run.chassisId;
+  const mFrom = cid ? masteryOf(save, cid).level : 0;
+  if (cid) w.mastery[cid] = (w.mastery[cid] || 0) + xp;
+  const mastery = cid ? { chassis: cid, from: mFrom, ...masteryOf(save, cid) } : null;
   fillContracts(w);
-  return { xp, levelFrom, levelTo: w.level, xpNow: w.xp, xpNeed: levelCost(w.level), levels, contracts, album, total };
+  return { xp, levelFrom, levelTo: w.level, xpNow: w.xp, xpNeed: levelCost(w.level), levels, contracts, album, total, mastery };
 }
 
 // Anzeige der nächsten Belohnung (Garage, Run-Ende)

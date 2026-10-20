@@ -81,3 +81,25 @@ test('Tagesstrecke: gleicher Tag = gleiche Karte und Mutator, Belohnung einmal j
   assert.equal(r3.streak, 2);
   assert.equal(dailyInfo(s, new Date(2026, 9, 23)).streak, 0, 'Serie gerissen');
 });
+
+// ---------- Paket E5: Chassis-Meisterschaft ----------
+import { masteryOf, masteryPerks } from '../www/src/garage/workshop.js';
+import { MASTERY } from '../www/src/data/workshop.js';
+
+test('Chassis-Meisterschaft: XP je gefahrenem Chassis, Stufen schalten Start-Vorteile frei', () => {
+  const s = defaultSave();
+  const cid = s.garage.chassis;
+  assert.equal(masteryOf(s, cid).level, 0);
+  const r0 = R.newRun(s, { seed: 3, blueprint: true });
+  const bolts0 = r0.bolts, plans0 = r0.pendingChoices[0].items.length, inv0 = r0.inventory.length;
+  workshopState(s).mastery[cid] = MASTERY.xp[2];   // Stufe 3
+  assert.equal(masteryOf(s, cid).level, 3);
+  const p = masteryPerks(s, cid);
+  assert.ok(p.starterItem && p.extraBlueprint && p.bolts === MASTERY.startBolts);
+  const r1 = R.newRun(s, { seed: 3, blueprint: true });
+  assert.equal(r1.bolts, bolts0 + MASTERY.startBolts);
+  assert.equal(r1.pendingChoices[0].items.length, plans0 + 1);
+  assert.equal(r1.inventory.length, inv0 + 1);
+  const m = grantMeta(s, { ...fakeRun(), chassisId: cid });
+  assert.ok(m.mastery && m.mastery.xp > MASTERY.xp[2]);
+});

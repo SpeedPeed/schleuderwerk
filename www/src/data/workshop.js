@@ -31,6 +31,17 @@ export const WORKSHOP_PAINTS = [
   { id: 'p_werkstatt_6', name: 'Schrottkönig-Purpur', colors: { body: '#5b2b6e', accent: '#e3b02a' }, level: 60, flavor: 'Krone nicht inbegriffen.' },
 ];
 
+// ---------- Chassis-Meisterschaft ----------
+// Jedes Chassis sammelt die Run-XP der Runs, die mit ihm gefahren werden. Stufe n ab xp[n − 1] XP. Vorteile (kumulativ):
+//   1: +startBolts Schrauben zum Start · 2: Start-Item (gewöhnlich, Lieblings-Tag des Chassis) · 3: ein vierter Bauplan ·
+//   4: +startBolts2 Schrauben · 5: Meister-Plakette in der Garage (Stolz!)
+export const MASTERY = {
+  xp: [400, 1100, 2200, 3800, 6000],
+  startBolts: 15,
+  startBolts2: 25,
+  perks: ['+15 Start-Schrauben', 'Start-Item des Lieblings-Tags', 'Vierter Bauplan zur Wahl', '+25 Start-Schrauben', 'Meister-Plakette'],
+};
+
 // ---------- Aufträge ----------
 // Immer `active` Aufträge auf dem Klemmbrett; ist einer am Run-Ende erfüllt, gibt es die Belohnung und ein neuer wird
 // gezogen (keine zwei gleichen gleichzeitig). Bedingungen prüfen die Run-Zusammenfassung (garage/workshop.js →
