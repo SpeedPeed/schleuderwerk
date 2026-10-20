@@ -8,6 +8,7 @@
 // FEATURES.firstFree Meter bleiben frei. Alle Positionen liegen auf dem 2-m-Raster der Strecke (TRACK.step).
 import { FEATURES as F, TRACK, PICKUPS, ASCENSION_RULES as AR, REWARDS } from '../data/balance.js';
 import { FEATURE_DEFAULTS, FEATURE_INFO, biomeById } from '../data/biomes.js';
+import { mutatorById } from '../data/mutators.js';
 import { clamp, lerp, DEG } from '../core/math.js';
 
 const STEP = TRACK.step;
@@ -210,7 +211,7 @@ function featureWeights(biome, kind, floor, mods = {}) {
   return out;
 }
 
-export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null, rng, bossId = null, mods = {} }) {
+export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null, rng, bossId = null, mods = {}, mutator = null }) {
   const bio = typeof biome === 'string' ? biomeById(biome) : biome;
   if (!bio) throw new Error(`Unbekanntes Biom ${biome}`);
   if (!rng) throw new Error('generateStageSpec braucht rng');
@@ -218,8 +219,17 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
   const r = rng.fork('features');
   const boss = kind === 'boss' ? (bio.bosses.find((b) => b.id === bossId) || bio.bosses[0]) : null;
   const d = difficultyOf(kind, floor);
-  const target = stageTarget(bio, kind, floor, mods);
+  // Paket D: Mutator (data/mutators.js) – Medaillen-Marken, Bausteine, Wind
+  const mut = kind === 'boss' ? null : mutatorById(mutator);
+  let target = stageTarget(bio, kind, floor, mods);
+  if (mut && mut.medals && mut.medals.bronze) target = Math.round((target * mut.medals.bronze) / 5) * 5;
   const { medals, medalList } = stageMedals(bio, kind, target);
+  if (mut && mut.medals && mut.medals.gold) {
+    medals.gold = Math.max(target + 10, Math.round(medals.gold * mut.medals.gold / (mut.medals.bronze || 1)));
+    if (medals.silver !== undefined) medals.silver = Math.round((medals.bronze + medals.gold) / 2);
+    medals.platin = Math.round(medals.gold * REWARDS.gradeMarks.platin);
+    medals.king = Math.round(medals.gold * REWARDS.gradeMarks.king);
+  }
   const regionEnd = Math.round(medals.gold * F.regionGoldMul);
   const span = regionEnd - F.firstFree;
 
@@ -229,6 +239,7 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
   else {
     const c = bio.features.count;
     let n = Math.round(c[0] + c[1] * floor + (kind === 'elite' ? F.eliteExtra : 0) + (mods.eliteHazards && kind === 'elite' ? AR.eliteHazardExtra : 0));
+    if (mut && mut.featureMul) n = Math.round(n * mut.featureMul);
     n = Math.max(1, Math.min(n, Math.floor(span / F.minSlot)));
     const weights = featureWeights(bio, kind, floor, mods);
     types = [];
@@ -269,6 +280,7 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
   const weather = { name: wx.name, icon: wx.icon, wind: [...wx.wind], gust: wx.gust || 0, rain: !!wx.rain, base: wr.range(wx.wind[0], wx.wind[1]), phase: wr.next() * 10 };
   // Schrottstufe 12: Elite-Etappen bekommen zusätzliche Böen
   if (mods.eliteHazards && kind === 'elite') weather.gust += AR.eliteGust;
+  if (mut) { weather.base += mut.wind || 0; weather.gust += mut.gust || 0; }
 
   // Gefahren für das Etappen-Intro (Reihenfolge des ersten Auftretens)
   const hazards = [];
@@ -296,6 +308,7 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
     hazards,
     weather,
     blueprintX,
+    mutator: mut ? mut.id : null,
   };
 }
 

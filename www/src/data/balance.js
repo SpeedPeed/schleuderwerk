@@ -282,7 +282,7 @@ export const PROGRESSION = {
   targets: {
     firstRun: [8 / 60, 15 / 60],    // erster Run beendet (meist in Akt 1–2; Paket A: schnellere Etappen → ab 8 min)
     firstBossAct1: [0.5, 1],        // erster Akt-1-Boss besiegt (Paket A: ≤ 45 min statt 1–2 h)
-    firstWin: [3, 5],               // erster Run-Sieg (Paket A / OVERHAUL §6: 3–5 h statt 6–10 h)
+    firstWin: [2.5, 5],             // erster Run-Sieg (Paket A: 3–5 h statt 6–10 h; Paket C/D: 2,5–5 h – starke Builds dürfen früher gewinnen)
     allChassis: [15, 25],           // alle Chassis (Paket A: mehr Siege → mehr Kerne; OVERHAUL §6 zielt mit Paket E auf 15–20 h)
     ascension15: [30, 50],          // alles inkl. Schrottstufe 15
   },

@@ -1,4 +1,5 @@
 import { el, fmt, show, icon, cur } from './dom.js';
+import { mutatorById } from '../data/mutators.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeById, bossById, FEATURE_INFO } from '../data/biomes.js';
 import { FX, RUN, REWARDS } from '../data/balance.js';
@@ -68,10 +69,13 @@ export function introBannerHtml(d) {
       + (boss.tips && boss.tips.length ? `<ul class="ri-tips">${boss.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '')
       + `<h4>Belohnung</h4><div class="chips">${rw.map((t) => `<span class="chip good">${t}</span>`).join('')}</div>`;
   }
+  const mut = mutatorById(s.mutator);
+  const mutHtml = mut ? `<div class="ri-mut">${icon(mut.iconId)}<div><b>${esc(mut.name)}</b><span>${esc(mut.desc)}</span></div></div>` : '';
   const asc = d.ascension > 0 ? `<h4>${icon('elite')} Schrottstufe ${d.ascension}</h4><div class="chips">${ascensionSummary(d.ascension).map((t) => `<span class="chip danger">${esc(t)}</span>`).join('')}</div>` : '';
   return `
     <div class="ri-head">${kindSign(def, title)}<div class="ri-sub">${esc(sub)}</div></div>
     ${bossDesc ? `<p class="ri-desc">${esc(bossDesc)}</p>` : ''}
+    ${mutHtml}
     ${bossHtml}
     <div class="ri-goal"><div class="ri-target"><small>ZIEL</small><b>${fmt(s.target)} m</b></div><div class="ri-medals">${medals}</div></div>
     ${retry}

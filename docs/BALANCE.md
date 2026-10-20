@@ -190,14 +190,14 @@ Jedes Item allein (★1) gegen „ohne Items“ (Akt 2 + 3, Etage 2, je 10 Etapp
 |---|---|---|---|---|
 | Erster Run | 8 min–15 min | 9 min | 8 min – 10 min (8/8) | ✔ |
 | Erster Akt-1-Boss besiegt | 0,50 h–1,0 h | 0,70 h | 0,29 h – 1,6 h (8/8) | ✔ |
-| Erster Run-Sieg | 3,0 h–5,0 h | 2,6 h | 0,87 h – 3,4 h (8/8) | ✗ |
-| Alle Chassis | 15,0 h–25,0 h | 17,8 h | 12,4 h – 26,7 h (8/8) | ✔ |
-| Sieg auf Schrottstufe 5 | – | 10,7 h | 8,1 h – 12,7 h (8/8) | – |
-| Sieg auf Schrottstufe 10 | – | 27,4 h | 14,8 h – 41,5 h (8/8) | – |
-| Alles inkl. Schrottstufe 15 | 30,0 h–50,0 h | 47,9 h | 25,8 h – 62,8 h (8/8) | ✔ |
+| Erster Run-Sieg | 3,0 h–5,0 h | 2,2 h | 0,87 h – 3,4 h (8/8) | ✗ |
+| Alle Chassis | 15,0 h–25,0 h | 16,0 h | 13,9 h – 29,4 h (8/8) | ✔ |
+| Sieg auf Schrottstufe 5 | – | 11,0 h | 7,6 h – 13,0 h (8/8) | – |
+| Sieg auf Schrottstufe 10 | – | 30,4 h | 22,2 h – 37,5 h (8/8) | – |
+| Alles inkl. Schrottstufe 15 | 30,0 h–50,0 h | 45,6 h | 36,4 h – 74,0 h (8/8) | ✔ |
 
 - Erster Run: endet in 8/8 Karrieren in Akt 1–2 (Akte: 1, 1, 1, 1, 1, 1, 1, 1).
-- Runs bis Schrottstufe 15: Median 237.5, Siege 16, Etappen 2332; am Ende Ø Slot-Stufe 10,0, 9/9 Chassis, 774546 ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).
+- Runs bis Schrottstufe 15: Median 215.5, Siege 16, Etappen 2218.5; am Ende Ø Slot-Stufe 10,0, 9/9 Chassis, 800939 ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).
 
 **Schlechter Run mit voller Meta** (alle Slots Stufe 10, ganzer Forschungsbaum, Modell ohne Einarbeitung):
 

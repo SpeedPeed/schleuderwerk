@@ -4,6 +4,7 @@ import { Objects } from '../physics/objects.js';
 import { Track, PLATEAU_H } from '../physics/track.js';
 import { generateStageSpec, medalFor, gradeFor } from '../physics/trackGen.js';
 import { BIOMES } from '../data/biomes.js';
+import { mutatorById } from '../data/mutators.js';
 import { makeRng } from '../core/rng.js';
 import { DEG } from '../core/math.js';
 import { Launch } from './launch.js';
@@ -120,13 +121,20 @@ export class Stage {
     this.boltHoard = 0;
     this.hoardMods = { stats: { boostThrust: { mul: 0 } } };
     this.worldMods = { stats: { rollFriction: { xmul: bio.physics?.rollFriction ?? 1 }, landTolDeg: { add: bio.physics?.landTolAdd || 0 } } };
+    // Paket D: Mutator der Etappe (data/mutators.js) – Werte, Schwerkraft, vertauschtes Neigen, eigene Auslöser
+    this.mutator = mutatorById(this.spec.mutator);
+    this.mutatorMods = { stats: (this.mutator && this.mutator.stats) || {} };
+    this.invertTilt = !!(this.mutator && this.mutator.invertTilt);
+    if (this.mutator && this.mutator.triggers) {
+      setup.sources.push({ uid: `mutator:${this.mutator.id}`, id: `mutator_${this.mutator.id}`, kind: 'mutator', name: this.mutator.name, icon: '', tier: 1, scale: 1, triggers: this.mutator.triggers, rules: {} });
+    }
     this.runMods = runModStats(runMods);
     this.mods = new ModState();
     this.updateBoltHoard(false);
     this.stats = this.computeStats();
 
     this.ev = [];
-    this.vehicle = new Vehicle(this.stats, bio.gravity, this.rules);
+    this.vehicle = new Vehicle(this.stats, bio.gravity * ((this.mutator && this.mutator.gravityMul) || 1), this.rules);
     this.vehicle.reset(REST.x, REST.y, REST.angle);
     this.vehicle.ev = this.ev;
     this.vehicle.damageMul = runDamageMul(runMods);   // Schrottstufe 8 „Dosenblech“
@@ -240,7 +248,7 @@ export class Stage {
 
   // ---------- Werte ----------
   computeStats() {
-    return computeStats({ ...this.statInput, extra: [this.worldMods, this.runMods, this.hoardMods], buffs: this.mods.mods() });
+    return computeStats({ ...this.statInput, extra: [this.worldMods, this.mutatorMods, this.runMods, this.hoardMods], buffs: this.mods.mods() });
   }
 
   // Fluch blackCatNap (Schwarze Katze): gleichverteilt eines der ANDEREN Items wählen (nicht von Glück beeinflusst)
@@ -685,7 +693,7 @@ export class Stage {
     this.acc += Math.min(realDt, STAGE.maxFrameDt) * this.timeScale * (this.fastForward ? FF.scale : 1);
 
     const ctl = this.ctl;
-    ctl.tilt = live.tilt;
+    ctl.tilt = this.invertTilt ? -live.tilt : live.tilt;
 
     const v = this.vehicle;
     const ev = this.ev;
@@ -1168,6 +1176,7 @@ export class Stage {
       settled: !!this.settle,
       biome: this.biome.id,
       world: this.biome.id,
+      mutator: this.spec.mutator || null,
     };
     // Testfahrt (Dev-Menü): Schrott wie in Phase 2
     const reward = testDriveReward(r, this.stats, this.biome);

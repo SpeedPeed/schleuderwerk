@@ -816,6 +816,15 @@ textarea {
 .mn-label { position: absolute; top: 100%; margin-top: 8px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: var(--font-head); font-size: 13px; color: var(--paper); text-shadow: 0 2px 0 var(--blueprint); }
 .mn-warn { position: absolute; bottom: 100%; margin-bottom: 14px; left: 50%; transform: translateX(-50%) rotate(-5deg); white-space: nowrap; font-family: var(--font-hand); font-weight: 700; font-size: 16px; color: var(--pencil-red); text-shadow: 0 1px 0 var(--blueprint); pointer-events: none; }
 .mnode.visited { opacity: 0.6; }
+/* Paket D: Mutator-Plakette am Knoten (gesprühte Warnmarke) */
+.mn-mut { position: absolute; right: -6px; top: -6px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--paint-red); color: var(--paper); box-shadow: 0 0 0 2px var(--oil); pointer-events: none; }
+.mn-mut .ic { width: 14px; height: 14px; }
+.ri-mut { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; padding: 7px 9px; border-radius: 3px; color: var(--ink);
+  background: var(--hazard), var(--paint-yellow); background-size: 10px 100%, auto; background-repeat: repeat-y, no-repeat; padding-left: 18px; }
+.ri-mut .ic { width: 22px; height: 22px; flex: 0 0 auto; }
+.ri-mut b { display: block; font-family: var(--font-head); font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; }
+.ri-mut span { font-size: 13.5px; line-height: 1.3; }
 .mnode.visited .ic { color: var(--pencil-red); }
 .mnode.here { box-shadow: 0 0 0 3px var(--paper), 0 0 0 6px var(--pencil-red); opacity: 1; }
 .mnode.reach { background: radial-gradient(circle, transparent 0 58%, var(--c, var(--steel-500)) 60% 72%, transparent 74%), radial-gradient(circle, color-mix(in srgb, var(--c) 30%, var(--blueprint)) 0 100%); }

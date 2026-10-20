@@ -14,6 +14,7 @@
 // opts: { research: [erledigte Forschungs-IDs], eliteWeightAdd, bossId }
 import { MAP } from '../data/balance.js';
 import { NODE_TYPES } from '../data/nodes.js';
+import { MUTATORS, MUTATOR_RULES } from '../data/mutators.js';
 
 export const BOSS_FLOOR = MAP.floors;
 
@@ -131,7 +132,28 @@ export function generateActMap(act, rng, opts = {}) {
       set(node, weights.length ? rng.weighted(weights) : 'stage');
     }
   }
+  assignMutators(floors, act, rng.fork('mutatoren'));
   return { act, floors, boss };
+}
+
+// Paket D – Mutatoren (data/mutators.js): jede Elite einen, normale Etappen ab MUTATOR_RULES.stageMinAct mit
+// stageChance (Akt 1 ab Etage 2 mit act1Chance); auf einer Etage kein Mutator doppelt. Eigener Zufalls-Zweig, damit
+// die übrige Karte (Seeds älterer Läufe) gleich bleibt.
+export function assignMutators(floors, act, rng) {
+  for (const row of floors) {
+    const used = new Set();
+    for (const n of row) {
+      let p = 0;
+      if (n.type === 'elite') p = 1;
+      else if (n.type === 'stage') p = act >= MUTATOR_RULES.stageMinAct ? MUTATOR_RULES.stageChance : n.floor >= 2 ? MUTATOR_RULES.act1Chance : 0;
+      if (!(p > 0) || !rng.chance(p)) continue;
+      const list = MUTATORS.filter((m) => !used.has(m.id) && (!m.eliteOnly || n.type === 'elite'));
+      if (!list.length) continue;
+      const m = rng.pick(list);
+      n.mutator = m.id;
+      used.add(m.id);
+    }
+  }
 }
 
 // Knoten per ID (Etagen + Boss)

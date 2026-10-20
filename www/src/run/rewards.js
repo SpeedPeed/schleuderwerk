@@ -13,6 +13,7 @@ import { ITEMS } from '../data/items.js';
 import { TAG_IDS } from '../data/tags.js';
 import { ascensionScrapBonus } from '../garage/progression.js';
 import { gradeFor } from '../physics/trackGen.js';
+import { mutatorById } from '../data/mutators.js';
 
 const actKey = (act) => Math.max(1, Math.min(3, act | 0));
 const GOLDISH = new Set(['gold', 'platin', 'king']);
@@ -68,6 +69,9 @@ export function stageRewards(act, kind, result, { roll = 1, firstEncounter = tru
     // Notlandung: Teil-Belohnung (Schrauben × RUN.emergency.boltMul)
     base.bolts = Math.round(REWARDS.bolts[a] * km * RUN.emergency.boltMul);
   }
+  // Paket D: harte Mutatoren zahlen mehr (rewardMul auf Grund-Schrauben und Weiten-Schrott)
+  const mut = mutatorById(result.mutator);
+  if (mut && mut.rewardMul) { base.bolts = Math.round(base.bolts * mut.rewardMul); base.scrap = Math.round(base.scrap * mut.rewardMul); }
   const combo = comboRewards(result.tricks);
   return {
     bolts: base.bolts + combo.bolts + Math.max(0, Math.floor(result.bolts || 0)),

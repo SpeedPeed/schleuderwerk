@@ -394,7 +394,7 @@ test('Meilensteine: Zielzeiten, alle Chassis, Schrottstufen 5/10/15', () => {
     assert.ok(MILESTONES.some((m) => m.id === id), id);
   }
   const t = milestoneTarget(MILESTONES.find((m) => m.id === 'firstWin'));
-  assert.deepEqual(t, { min: 3 * 3600, max: 5 * 3600 });   // Paket A: OVERHAUL §6
+  assert.deepEqual(t, { min: 2.5 * 3600, max: 5 * 3600 });   // Paket A: OVERHAUL §6 3–5 h; Paket C/D: 2,5–5 h
   const save = defaultSave();
   save.meta.totalPlaytime = 1234;
   assert.equal(checkAllChassis(save), false);
