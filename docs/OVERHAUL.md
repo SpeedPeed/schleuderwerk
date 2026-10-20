@@ -802,7 +802,11 @@ Schrottstufe 15 sonst über 50 h – der frühere 8-Karrieren-Wert war Glück). 
 Schrottstufe 15 ≈ 36 h. Das zweite Chassis kommt im Simulator erst nach ≈ 5,9 h, weil der Bot Forschung „billigste
 zuerst“ kauft; gezielt geforscht reicht ≈ 1 h.
 
-**Offen:** Tagesstrecke, Chassis-Meisterschaft, Sonderprüfungen, Endlos-Garage.
+5. **Tagesstrecke** (`garage/daily.js`): fester Seed je Tag, Tages-Mutator, 1 Blaupause je Tag, alle 7 Tage in Folge
+   ein Kern, Teilen-Code.
+6. **Chassis-Meisterschaft**: Stufen 1–5 je Chassis (Start-Schrauben, Start-Item, vierter Bauplan, Plakette).
+
+**Offen:** Sonderprüfungen, Endlos-Garage nach dem Sieg.
 
 ---
 
@@ -829,6 +833,27 @@ zuerst“ kauft; gezielt geforscht reicht ≈ 1 h.
 
 **Erfolgskriterien:** Flug-Anteil ≥ 50 % (anatomy), ≥ 6 Landungen/Stunts je Etappe im Median, Etappe 12–16 s; alle
 Korridore aus V2-DESIGN §8 (angepasst durch Paket E) im Simulator erfüllt; Rauchtests grün.
+
+### Umsetzungsstand Paket F
+
+> Stand 21.10.2026.
+
+**Umgesetzt**
+1. **Abschuss mit Varianz**: grüne Zone wandert stärker (Mitte 0,66–0,9); neue rote **Überdruck-Zone** ganz oben
+   (Kraft ≥ 95 %): +20 % Tempo, aber 8 Schaden (`LAUNCH.overdrive`, nur beim echten Loslassen – Bot und Hochrechnung
+   bleiben gleich).
+2. **Kombo-Momente**: Überschreitet der Kombo-Multiplikator ×2/×3/×4 → große Einblendung, Klang, kurze Zeitlupe; Ketten
+   ab 4 Gliedern ebenfalls Zeitlupe (`FX.komboMarks`, `FX.bigChainLinks`).
+3. **Kalibrierung** aller neuen Systeme mit den Simulatoren (Pakete C–E), `npm run playtest` fasst die Messungen
+   zusammen (Etappen-Arten, Synergien, Progression).
+
+**Messwerte** (`anatomy.mjs`, Bot ohne Items): Flug-Anteil 54 % (Ziel ≥ 50 % ✔), Echtzeit je Etappe 10,5 s
+(mit Tippen 6,8 s); mit Set-Builds 24–70 s, weil starke Builds sehr weit fliegen.
+
+**Nicht umgesetzt / offen**: Schleuder als 8. Teile-Slot, Boden-Hüpfer und dichtere Rampen im hinteren Teil (der
+Flug-Anteil ist schon erreicht – jede Physik-Änderung verlangt neue Messung aller Zielmarken), Kamera-Zoom bei Ketten,
+Partikel in Tag-Farbe. ≥ 6 Landungen je Etappe wird vom Bot ohne Items nicht erreicht (Median 2); mit Items und
+Tricks deutlich mehr.
 
 ---
 

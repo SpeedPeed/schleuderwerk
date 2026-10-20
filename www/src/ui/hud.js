@@ -1,6 +1,6 @@
 import { el, fmt, show, icon } from './dom.js';
 import { TXT } from '../data/texts.js';
-import { KOMBO, RESOURCES, SOFTCAPS, ITEMS, STAGE } from '../data/balance.js';
+import { KOMBO, RESOURCES, SOFTCAPS, ITEMS, STAGE, LAUNCH } from '../data/balance.js';
 import { liveStageScrap } from '../run/rewards.js';
 import { DEG } from '../core/math.js';
 import { itemBarHtml, esc } from './items.js';
@@ -86,6 +86,7 @@ export class Hud {
       ${abBtns}
       <div class="aim hidden" data-id="aim">
         <div class="power-meter">
+          <div class="pm-over" style="height:${(1 - LAUNCH.overdrive.from) * 100}%"></div>
           <div class="pm-band" data-id="band"></div>
           <div class="pm-fill" data-id="fill"></div>
         </div>
@@ -280,6 +281,8 @@ export class Hud {
       }
       const inBand = L.charging && L.inSweetSpot;
       if (this.changed('inBand', inBand)) q.fill.classList.toggle('in-band', inBand);
+      const inOver = L.charging && L.inOverdrive;
+      if (this.changed('inOver', inOver)) q.fill.classList.toggle('in-over', inOver);
       const ang = Math.round(L.angle / DEG);
       if (this.changed('angle', ang)) q.angle.textContent = `${ang}°`;
       return;

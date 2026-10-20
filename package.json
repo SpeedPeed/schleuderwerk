@@ -12,7 +12,8 @@
     "serve": "python tools/serve.py",
     "android:prepare": "npx cap add android && node tools/patch-android.mjs && npx cap sync android",
     "android:sync": "npx cap sync android",
-    "android:build": "cd android && gradlew assembleDebug"
+    "android:build": "cd android && gradlew assembleDebug",
+    "playtest": "node tools/playtest/goals.mjs --n 12 && node tools/playtest/synergy.mjs --n 8 --runs 12 && node tools/sim/progression.mjs --careers 8"
   },
   "dependencies": {
     "@capacitor/android": "8.5.3",

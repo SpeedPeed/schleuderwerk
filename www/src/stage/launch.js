@@ -17,11 +17,14 @@ export class Launch {
     this.armed = false;   // erst nach einmal Loslassen scharf (kein Fehlstart durch alten Finger)
     this.fired = false;
     this.perfect = false;
+    this.overdrive = false;
   }
 
   get sweetLo() { return this.sweet - this.width / 2; }
   get sweetHi() { return this.sweet + this.width / 2; }
   get inSweetSpot() { return Math.abs(this.power - this.sweet) <= this.width / 2; }
+  // Paket F: Überdruck-Zone ganz oben (rot)
+  get inOverdrive() { return this.power >= LAUNCH.overdrive.from && !this.inSweetSpot; }
 
   // ctl: { hold: bool, dAngle: Winkeländerung in rad }
   // Ergebnis: 'fire' (abgeschossen), 'cancel' (zu schwach losgelassen) oder null
@@ -35,6 +38,7 @@ export class Launch {
       if (this.power >= LAUNCH.minPower) {
         this.fired = true;
         this.perfect = this.inSweetSpot;
+        this.overdrive = this.inOverdrive;
         return 'fire';
       }
       this.power = 0;

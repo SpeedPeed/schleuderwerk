@@ -37,8 +37,8 @@ Zuerst lesen: diese Datei → `docs/OVERHAUL.md` (Plan + Umsetzungsstände) → 
 | **B** UI-Stil „Schrottplatz-Werkstatt“ | ✅ fertig („Umsetzungsstand Paket B“, `docs/STIL.md`) |
 | **C** Synergien | ✅ fertig („Umsetzungsstand Paket C“) |
 | **D** Abwechslung | ✅ weitgehend fertig („Umsetzungsstand Paket D“, Lücken dort aufgeführt) |
-| **E** Meta | 🟡 Werkstatt-Stufe, Aufträge, Album fertig; Tagesstrecke/Meisterschaft/Sonderprüfungen offen |
-| **F** Etappen-Gefühl & Kalibrierung | ⬜ offen |
+| **E** Meta | ✅ Werkstatt-Stufe, Aufträge, Album, Tagesstrecke, Chassis-Meisterschaft; offen: Sonderprüfungen, Endlos-Garage |
+| **F** Etappen-Gefühl & Kalibrierung | 🟡 Überdruck-Zone, Kombo-Momente, Kalibrierung; Lücken im „Umsetzungsstand Paket F“ |
 | APK + PC-Datei bauen und schicken | ✅ Zwischenstand nach B+C verschickt (APK 1.0.0.120); am Ende nochmal |
 
 ### Paket B – was noch fehlt

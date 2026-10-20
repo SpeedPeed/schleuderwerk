@@ -537,6 +537,9 @@ html:not(.kbd) .ability-btn .ab-key { display: none; }   /* Tasten-Beschriftung 
 .pm-band { position: absolute; left: 0; right: 0; background: var(--green-band); border-top: 2px solid var(--good-hi); border-bottom: 2px solid var(--good-hi); }
 .pm-fill { position: absolute; left: 4px; right: 4px; bottom: 0; border-radius: 8px; background: repeating-linear-gradient(0deg, var(--oil) 0 1px, transparent 1px 9px), var(--paint-yellow); }
 .pm-fill.in-band { background: repeating-linear-gradient(0deg, var(--oil) 0 1px, transparent 1px 9px), var(--good-hi); }
+/* Paket F: Überdruck-Zone ganz oben (rot schraffiert) */
+.pm-over { position: absolute; left: 0; right: 0; top: 0; background: repeating-linear-gradient(-45deg, var(--paint-red) 0 4px, var(--rust-700) 4px 8px); border-bottom: 2px solid var(--bad-hi); }
+.pm-fill.in-over { background: repeating-linear-gradient(0deg, var(--oil) 0 1px, transparent 1px 9px), var(--bad-hi); }
 .aim-angle { position: absolute; right: 6px; top: calc(32% - 38px); width: 52px; text-align: center; font-family: var(--font-head); font-size: 20px; color: var(--paper); text-shadow: 0 2px 0 var(--oil); }
 .aim-hint { position: absolute; left: 50%; bottom: calc(var(--safe-bottom) + 60px); transform: translateX(-50%); width: min(86vw, 360px); text-align: center; padding: 12px 16px; font-size: 16px; line-height: 1.35; color: var(--ink); background: var(--noise), var(--paper); }
 .aim-hint small { color: var(--paint-green); font-weight: 700; }

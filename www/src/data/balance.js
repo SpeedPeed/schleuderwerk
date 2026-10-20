@@ -503,8 +503,11 @@ export const LAUNCH = {
   angleMax: 70,
   angleDefault: 32,
   dragSens: 120,           // Grad Winkeländerung pro Bildschirmhöhe senkrechtes Ziehen (hoch = steiler)
-  sweetMin: 0.7,           // grüne Zone: Mitte liegt zufällig zwischen sweetMin und sweetMax …
+  sweetMin: 0.66,          // grüne Zone: Mitte liegt zufällig zwischen sweetMin und sweetMax … (Paket F: 0,7 → 0,66 – wandert mehr)
   sweetMax: 0.9,
+  // Paket F: Überdruck – ganz oben (Kraft ≥ from, nicht in der grünen Zone) schießt die Schleuder mit speedMul mehr
+  // Tempo ab, kostet aber damage Haltbarkeit. Nur beim echten Loslassen (nicht bei launchNow/Bot).
+  overdrive: { from: 0.95, speedMul: 1.2, damage: 8 },
   // Breite der Zone und Tempo-Bonus sind Stats (sweetSpotWidth, launchPerfectBonus)
   minPower: 0.12,          // darunter wird der Abschuss abgebrochen
   maxPullMeters: 4.5,      // so weit wird das Auto sichtbar zurückgezogen
@@ -704,7 +707,9 @@ export const FX = {
   particleDefaults: { n: 8, dir: 1.5708, spread: 6.2832, speed: 6, life: 0.8, jitter: 0.4, zSpread: 1.5, zSpeed: 2, size: 0.4, z: 0, gravity: 0 },
   slowmoScale: 0.3,
   slowmoRecover: 4,        // so schnell läuft die Zeitlupe aus (1/s)
-  slowmo: { perfectLaunch: 0.35, multiFlip: 0.4, perfectLanding: 0.25 },
+  slowmo: { perfectLaunch: 0.35, multiFlip: 0.4, perfectLanding: 0.25, komboMark: 0.4, bigChain: 0.3 },
+  komboMarks: [2, 3, 4],   // Paket F: Kombo-Multiplikator überschreitet ×2/×3/×4 → Einblendung + Zeitlupe
+  bigChainLinks: 4,        // Paket F: Kette ab so vielen Gliedern → kurze Zeitlupe
   shake: { launch: 0.25, hit: 0.8, crash: 0.9, bumpyMax: 0.6, bumpyDiv: 30, landMax: 0.5, landDiv: 35, lightning: 0.5 },
   landDustDiv: 20,         // Staubmenge = Aufprall / landDustDiv
   landSoundDiv: 25,

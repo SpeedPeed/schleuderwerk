@@ -373,6 +373,7 @@ export class Stage {
     k.mult = Math.min(KOMBO.maxMult, k.mult + C.komboMult * (links - Math.max(prev, C.minLinks - 1)));
     k.timer = 0;
     if (links > this.maxCountedChain) this.maxCountedChain = links;
+    if (prev < FX.bigChainLinks && links >= FX.bigChainLinks) this.startSlowmo(FX.slowmo.bigChain);   // Paket F
     this.hooks.chain(links, { bolts: pay, count: this.chains, total: this.chainBolts });
   }
 
@@ -521,8 +522,15 @@ export class Stage {
   fire() {
     const L = this.launch;
     const perfect = L.perfect;
-    const speed = this.stats.launchSpeed * L.power * (perfect ? 1 + this.stats.launchPerfectBonus : 1);
+    // Paket F: Überdruck – mehr Tempo, aber Schaden an der Kiste
+    const od = !!L.overdrive && !perfect;
+    const speed = this.stats.launchSpeed * L.power * (perfect ? 1 + this.stats.launchPerfectBonus : 1) * (od ? LAUNCH.overdrive.speedMul : 1);
     this.vehicle.launch(speed, L.angle, perfect);
+    if (od) {
+      this.vehicle.damage(LAUNCH.overdrive.damage, 'overdrive');
+      this.hooks.popup('ÜBERDRUCK! Volle Kanne', 'warn');
+      this.hooks.shake(FX.shake.hit);
+    }
     this.phase = 'fly';
     this.hooks.launched();
     this.perfectLaunch = perfect;
@@ -584,7 +592,12 @@ export class Stage {
 
   addChain(pts, mult, label, kind = 'good') {
     this.chain.pts += pts;
+    const before = this.chain.mult;
     this.chain.mult = Math.min(KOMBO.maxMult, this.chain.mult + mult);
+    // Paket F: Kombo-Marken (×2/×3/×4) – kurz Zeitlupe und große Einblendung
+    for (const m of FX.komboMarks) {
+      if (before < m && this.chain.mult >= m) { this.startSlowmo(FX.slowmo.komboMark); this.hooks.popup(`KOMBO ×${m}!`, 'big'); this.hooks.sfx('medal', m - 1); }
+    }
     this.chain.timer = 0;
     this.hooks.popup(label, kind);
     this.hooks.sfx('trick', this.chain.mult);
