@@ -39,7 +39,7 @@ Zuerst lesen: diese Datei → `docs/OVERHAUL.md` (Plan + Umsetzungsstände) → 
 | **D** Abwechslung | ⬜ offen |
 | **E** Meta | ⬜ offen |
 | **F** Etappen-Gefühl & Kalibrierung | ⬜ offen |
-| APK + PC-Datei bauen und schicken | ⬜ nach den Paketen (oder als Zwischenstand nach B+C) |
+| APK + PC-Datei bauen und schicken | ✅ Zwischenstand nach B+C verschickt (APK 1.0.0.120); am Ende nochmal |
 
 ### Paket B – was noch fehlt
 
@@ -82,3 +82,11 @@ Anleitung: `docs/APK-ANLEITUNG.md`, GitHub-Workflow `.github/workflows/android-a
 `tools/patch-android.mjs`, fester Schlüssel `keystore/debug.keystore` (damit Updates über die alte App installierbar sind).
 Erfahrungen aus dem letzten Bau: build-tools **35.0.0** verwenden (34 hatte einen d8-Absturz); Maven Central liefert
 gelegentlich HTTP 429 → Gradle mit `--max-workers=1` und Wiederholungsschleife.
+Lokaler Bau in der Cloud-Sitzung (20.10., funktioniert): Android-SDK nach `/tmp/android-sdk` (commandlinetools von
+dl.google.com, `sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"`), dann
+`rm -rf android && npx cap add android && BUILD_NUMBER=<n> node tools/patch-android.mjs && npx cap sync android`,
+`echo sdk.dir=/tmp/android-sdk > android/local.properties`, `./gradlew assembleDebug --no-daemon --max-workers=1
+--init-script <mirror.gradle>` – das Init-Skript ersetzt `repo.maven.apache.org` durch den Google-Spiegel
+`https://maven-central.storage-download.googleapis.com/maven2/` (Maven Central gab dauerhaft 429). Build-Nummern:
+GitHub-Releases bis 2, lokal zuletzt **120** – die nächste APK braucht eine höhere Nummer. Signatur prüfen:
+`apksigner verify --print-certs` = SHA-256 78ee3533… (keystore/debug.keystore). Dateien zum Verschicken: `ausgabe/`.
