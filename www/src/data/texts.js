@@ -243,6 +243,17 @@ export const TXT = {
     albumDone: 'Sammelalbum',
   },
 
+  // Paket E: Tagesstrecke
+  daily: {
+    title: 'TAGESSTRECKE',
+    go: 'Fahren',
+    streak: (n) => (n > 0 ? `Serie ${n} Tag${n === 1 ? '' : 'e'}` : 'Serie startet heute'),
+    reward: (bp, core) => `Heute für alle gleich. Erste Fahrt: ${bp} Blaupause, alle ${core} Tage in Folge ein Kern.`,
+    done: (best) => `Heute schon gefahren${best ? ` – Bestwert: ${best.won ? 'Sieg' : `Akt ${best.act}`}` : ''}. Nochmal fahren geht, Belohnung gibt es morgen wieder.`,
+    end: 'Tagesstrecke',
+    code: 'Teilen-Code',
+  },
+
   // Paket C: Synergien – Tag-Stärke, Rezepte, Bauplan-Start, Ketten
   synergy: {
     tagLevel: (tag, n, pct) => `${tag} Stufe ${n} · +${pct} %`,

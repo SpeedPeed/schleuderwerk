@@ -53,6 +53,7 @@ import { backAction } from './ui/backButton.js';
 import { TXT } from './data/texts.js';
 import { activeRecipes } from './items/recipes.js';
 import { goalUnit } from './stage/goals.js';
+import { dayKey } from './garage/daily.js';
 import { FxOverlay } from './ui/fxOverlay.js';
 import { applyInputMode, inputMode } from './ui/inputMode.js';
 import { KeyNav } from './ui/keyNav.js';
@@ -179,6 +180,7 @@ const garage = new GarageScreen(uiRoot, {
   onResearch: (id) => researchAction(id),
   onSettings: () => { sfx.click(); menus.openSettings(); },
   onStart: () => { sfx.click(); save.run ? openMap() : startRun(); },
+  onDaily: () => { sfx.click(); if (!save.run) startRun({ daily: dayKey() }); },
   onGiveUp: () => giveUpRun(),
   onDenied: (t) => { sfx.denied(); popups.show(t, 'info'); },
   onCompendium: () => { sfx.click(); itemSheet.openCompendium({ codex: save.codex }); },
@@ -865,10 +867,11 @@ function later(fn, mul = 1) {
 }
 
 // ---------- Run ----------
-function startRun() {
+function startRun(opts = {}) {
   const lo = buildLoadout(save);
   if (!save.garage.ownedChassis.includes(lo.chassis.id)) return;
-  save.run = runLogic.newRun(save, { blueprint: true });   // Paket C: Bauplan-Start (erste Auswahl beim Öffnen der Karte)
+  // Paket C: Bauplan-Start (erste Auswahl beim Öffnen der Karte); Paket E: opts.daily = Tagesstrecke
+  save.run = runLogic.newRun(save, { blueprint: true, daily: opts.daily || null });
   markMilestone(save, 'firstRunStart');
   writeSave(save);
   openMap();

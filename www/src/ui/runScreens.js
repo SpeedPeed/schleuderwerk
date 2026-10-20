@@ -48,6 +48,14 @@ function weatherText(w) {
 // d: { spec, node, attempts, durability, durabilityMax, ascension, towPct, firstBoss, twin, back }
 // Paket E: Werkstatt-Stufe, erledigte Aufträge und Album am Run-Ende (Slay-the-Spire-Prinzip: der Balken füllt sich)
 const rwHtml = (rw) => (rw ? [rw.scrap ? cur('schrott', fmt(rw.scrap)) : '', rw.blueprints ? cur('blaupause', fmt(rw.blueprints)) : '', rw.cores ? cur('kern', fmt(rw.cores)) : '', rw.paint ? `${icon('lack')} Lack` : ''].filter(Boolean).join(' ') : '');
+function dailyEndHtml(d) {
+  if (!d) return '';
+  const rw = d.first ? rwHtml(d.reward) : '';
+  return `<h4>${icon('karte')} ${TXT.daily.end} ${d.key.slice(6, 8)}.${d.key.slice(4, 6)}. <small>${esc(TXT.daily.streak(d.streak))}</small></h4>
+    <div class="sheet-paper me-box">${rw ? `<div class="me-row done"><span>${icon('haken')} Erste Fahrt heute</span><b>${rw}</b></div>` : ''}
+      <div class="me-row"><span>${TXT.daily.code}</span><b class="me-code">${esc(d.code)}</b></div></div>`;
+}
+
 function metaHtml(m) {
   if (!m) return '';
   const W = TXT.workshop;
@@ -374,6 +382,7 @@ export class RunScreens {
       <h4>Belohnung für die Garage <small>(schon unterwegs gutgeschrieben – hier die Summe)</small></h4>
       <div class="sheet-paper"><div class="res-rows">${rows}</div>
       <div class="res-total">${icon('schrott')} <span data-count="${p.scrap}">+0</span>${p.blueprints ? ` · ${cur('blaupause', fmt(p.blueprints))}` : ''}${p.cores ? ` · ${cur('kern', fmt(p.cores))}` : ''}</div></div>
+      ${dailyEndHtml(res.daily)}
       ${metaHtml(res.meta)}
       <div class="btn-row"><button class="btn btn-primary" data-a="garage">${icon('garage')} ${E.garage}</button></div>`);
     this.bind('[data-a=garage]', onGarage);

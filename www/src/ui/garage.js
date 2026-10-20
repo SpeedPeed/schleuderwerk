@@ -16,6 +16,8 @@ import { TAG_IDS, TAGS, SET_LEVELS, setId, tagById } from '../data/tags.js';
 import { RESEARCH } from '../data/research.js';
 import { workshopState, levelCost, nextReward, contractById, albumProgress } from '../garage/workshop.js';
 import { ALBUM, WORKSHOP } from '../data/workshop.js';
+import { dailyInfo, DAILY } from '../garage/daily.js';
+import { mutatorById } from '../data/mutators.js';
 
 // Paket E: Belohnung als kleine Währungs-Plaketten ({ scrap, blueprints, cores, paint })
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -357,9 +359,22 @@ export class GarageScreen {
         <div class="gw-bar"><div class="gw-label">${TXT.workshop.level} ${w.level}${max ? '' : ` · ${fmt(w.xp)}/${fmt(need)} XP`}</div>
           <div class="sb-track"><div class="sb-fill" style="width:${pct}%"></div></div>
           ${rw ? `<div class="gw-next">${TXT.workshop.next} ${rewardHtml(rw)}</div>` : ''}</div></div>
+      ${this.dailyHtml()}
       <div class="gw-board"><h4>${icon('bleistift')} ${TXT.workshop.contracts}</h4>
         ${contracts.map((c) => `<div class="gw-c"><span>${esc(c.text)}</span><b>${rewardHtml(c.reward)}</b></div>`).join('') || `<p class="small">${TXT.workshop.noContracts}</p>`}
       </div>`;
+    const dg = this.q.workshop.querySelector('[data-id=dailygo]');
+    if (dg) dg.onclick = () => this.h.onDaily && this.h.onDaily();
+  }
+
+  // Paket E: Tagesstrecke – Tages-Mutator, Serie, Knopf (nur ohne laufenden Run)
+  dailyHtml() {
+    const d = dailyInfo(this.save);
+    const m = mutatorById(d.mutator);
+    const D = TXT.daily;
+    const status = d.done ? D.done(d.best) : D.reward(DAILY.blueprints, DAILY.streakCore);
+    return `<div class="gw-daily"><div><b>${icon('karte')} ${D.title}</b><span>${m ? `${icon(m.iconId)} ${esc(m.name)}` : ''} · ${D.streak(d.streak)}</span><small>${esc(status)}</small></div>
+      ${this.save.run ? '' : `<button class="btn btn-secondary small-btn" data-id="dailygo">${D.go}</button>`}</div>`;
   }
 
   renderStatsTab() {

@@ -54,3 +54,30 @@ test('Sammelalbum: Schwellen nach Kodex, jede nur einmal', () => {
   assert.ok(!b.album.some((x) => x.id === 'a_items_10'), 'nur einmal');
   assert.ok(ALBUM.every((x) => x.reward && (x.reward.scrap || x.reward.blueprints || x.reward.cores)));
 });
+
+// ---------- Paket E4: Tagesstrecke ----------
+import { dayKey, prevKey, dailyInfo, finishDaily, dailyMutator } from '../www/src/garage/daily.js';
+import * as R from '../www/src/run/runState.js';
+
+test('Tagesstrecke: gleicher Tag = gleiche Karte und Mutator, Belohnung einmal je Tag, Serie über Tage', () => {
+  assert.equal(dayKey(new Date(2026, 9, 21)), '20261021');
+  assert.equal(prevKey('20261101'), '20261031');
+  const a = R.newRun(defaultSave(), { daily: '20261021' }), b = R.newRun(defaultSave(), { daily: '20261021' });
+  assert.equal(a.seed, b.seed);
+  assert.deepEqual(a.map, b.map);
+  assert.equal(a.ascension, 0);
+  assert.equal(a.daily.mutator, dailyMutator('20261021'));
+  const n = a.map.floors[1].find((x) => x.type === 'stage' && !x.mutator);
+  if (n) assert.equal(R.stageSpecFor(a, n).mutator, a.daily.mutator);
+  const s = defaultSave();
+  const bp0 = s.meta.blueprints;
+  const r1 = finishDaily(s, { daily: { key: '20261020' }, act: 2, stats: { dist: 1234 } }, false);
+  assert.ok(r1.first && r1.streak === 1 && s.meta.blueprints === bp0 + 1);
+  assert.match(r1.code, /^SW-T-20261020-A2-1234m$/);
+  const r2 = finishDaily(s, { daily: { key: '20261020' }, act: 3, stats: {} }, true);
+  assert.ok(!r2.first && s.meta.blueprints === bp0 + 1, 'nur einmal je Tag');
+  assert.equal(s.daily.best['20261020'].act, 4);
+  const r3 = finishDaily(s, { daily: { key: '20261021' }, act: 1, stats: {} }, false);
+  assert.equal(r3.streak, 2);
+  assert.equal(dailyInfo(s, new Date(2026, 9, 23)).streak, 0, 'Serie gerissen');
+});

@@ -6,6 +6,7 @@ import { sanitizeGarage, partBasePrice, upgradeCostTotal } from '../garage/garag
 import { SLOTS, partById } from '../data/index.js';
 import { isValidRun, normalizeRun } from '../run/runState.js';
 import { workshopState } from '../garage/workshop.js';
+import { dailyState } from '../garage/daily.js';
 
 const KEY = 'schleuderwerk.save';
 export const BACKUP_KEY = 'schleuderwerk.save.bak';
@@ -41,6 +42,8 @@ export function defaultSave() {
     story: { seen: {} },
     // Paket E: Werkstatt-Stufe, Auftragsbrett, Sammelalbum (garage/workshop.js → workshopState repariert/ergänzt)
     workshop: { level: 1, xp: 0, contracts: { active: [], done: 0, rolls: 0 }, album: {} },
+    // Paket E: Tagesstrecke (garage/daily.js) – last = zuletzt belohnter Tag 'JJJJMMTT', streak = Tage in Folge
+    daily: { last: null, streak: 0, best: {} },
     createdAt: Date.now(),
     savedAt: Date.now(),
   };
@@ -215,6 +218,7 @@ export function migrate(data) {
   for (const [k, t] of Object.entries(data.tutorial.seen)) if (t !== 1) delete data.tutorial.seen[k];
   for (const [k, t] of Object.entries(data.story.seen)) if (t !== 1 || !/^ev_[a-z0-9_]+$/.test(k)) delete data.story.seen[k];
   workshopState(data);   // Paket E
+  dailyState(data);
   // Einstellungen: Lautstärken 0…1, Grafikqualität nur bekannte Stufen
   for (const k of ['sfxVol', 'musicVol']) data.settings[k] = Math.max(0, Math.min(1, data.settings[k]));
   if (!Object.prototype.hasOwnProperty.call(RENDER.pixelRatio, data.settings.quality)) data.settings.quality = RENDER.defaultQuality;

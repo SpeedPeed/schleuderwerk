@@ -43,6 +43,7 @@ import { generateStageSpec } from '../physics/trackGen.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { markMilestone, ascensionMods, ascensionState, ascensionCoreReward, recordRunEnd } from '../garage/progression.js';
 import { grantMeta } from '../garage/workshop.js';
+import { dailyMutator, dailySeed, finishDaily } from '../garage/daily.js';
 import { computeStats } from '../items/statMods.js';
 import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts, MAX_TIER } from '../items/inventory.js';
 import { TAG_IDS } from '../data/tags.js';
@@ -132,13 +133,15 @@ export function runStageSetup(run, save = null) {
   };
 }
 
-// Neuen Run aus der aktuellen Garage-Auswahl. opts: { seed, ascension, blueprint } – ohne ascension gilt die in der
-// Garage gewählte Schrottstufe (save.ascension.selected, höchstens die freigeschaltete); blueprint: Paket C Bauplan-Start.
+// Neuen Run aus der aktuellen Garage-Auswahl. opts: { seed, ascension, blueprint, daily } – ohne ascension gilt die in der
+// Garage gewählte Schrottstufe (save.ascension.selected, höchstens die freigeschaltete); blueprint: Paket C Bauplan-Start;
+// daily: Paket E Tagesstrecke ('JJJJMMTT' → fester Seed, Tages-Mutator, Schrottstufe 0).
 export function newRun(save, opts = {}) {
-  const seed = (opts.seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
+  const seed = (opts.daily ? dailySeed(String(opts.daily)) : opts.seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
   const lo = buildLoadout(save);
   const asc = save && save.meta ? ascensionState(save) : null;
-  const level = Math.max(0, Math.min(15, opts.ascension ?? (asc ? asc.selected : 0)) | 0);
+  // Paket E: Tagesstrecke (opts.daily = 'JJJJMMTT') – Seed aus dem Datum, Schrottstufe 0, Tages-Mutator
+  const level = opts.daily ? 0 : Math.max(0, Math.min(15, opts.ascension ?? (asc ? asc.selected : 0)) | 0);
   const am = ascensionMods(level);
   const parts = {};
   for (const slot of SLOTS) if (lo.parts[slot]) parts[slot] = { id: lo.parts[slot].id, level: lo.parts[slot].level };
@@ -166,6 +169,7 @@ export function newRun(save, opts = {}) {
     reserve: [],
     seenEvents: [],
     blueprintTag: null,
+    daily: opts.daily ? { key: String(opts.daily), mutator: dailyMutator(String(opts.daily)) } : null,
     pendingChoices: [],
     poolAll: !!BAL_ITEMS.devAllPools,
     runMods: {
@@ -252,6 +256,7 @@ export function normalizeRun(run) {
   if (!Array.isArray(run.seenEvents)) run.seenEvents = [];
   // Paket C: Bauplan-Tag (Tag-Bias × SYNERGY.bias.blueprintMul); ältere Runs: keiner
   if (typeof run.blueprintTag !== 'string' || !TAG_IDS.includes(run.blueprintTag)) run.blueprintTag = null;
+  if (!isObj(run.daily) || !/^\d{8}$/.test(run.daily.key || '')) run.daily = null;   // Paket E: Tagesstrecke
   if (!Array.isArray(run.research)) run.research = [];
   // Paket A: schon gutgeschriebene Run-Belohnung (ältere Runs: noch nichts – alles kommt am Run-Ende)
   if (isObj(run.earned)) {
@@ -325,7 +330,7 @@ export function stageSpecFor(run, node) {
   return generateStageSpec({
     biome: currentBiome(run), kind, floor: n.floor, act: run.act, rng,
     bossId: kind === 'boss' ? run.bossIds[run.act] || n.bossId : null,
-    mutator: kind === 'boss' ? null : n.mutator || null,
+    mutator: kind === 'boss' ? null : n.mutator || (run.daily && run.daily.mutator) || null,
     goal: kind === 'boss' ? null : n.goal || null,
     mods: { targetMul: am.targetMul || 1, bossTargetMul: (am.bossTargetMul || 1) * tired, eliteHazards: !!am.eliteHazards },
   });
@@ -825,8 +830,9 @@ export function endRun(save, run = save.run) {
   const asc = recordRunEnd(save, run, { won: run.over.won, act: run.act, reason: run.over.reason, stages: run.stats.stages, cleared: run.stats.cleared, scrap: payout.scrap, time });
   // Paket E: Werkstatt-XP, Aufträge, Sammelalbum (garage/workshop.js)
   const meta = grantMeta(save, run, { won: run.over.won });
+  const daily = run.daily ? finishDaily(save, run, run.over.won) : null;
   save.run = null;
-  return { won: run.over.won, reason: run.over.reason, act: run.act, ascension: run.ascension || 0, unlockedAscension: asc.unlocked, payout, stats: { ...run.stats, medals: { ...run.stats.medals } }, bolts: run.bolts, time, meta };
+  return { won: run.over.won, reason: run.over.reason, act: run.act, ascension: run.ascension || 0, unlockedAscension: asc.unlocked, payout, stats: { ...run.stats, medals: { ...run.stats.medals } }, bolts: run.bolts, time, meta, daily };
 }
 
 // ---------- Dev-Menü ----------
