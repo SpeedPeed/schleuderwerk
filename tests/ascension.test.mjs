@@ -156,11 +156,11 @@ test('Stufe 6 startCurse: jeder Run startet mit einem verfluchten Item', () => {
   assert.equal(runAt(5).run.inventory.filter((e) => itemById(e.itemId).rarity === 'cursed').length, 0);
 });
 
-test('Stufe 7 bossTargetMul: Boss-Zielmarken zusätzlich × 1,12', () => {
+test('Stufe 7 bossTargetMul: Boss-Zielmarken zusätzlich × 1,06', () => {
   const b = biomeForAct(1);
   const { run } = runAt(7);
   const spec = R.stageSpecFor(run, run.map.boss);
-  assert.equal(spec.target, Math.round((b.targets.boss * 1.12 * 1.08) / 5) * 5);
+  assert.equal(spec.target, Math.round((b.targets.boss * 1.06 * 1.08) / 5) * 5);
   assert.equal(stageTarget(b, 'stage', 0, ascensionMods(7)), Math.round((b.targets.stage[0] * 1.08) / 5) * 5, 'normale Etappen nur × targetMul');
 });
 
@@ -412,9 +412,9 @@ test('Meilensteine: Zielzeiten, alle Chassis, Schrottstufen 5/10/15', () => {
 
 // ---------- Bosse ----------
 
-test('Bosse: 6 Varianten mit Intro, Tipps, Warnhinweisen und Musik; gültige, eindeutig verschiedene Strecken', () => {
+test('Bosse: 12 Varianten (Paket D: 6 neue) mit Intro, Tipps, Warnhinweisen und Musik; gültige, eindeutig verschiedene Strecken', () => {
   const all = BIOMES.flatMap((b) => b.bosses.map((x) => ({ b, boss: x })));
-  assert.equal(all.length, 6);
+  assert.equal(all.length, 12);
   const shapes = new Set();
   for (const { b, boss } of all) {
     assert.ok(boss.intro && boss.intro.length > 40, `${boss.id}: Intro`);
@@ -443,7 +443,7 @@ test('Bosse: 6 Varianten mit Intro, Tipps, Warnhinweisen und Musik; gültige, ei
       if (boss.params.lightning && boss.params.lightning.every) for (const f of spec.features.filter((x) => x.type === 'lightning')) assert.deepEqual(f.every, boss.params.lightning.every);
     }
   }
-  assert.equal(shapes.size, 6, 'jede Boss-Strecke hat eine eigene Bausteinmischung');
+  assert.equal(shapes.size, 12, 'jede Boss-Strecke hat eine eigene Bausteinmischung');
 });
 
 test('Boss-Strecke: Warnhinweise in der Etappe vor jedem gefährlichen Baustein', () => {

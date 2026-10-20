@@ -174,7 +174,7 @@ const ASCENSION_DESIGN = {
   // Paket C: zurück auf 1,08 / 1,12 – Items tragen weiter, die Grund-Zielmarken sind deutlich höher, und mit der
   // größeren Item-Streuung würde Stufe 7 sonst zur Mauer (docs/OVERHAUL.md „Umsetzungsstand Paket C“)
   1: ['eliteWeightAdd', null], 2: ['targetMul', 1.08], 3: ['towPenaltyAdd', 0.05], 4: ['priceMul', 1.1],
-  5: ['repairMul', 0.75], 6: ['startCurse', 1], 7: ['bossTargetMul', 1.12], 8: ['damageMul', 1.15],
+  5: ['repairMul', 0.75], 6: ['startCurse', 1], 7: ['bossTargetMul', 1.06], 8: ['damageMul', 1.15],
   9: ['itemChoicesAdd', -1], 10: ['startDurabilityMul', 0.9], 11: ['heatGainMul', 1.15], 12: ['eliteHazards', true],
   13: ['boltMul', 0.85], 14: ['fuelMaxMul', 0.9], 15: ['doubleBossAct3', true],
 };

@@ -222,7 +222,8 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
   const boss = kind === 'boss' ? (bio.bosses.find((b) => b.id === bossId) || bio.bosses[0]) : null;
   const d = difficultyOf(kind, floor);
   // Paket D: Mutator (data/mutators.js) – Medaillen-Marken, Bausteine, Wind
-  const mut = kind === 'boss' ? null : mutatorById(mutator);
+  // Bosse können einen festen Mutator haben (data/biomes.js → bosses[].mutator, Paket D)
+  const mut = kind === 'boss' ? mutatorById(boss && boss.mutator) : mutatorById(mutator);
   let target = stageTarget(bio, kind, floor, mods);
   if (mut && mut.medals && mut.medals.bronze) target = Math.round((target * mut.medals.bronze) / 5) * 5;
   const { medals, medalList } = stageMedals(bio, kind, target);

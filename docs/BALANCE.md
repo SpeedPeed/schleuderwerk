@@ -180,7 +180,7 @@ Jedes Item allein (★1) gegen „ohne Items“ (Akt 2 + 3, Etage 2, je 10 Etapp
 <!-- progression -->
 ## Progression & Ökonomie (Phase 6, mit Paket A nachgemessen)
 
-> Erzeugt von `node tools/sim/progression.mjs` (8 Karrieren, Modell vom 2026-10-20 mit 16 Etappen je Zelle; Rechenzeit 12 s). Modell neu messen: `--fit`.
+> Erzeugt von `node tools/sim/progression.mjs` (8 Karrieren, Modell vom 2026-10-20 mit 16 Etappen je Zelle; Rechenzeit 10 s). Modell neu messen: `--fit`.
 
 **Verfahren.** Der Bot misst je Akt, Knotenart/Etage und Slot-Stufe 0/3/5/8/10 (alle Slots) die Weite ÷ Ziel (log-normal), Schaden, Schrauben, Schrott und Item-Kisten; dazu die Wirkung von Items (zufällige Builds mit 2/4/6 Items, 4 Items je Seltenheit, Set-Builds 2/4/6 eines Tags) und der Schrottstufen-Physik. Die Karriere läuft mit der echten Run-Logik (Karte, Händler, Werkbank, Ereignisse, Schatz, Tankstelle, Item-Auswahl mit Synergie-Strategie, Belohnungen, Schrottstufen); nur das Etappen-Ergebnis wird aus dem Modell gewürfelt. Zwischen den Runs: Forschung (billigste zuerst), Chassis sobald bezahlbar, dann die billigste Slot-Verbesserung. Nach dem ersten Sieg spielt die Person immer die höchste freigeschaltete Schrottstufe. Paket A: verfehlte Etappen enden mit Notlandung (die Person nimmt nie „Nochmal“), jeder Neuversuch hat eine neue Strecke (eigene Streuung).
 
@@ -190,21 +190,21 @@ Jedes Item allein (★1) gegen „ohne Items“ (Akt 2 + 3, Etage 2, je 10 Etapp
 |---|---|---|---|---|
 | Erster Run | 8 min–15 min | 8 min | 7 min – 10 min (8/8) | ✔ |
 | Erster Akt-1-Boss besiegt | 0,50 h–1,0 h | 0,95 h | 0,48 h – 1,2 h (8/8) | ✔ |
-| Erster Run-Sieg | 2,5 h–5,0 h | 2,5 h | 1,2 h – 3,4 h (8/8) | ✔ |
-| Alle Chassis | 15,0 h–25,0 h | 19,2 h | 11,6 h – 23,0 h (8/8) | ✔ |
-| Sieg auf Schrottstufe 5 | – | 9,8 h | 8,4 h – 14,1 h (8/8) | – |
-| Sieg auf Schrottstufe 10 | – | 33,1 h | 22,9 h – 45,2 h (8/8) | – |
-| Alles inkl. Schrottstufe 15 | 30,0 h–50,0 h | 46,8 h | 29,4 h – 87,1 h (8/8) | ✔ |
+| Erster Run-Sieg | 2,5 h–5,0 h | 2,4 h | 1,7 h – 3,1 h (8/8) | ✗ |
+| Alle Chassis | 15,0 h–25,0 h | 18,8 h | 15,4 h – 21,3 h (8/8) | ✔ |
+| Sieg auf Schrottstufe 5 | – | 11,2 h | 9,1 h – 13,3 h (8/8) | – |
+| Sieg auf Schrottstufe 10 | – | 26,0 h | 20,4 h – 32,5 h (8/8) | – |
+| Alles inkl. Schrottstufe 15 | 30,0 h–50,0 h | 43,7 h | 28,5 h – 54,3 h (8/8) | ✔ |
 
 - Erster Run: endet in 8/8 Karrieren in Akt 1–2 (Akte: 1, 1, 1, 1, 1, 1, 1, 1).
-- Runs bis Schrottstufe 15: Median 247, Siege 16, Etappen 2257; am Ende Ø Slot-Stufe 10,0, 9/9 Chassis, 711055 ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).
+- Runs bis Schrottstufe 15: Median 207.5, Siege 16, Etappen 2076; am Ende Ø Slot-Stufe 10,0, 9/9 Chassis, 691396 ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).
 
 **Schlechter Run mit voller Meta** (alle Slots Stufe 10, ganzer Forschungsbaum, Modell ohne Einarbeitung):
 
 | Items | Sieg | Ende Akt 1 | Akt 2 | Akt 3 |
 |---|---|---|---|---|
 | keine (immer Schrauben, keine Shops) | 0 % | 100 % | 0 % | 0 % |
-| 6 zufällige Gewöhnliche, kein Plan | 0 % | 78 % | 21 % | 2 % |
+| 6 zufällige Gewöhnliche, kein Plan | 0 % | 78 % | 20 % | 2 % |
 
 Regel „ein schlechter Run muss auch mit voller Meta scheitern können“ (Sieg < 30 %): ✔ erfüllt.
 

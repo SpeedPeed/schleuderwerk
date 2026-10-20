@@ -62,8 +62,8 @@ export const ASCENSION = [
   {
     level: 7,
     name: 'Bosse mit Muckis',
-    desc: 'Boss-Zielmarken +12 %. Die Endgegner waren den ganzen Winter im Fitnessstudio.',
-    mods: { bossTargetMul: 1.12 },   // Paket A: 1,15 → 1,22; Paket C: 1,12 (sonst wird Stufe 7 bei stärkerer Item-Streuung zur Mauer)
+    desc: 'Boss-Zielmarken +6 %. Die Endgegner waren den ganzen Winter im Fitnessstudio.',
+    mods: { bossTargetMul: 1.06 },   // Paket A: 1,15 → 1,22; Paket C/D: 1,06 (sonst wird Stufe 7 bei stärkerer Item-Streuung zur Mauer; 24 Karrieren: Stufe 15 ≈ 40 h)
   },
   {
     level: 8,

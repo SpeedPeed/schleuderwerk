@@ -34,7 +34,7 @@
 // Run-Ereignisse (runStart, nodeEnter, stageClear, itemGained, shopEnter) laufen über die Trigger-Engine mit einem
 // ctx ohne Fahrzeug (emitRunEvent). Der Kodex im Spielstand (save.codex) merkt sich gesehene/besessene Items und Set-Boni.
 import { RUN, REWARDS, ITEMS as BAL_ITEMS, SYNERGY } from '../data/balance.js';
-import { biomeForAct } from '../data/biomes.js';
+import { biomeForAct, biomeById, biomesForAct } from '../data/biomes.js';
 import { SLOTS, cursedItemPool } from '../data/index.js';
 import { ITEMS, itemById } from '../data/items.js';
 import { makeRng, hashSeed } from '../core/rng.js';
@@ -85,7 +85,7 @@ export function runStats(run) {
   const c = statCache.get(run);
   if (c && c.key === key) return c.stats;
   const lo = runLoadout(run);
-  const setup = applyInventory(lo, run.inventory || [], { biome: biomeForAct(run.act) });
+  const setup = applyInventory(lo, run.inventory || [], { biome: currentBiome(run) });
   const rm = run.runMods || {};
   const extra = [runModStats(rm)];
   const stats = computeStats({ ...setup.statInput, extra });
@@ -263,8 +263,10 @@ export function normalizeRun(run) {
 
 // Karte und Boss eines Akts auswürfeln (deterministisch aus Run-Seed und Akt)
 function setupAct(run, act) {
-  const biome = biomeForAct(act);
   const rng = makeRng(hashSeed(`${run.seed}:akt:${act}`));
+  // Paket D: Akt 2 und 3 haben mehrere Biome – je Run wird eins gezogen (eigener Zufalls-Zweig)
+  const list = biomesForAct(act);
+  const biome = list.length > 1 ? rng.fork('biom').pick(list) : list[0];
   const bossId = rng.fork('boss').pick(biome.bosses).id;
   run.act = act;
   run.biome = biome.id;
@@ -284,7 +286,8 @@ export function isValidRun(run) {
 
 // ---------- Abfragen ----------
 
-export const currentBiome = (run) => biomeForAct(run.act);
+// Biom des aktuellen Akts (Paket D: im Run gespeichert; ältere Runs: das erste Biom des Akts)
+export const currentBiome = (run) => (run && biomeById(run.biome) && biomeById(run.biome).act === run.act ? biomeById(run.biome) : biomeForAct(run.act));
 
 // Knoten, die als Nächstes gewählt werden können (läuft gerade ein Knoten, nur dieser)
 export function reachableNodes(run) {
@@ -447,7 +450,7 @@ export function applyStageResult(run, result, save = null) {
     cur.attempts++;
     out.attempts = cur.attempts;
     if (!run.bossTwin) {
-      const b = biomeForAct(run.act);
+      const b = currentBiome(run);
       const pick = makeRng(hashSeed(`${run.seed}:boss-neu:${run.act}:${cur.attempts}`)).pick(b.bosses);
       run.bossIds[run.act] = pick.id;
       out.bossReroll = { id: pick.id, name: pick.name, icon: pick.icon, targetMul: bossTiredMul(cur.attempts) };
@@ -475,7 +478,7 @@ export function applyStageResult(run, result, save = null) {
     out.choices = run.pendingChoices.length;
   }
   if (twinNext) {
-    const b = biomeForAct(act);
+    const b = currentBiome(run);
     const other = b.bosses.find((x) => x.id !== run.bossIds[act]) || b.bosses[0];
     run.bossTwin = true;
     run.bossIds[act] = other.id;
@@ -596,7 +599,7 @@ export function emitRunEvent(run, save, name, data = {}) {
   const log = { triggered: [], bolts: 0, popups: [], upgraded: [], mods: new ModState() };
   if (!run.inventory.length) return log;
   const rng = makeRng(hashSeed(`${run.seed}:ereignis:${run.counters.events++}`));
-  const setup = applyInventory(runLoadout(run), run.inventory, { biome: biomeForAct(run.act) });
+  const setup = applyInventory(runLoadout(run), run.inventory, { biome: currentBiome(run) });
   const sources = setup.sources.filter((s) => s.kind === 'item' || s.kind === 'set' || s.kind === 'recipe' || s.kind === 'chassis');
   dispatchRunEvent({ sources, ctx: runCtx(run, save, rng, log), rules: setup.rules, runCounters: run.counters.trig }, name, data);
   delete log.mods;
