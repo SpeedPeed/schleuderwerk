@@ -421,7 +421,7 @@ function playShop(ctx, kind) {
     const opt = Workbench.fusionOptions(run).find((f) => f.kind === 'tier');
     if (opt) Workbench.fuseItems(run, save, opt.a, opt.b);
   } else if (kind === 'event') {
-    const v = TextEvent.eventView(run);
+    const v = TextEvent.eventView(run, save);
     const hp = run.durability / RS.durabilityMax(run);
     const opts = v.options.filter((o) => o.available && !(o.chooseItem && !run.inventory.length));
     const safe = opts.filter((o) => hp > 0.5 || !/%/.test(o.costText));
@@ -429,7 +429,7 @@ function playShop(ctx, kind) {
     if (o) {
       TextEvent.chooseOption(run, save, o.index, { slot: o.chooseItem ? weakestSlot(run) : undefined });
       let g = 0;
-      while (TextEvent.eventView(run).pending.length && g++ < 5) TextEvent.resolvePending(run, save, weakestSlot(run));
+      while (TextEvent.eventView(run, save).pending.length && g++ < 5) TextEvent.resolvePending(run, save, weakestSlot(run));
       if (run.current && run.current.type === 'elite') { handleChoices(ctx); playStageNode(ctx, run.current.node); return; }
     }
     handleChoices(ctx);

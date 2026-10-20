@@ -159,7 +159,8 @@ const PART_KEYS = new Set(['id', 'slot', 'name', 'icon', 'desc', 'flavor', 'mode
 const ABILITY_KEYS = new Set(['id', 'name', 'icon', 'desc', 'flavor', 'mode', 'cooldown', 'fuel', 'heat', 'effects', 'rules', 'ruleSpec', 'unlock', 'chassis']);
 const RESEARCH_KEYS = new Set(['id', 'name', 'icon', 'desc', 'flavor', 'branch', 'cost', 'requires', 'unlocks', 'pos', 'repeatable']);
 const NODE_KEYS = new Set(['name', 'icon', 'iconId', 'desc', 'color', 'weight', 'minFloor', 'maxPerAct', 'requiresResearch', 'forcedFloors', 'minPerAct', 'guaranteeFloors', 'params']);
-const EVENT_KEYS = new Set(['id', 'acts', 'title', 'text', 'options']);
+const EVENT_KEYS = new Set(['id', 'acts', 'requires', 'story', 'requiresStory', 'title', 'text', 'options']);
+const EVENT_STORIES = new Set(['gerd', 'kalle', 'vereinswart']);   // Paket D6: Figuren-Ketten
 const OPTION_KEYS = new Set(['label', 'hint', 'cost', 'outcomes']);
 const OUTCOME_KEYS = new Set(['p', 'text', 'effects']);
 const EVENT_COST_KEYS = new Set(['bolts', 'hpPct', 'maxFuel', 'item']);
@@ -1187,6 +1188,7 @@ for (const [id, path, ok, why] of NODE_DESIGN) {
 // ═══════════════════════════════════ Textereignisse ═══════════════════════════════════
 
 const eventsPerAct = { 1: 0, 2: 0, 3: 0 };
+const tagEvents = {};   // Paket D6: Tag-Ereignisse je Tag
 let coreEvents = 0;
 for (const ev of TEXT_EVENTS) {
   if (!isObj(ev) || !isStr(ev.id)) continue;
@@ -1200,6 +1202,36 @@ for (const ev of TEXT_EVENTS) {
     if (new Set(ev.acts).size !== ev.acts.length) err(w, 'acts enthält Duplikate');
     for (const a of ev.acts) eventsPerAct[a]++;
   }
+  // Paket D6: Tag-Bedingung und Figuren-Kette
+  if (ev.requires !== undefined) {
+    if (!isObj(ev.requires)) err(w, 'requires muss Objekt { tag, min } sein');
+    else {
+      for (const k of Object.keys(ev.requires)) if (!['tag', 'min'].includes(k)) err(w, `requires: unbekanntes Feld ${fmt(k)}`);
+      if (!TAG_SET.has(ev.requires.tag)) err(w, `requires.tag ${fmt(ev.requires.tag)} ist kein bekannter Tag (${TAG_IDS.join(', ')})`);
+      else tagEvents[ev.requires.tag] = (tagEvents[ev.requires.tag] || 0) + 1;
+      if (!isInt(ev.requires.min) || ev.requires.min < 1 || ev.requires.min > 6) err(w, `requires.min muss ganze Zahl 1–6 sein (${fmt(ev.requires.min)})`);
+      else if (ev.requires.min < 2) warn(w, 'requires.min < 2 – Tag-Ereignisse sollen erst ab 2 Items des Tags erscheinen');
+      const rewardsTag = (ev.options || []).some((o) => isObj(o) && (o.outcomes || []).some((oc) => isObj(oc) && (oc.effects || []).some((e) => isObj(e) && isObj(e.item) && e.item.tag === ev.requires.tag)));
+      if (TAG_SET.has(ev.requires.tag) && !rewardsTag) warn(w, `Tag-Ereignis ohne Item-Belohnung des Tags ${fmt(ev.requires.tag)}`);
+    }
+  }
+  if (ev.story !== undefined && !EVENT_STORIES.has(ev.story)) err(w, `story ${fmt(ev.story)} unbekannt (erlaubt: ${[...EVENT_STORIES].join(', ')})`);
+  if (ev.requiresStory !== undefined) {
+    const pre = eventById.get(ev.requiresStory);
+    if (!isStr(ev.requiresStory) || !pre) err(w, `requiresStory: unbekanntes Ereignis ${fmt(ev.requiresStory)}`);
+    else {
+      if (ev.story === undefined) err(w, 'requiresStory ohne story – Folgekapitel müssen zu einer Figur gehören');
+      else if (pre.story !== ev.story) err(w, `requiresStory ${fmt(ev.requiresStory)} gehört zu einer anderen Kette (${fmt(pre.story)} statt ${fmt(ev.story)})`);
+      if (Array.isArray(ev.acts) && Array.isArray(pre.acts) && !ev.acts.some((a) => pre.acts.includes(a))) warn(w, 'Folgekapitel und Vorgänger haben keinen gemeinsamen Akt');
+    }
+    // Zyklus: Vorgänger-Kette darf nicht zu sich selbst zurückführen
+    const visited = new Set([ev.id]);
+    for (let cur = eventById.get(ev.requiresStory); cur && isStr(cur.requiresStory); cur = eventById.get(cur.requiresStory)) {
+      if (visited.has(cur.id)) { err(w, `requiresStory bildet einen Zyklus (${[...visited].join(' → ')})`); break; }
+      visited.add(cur.id);
+    }
+  }
+  if (ev.story !== undefined && ev.requires !== undefined) warn(w, 'Ketten-Kapitel mit Tag-Bedingung – die Kette kann dann hängen bleiben');
   if (!Array.isArray(ev.options) || ev.options.length < 2) { err(w, 'mindestens 2 Optionen nötig'); continue; }
   let safe = 0;
   let hasCores = false;
@@ -1298,6 +1330,20 @@ for (const ev of TEXT_EVENTS) {
 }
 if (coreEvents > 3) err('textEvents.js', `${coreEvents} Ereignisse vergeben Kerne, Kopfkommentar erlaubt nur die drei Akt-3-Ereignisse`);
 for (const a of [1, 2, 3]) if (eventsPerAct[a] < 5) warn('textEvents.js', `nur ${eventsPerAct[a]} Ereignisse für Akt ${a}`);
+// Paket D6: jeder Tag hat Tag-Ereignisse; jede Figuren-Kette hat genau einen Anfang und verzweigt nicht
+for (const t of TAG_IDS) if (!tagEvents[t]) warn('textEvents.js', `kein Tag-Ereignis (requires) für Tag ${fmt(t)}`);
+for (const story of EVENT_STORIES) {
+  const chain = TEXT_EVENTS.filter((e) => isObj(e) && e.story === story);
+  if (!chain.length) { warn('textEvents.js', `Figuren-Kette ${fmt(story)} hat keine Kapitel`); continue; }
+  const starts = chain.filter((e) => e.requiresStory === undefined);
+  if (starts.length !== 1) err('textEvents.js', `Figuren-Kette ${fmt(story)} braucht genau ein Anfangskapitel ohne requiresStory (hat ${starts.length})`);
+  const next = new Map();
+  for (const e of chain) {
+    if (e.requiresStory === undefined) continue;
+    if (next.has(e.requiresStory)) err(`textEvents.js › ${e.id}`, `Figuren-Kette ${fmt(story)} verzweigt: ${fmt(e.requiresStory)} hat mehrere Folgekapitel`);
+    next.set(e.requiresStory, e.id);
+  }
+}
 
 // ═══════════════════════════════════ Schrottstufen ═══════════════════════════════════
 
@@ -1350,9 +1396,13 @@ for (const a of [1, 2, 3]) if (eventsPerAct[a] < 5) warn('textEvents.js', `nur $
     if (!isObj(p.colors) || !HEX.test(p.colors.body || '') || !HEX.test(p.colors.accent || '')) err(w, 'colors {body, accent} müssen #rrggbb sein');
     else for (const k of Object.keys(p.colors)) if (!['body', 'accent'].includes(k)) err(w, `colors: unbekanntes Feld ${k}`);
     if (p.cost === null) {
-      kinds.asc++;
-      const m = /^ascension:(\d+)$/.exec(p.unlock || '');
-      if (!m || +m[1] < 1 || +m[1] > 15) err(w, `unlock muss 'ascension:1..15' sein (${fmt(p.unlock)})`);
+      // Paket E: Werkstatt-Lacke (unlock 'workshop:N', data/workshop.js) zählen nicht zu den Schrottstufen-Lacken
+      const wk = /^workshop:(\d+)$/.exec(p.unlock || '');
+      if (wk) { if (+wk[1] < 1 || +wk[1] > 60) err(w, `unlock workshop:N braucht N = 1..60 (${fmt(p.unlock)})`); } else {
+        kinds.asc++;
+        const m = /^ascension:(\d+)$/.exec(p.unlock || '');
+        if (!m || +m[1] < 1 || +m[1] > 15) err(w, `unlock muss 'ascension:1..15' oder 'workshop:1..60' sein (${fmt(p.unlock)})`);
+      }
     } else if (!isObj(p.cost) || Object.keys(p.cost).length !== 1) err(w, 'cost muss {scrap} | {cores} | null sein');
     else if (p.cost.scrap !== undefined) {
       kinds.scrap++;

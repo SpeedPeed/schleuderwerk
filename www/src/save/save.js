@@ -35,6 +35,9 @@ export function defaultSave() {
     run: null,
     // Tutorial (ui/tutorial.js): seen = schon gezeigte Hinweise { id: 1 }, off = alle Hinweise aus
     tutorial: { runs: 0, seen: {}, off: false },
+    // Paket D6: Figuren-Ketten der Textereignisse (shops/textEvent.js) – seen = schon erlebte Kapitel { evId: 1 }.
+    // Ältere Stände bekommen das Feld über fill() (ohne Versionswechsel).
+    story: { seen: {} },
     createdAt: Date.now(),
     savedAt: Date.now(),
   };
@@ -205,6 +208,7 @@ export function migrate(data) {
   data.history = data.history.filter(isObj).slice(0, 50);
   data.tutorial.runs = n0(data.tutorial.runs);
   for (const [k, t] of Object.entries(data.tutorial.seen)) if (t !== 1) delete data.tutorial.seen[k];
+  for (const [k, t] of Object.entries(data.story.seen)) if (t !== 1 || !/^ev_[a-z0-9_]+$/.test(k)) delete data.story.seen[k];
   // Einstellungen: Lautstärken 0…1, Grafikqualität nur bekannte Stufen
   for (const k of ['sfxVol', 'musicVol']) data.settings[k] = Math.max(0, Math.min(1, data.settings[k]));
   if (!Object.prototype.hasOwnProperty.call(RENDER.pixelRatio, data.settings.quality)) data.settings.quality = RENDER.defaultQuality;

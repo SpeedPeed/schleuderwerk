@@ -1,6 +1,8 @@
 // ❓ Ereignis-Knoten (V2-DESIGN.md §4): Textereignisse aus data/textEvents.js mit Entscheidung, Kosten und Risiko.
 // Auswahl je Akt (ev.acts), im Run möglichst kein Ereignis doppelt (run.seenEvents); Ausgang deterministisch aus dem
-// Run-Seed (Knoten + Option). Alle Effekt-Arten: bolts, scrap, blueprints, hpPct, maxHp, maxFuel, item, removeItem,
+// Run-Seed (Knoten + Option). Paket D6: Tag-Ereignisse (ev.requires { tag, min }) nur mit ≥ min Rucksack-Items des Tags;
+// Figuren-Ketten (ev.story, ev.requiresStory) über mehrere Runs – gesehene Kapitel stehen in save.story.seen { evId: 1 },
+// ein Folgekapitel braucht seinen Vorgänger aus einem FRÜHEREN Run. Ohne save (Tests, Simulator) gibt es nur Kapitel 1. Alle Effekt-Arten: bolts, scrap, blueprints, hpPct, maxHp, maxFuel, item, removeItem,
 // upgradeItem, curse, removeCurse, stage:'elite', cores, nothing. Zahlen: balance.EVENTS. Reine Logik ohne three.js/DOM.
 //
 // Zustand (run.current.shop): { type: 'event', eventId, result: null | { option, outcome, text, log: [{ icon, text }] },
@@ -14,7 +16,7 @@ import { rollItemChoices, rarityWeights } from '../run/rewards.js';
 import {
   durabilityMax, runStats, giveItem, giveOrOffer, addRunBolts, healRun, damageRun, addMaxDurability, addMaxFuel, updateCodexSets,
 } from '../run/runState.js';
-import { entryName, isCursedEntry, upgradeRandom, MAX_TIER } from '../items/inventory.js';
+import { entryName, isCursedEntry, upgradeRandom, MAX_TIER, tagCounts } from '../items/inventory.js';
 import { shopRng, ownedIds, shopState } from './common.js';
 import { makeRng, hashSeed } from '../core/rng.js';
 
@@ -24,17 +26,64 @@ export const eventById = (id) => EVENT_MAP.get(id) || null;
 // Ereignisse eines Akts
 export const eventsForAct = (act) => TEXT_EVENTS.filter((e) => e.acts.includes(act));
 
-// Ereignis wählen: gleichverteilt aus den Ereignissen des Akts, die im Run noch nicht dran waren (sonst alle des Akts)
-export function pickEvent(run, rng) {
-  const all = eventsForAct(run.act);
-  const fresh = all.filter((e) => !(run.seenEvents || []).includes(e.id));
-  return rng.pick(fresh.length ? fresh : all);
+// ---------- Figuren-Ketten (run-übergreifend) ----------
+
+// Gesehene Ketten-Kapitel des Spielstands { evId: 1 } (ohne Spielstand: leer)
+export function storySeen(save) {
+  const st = save && save.story;
+  return st && st.seen && typeof st.seen === 'object' && !Array.isArray(st.seen) ? st.seen : {};
 }
 
-export function openEvent(run) {
+// Ketten-Kapitel als gesehen merken (nur Ereignisse mit ev.story)
+export function markStorySeen(save, ev) {
+  if (!save || !ev || !ev.story) return;
+  if (!save.story || typeof save.story !== 'object' || Array.isArray(save.story)) save.story = { seen: {} };
+  if (!save.story.seen || typeof save.story.seen !== 'object' || Array.isArray(save.story.seen)) save.story.seen = {};
+  save.story.seen[ev.id] = 1;
+}
+
+// Darf das Ereignis jetzt gezogen werden? Akt, Tag-Bedingung (Rucksack, ohne Garage-Teile), Ketten-Fortschritt.
+// counts: vorab berechnete tagCounts(run.inventory) (optional)
+export function eventEligible(run, ev, save = null, counts = null) {
+  if (!ev || !ev.acts.includes(run.act)) return false;
+  if (ev.requires) {
+    const c = counts || tagCounts(run.inventory || []);
+    if ((c[ev.requires.tag] || 0) < (ev.requires.min ?? 2)) return false;
+  }
+  if (ev.story || ev.requiresStory) {
+    const seen = storySeen(save);
+    if (ev.story && seen[ev.id]) return false;                 // Kapitel schon erlebt → kommt nicht wieder
+    if (ev.requiresStory) {
+      if (!seen[ev.requiresStory]) return false;                // Vorgänger noch nicht gesehen
+      if ((run.seenEvents || []).includes(ev.requiresStory)) return false;   // … erst im nächsten Run weiter
+    }
+  }
+  return true;
+}
+
+// Alle jetzt ziehbaren Ereignisse
+export function eventPool(run, save = null) {
+  const counts = tagCounts(run.inventory || []);
+  return TEXT_EVENTS.filter((e) => eventEligible(run, e, save, counts));
+}
+
+// Ereignis wählen: gleichverteilt aus den ziehbaren Ereignissen, die im Run noch nicht dran waren (sonst die ziehbaren
+// ohne Ketten-Kapitel, zuletzt alle ungebundenen des Akts)
+export function pickEvent(run, rng, save = null) {
+  const pool = eventPool(run, save);
+  const fresh = pool.filter((e) => !(run.seenEvents || []).includes(e.id));
+  if (fresh.length) return rng.pick(fresh);
+  const again = pool.filter((e) => !e.story && !e.requiresStory);
+  if (again.length) return rng.pick(again);
+  return rng.pick(eventsForAct(run.act).filter((e) => !e.requires && !e.story && !e.requiresStory));
+}
+
+// save (optional): für die Figuren-Ketten – ohne Spielstand werden Folgekapitel nie gezogen
+export function openEvent(run, save = null) {
   return shopState(run, 'event', () => {
-    const ev = pickEvent(run, shopRng(run, 'ereignis'));
+    const ev = pickEvent(run, shopRng(run, 'ereignis'), save);
     if (!run.seenEvents.includes(ev.id)) run.seenEvents.push(ev.id);
+    markStorySeen(save, ev);
     return { eventId: ev.id, result: null, pending: [], elite: false };
   });
 }
@@ -58,10 +107,10 @@ export function optionState(run, opt) {
 }
 
 // Anzeige: { event, options: [{ label, hint, costText, available, reason, chooseItem }], result, pending, elite }
-export function eventView(run) {
+export function eventView(run, save = null) {
   // nach { stage: 'elite' } ist der Knoten schon eine Elite-Etappe – der Ausgang wird trotzdem noch angezeigt
   const cur = run.current;
-  const st = cur && cur.shop && cur.shop.type === 'event' ? cur.shop : openEvent(run);
+  const st = cur && cur.shop && cur.shop.type === 'event' ? cur.shop : openEvent(run, save);
   if (!st) return null;
   const ev = eventById(st.eventId);
   return {
@@ -210,10 +259,11 @@ function payCost(run, save, cost, rng, slot) {
 // opts.slot: Inventar-Platz bei cost.item 'choose'. opts.roll (Tests): fester Ausgang statt Würfeln.
 // Ergebnis: { ok, reason?, result, pending, elite }
 export function chooseOption(run, save, index, opts = {}) {
-  const st = openEvent(run);
+  const st = openEvent(run, save);
   if (!st) return { ok: false, reason: 'noEvent' };
   if (st.result) return { ok: false, reason: 'done' };
   const ev = eventById(st.eventId);
+  markStorySeen(save, ev);   // auch wenn das Ereignis ohne Spielstand geöffnet wurde (eventView(run))
   const opt = ev.options[index];
   if (!opt) return { ok: false, reason: 'index' };
   const os = optionState(run, opt);

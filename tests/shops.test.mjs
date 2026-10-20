@@ -1,6 +1,6 @@
 // Phase 5 – Sonderknoten: Schrotthändler (Angebote, Preise, Rabatte, Reroll, Reservieren, Fähigkeit), Werkbank (★-Fusion,
 // Hybrid ×0,75 + beide Tags + Set-Zählung, Zerlegen), Schwarzmarkt (alle Bezahlarten, Fluch entfernen), Tankstelle,
-// Ereignisse (alle Effekt-Arten, Kosten, Auswahl je Akt, alle 26 Ereignisse), Schatz mit Haken, Run-Ende-Umrechnung,
+// Ereignisse (alle Effekt-Arten, Kosten, Auswahl je Akt, alle 70 Ereignisse), Schatz mit Haken, Run-Ende-Umrechnung,
 // Speichern/Fortsetzen mitten in einem Shop.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -357,7 +357,7 @@ test('Ereignisse: Auswahl je Akt, kein Ereignis doppelt im Run, deterministisch 
     const list = E.eventsForAct(act);
     assert.ok(list.length >= 8, `Akt ${act}: ${list.length}`);
   }
-  assert.equal(TEXT_EVENTS.length, 26);
+  assert.equal(TEXT_EVENTS.length, 70);
   const { run } = setup({ seed: 31 });
   const seen = new Set();
   for (let i = 0; i < 6; i++) {
@@ -478,7 +478,7 @@ test('Ereignisse: { stage: "elite" } startet eine Elite-Etappe mit Elite-Belohnu
   assert.equal(R.leaveNode(run).ok, false);
 });
 
-test('Ereignisse: alle 26 Ereignisse × alle Optionen laufen fehlerfrei durch (jeder Ausgang)', () => {
+test('Ereignisse: alle 70 Ereignisse × alle Optionen laufen fehlerfrei durch (jeder Ausgang)', () => {
   let n = 0;
   for (const ev of TEXT_EVENTS) {
     ev.options.forEach((opt, oi) => {

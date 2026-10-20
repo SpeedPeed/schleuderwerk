@@ -267,7 +267,7 @@ export const GOALS = {
   collect: { perTarget: 0.043, gold: 1.5, round: 1 },     // ≈ 20–45 Pickups
   sprint: { perTarget: 0.21, gold: 1.2, round: 5, timeLimit: 8 },   // Weite nach 8 s Flug
   delivery: { crashCaps: { bronze: 3, silver: 2, gold: 1 } },
-  weights: { distance: 3, height: 1.2, stunt: 1, collect: 1.2, sprint: 1, delivery: 1 },
+  weights: { distance: 2, height: 1.2, stunt: 1, collect: 1.2, sprint: 1, delivery: 1 },
   eliteWeights: { distance: 2, height: 1, stunt: 1, collect: 1, sprint: 1, delivery: 1 },
 };
 
