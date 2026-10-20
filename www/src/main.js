@@ -1109,7 +1109,7 @@ function shopBlackMarket(keep = false) {
 
 function shopEvent() {
   const run = save.run;
-  const v = TextEvent.eventView(run);
+  const v = TextEvent.eventView(run, save);
   if (!v) { openShop(); return; }
   const after = (r) => {
     if (!r.ok) { shopFeedback(r); shopEvent(); return; }
