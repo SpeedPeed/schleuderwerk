@@ -185,7 +185,7 @@ export class Hud {
     this.chainShown = { n: 0, t: -1e9 };
     this.q.items.innerHTML = items && items.inventory.length ? itemBarHtml(items.inventory, items.inventory.length, items.napped ?? -1) : '';
     this.goal = goal;
-    this.q.best.textContent = goal ? `Ziel ${fmt(goal.target)} m` : `${fmt(best)} m`;
+    this.q.best.textContent = goal ? `Ziel ${fmt(goal.target)} ${goal.unit || 'm'}${goal.timeLimit ? ` in ${goal.timeLimit} s` : ''}` : `${fmt(best)} m`;
     this.setOdo(0);
     show(this.q.goal, !!goal);
     if (goal) {
@@ -195,7 +195,7 @@ export class Hud {
         const has = goal.medalList.includes(m) && goal.medals[m] !== undefined;
         show(e, has);
         e.classList.remove('got');
-        if (has) { e.style.left = `${(goal.medals[m] / this.goalMax) * 100}%`; e.title = `${fmt(goal.medals[m])} m`; }
+        if (has) { e.style.left = `${(goal.medals[m] / this.goalMax) * 100}%`; e.title = `${fmt(goal.medals[m])} ${goal.unit || 'm'}`; }
       }
     }
     this.weather = weather;
@@ -294,13 +294,15 @@ export class Hud {
 
     this.setOdo(Math.max(0, v.x));
     if (this.goal) {
-      const f = Math.max(0, Math.min(1, v.maxX / this.goalMax));
+      // Paket D: Fortschritt in der Einheit der Etappen-Art (Höhe, Trickpunkte, Pickups …)
+      const gv = this.goal.type && this.goal.type !== 'distance' && this.goal.type !== 'delivery' ? stage.goalNow : v.maxX;
+      const f = Math.max(0, Math.min(1, gv / this.goalMax));
       const p = Math.round(f * 400);
       if (this.changed('gfill', p)) { q.gfill.style.width = `${p / 4}%`; q.gcar.style.left = `${p / 4}%`; }
       const ml = this.goal.medalList;
       for (let i = 0; i < ml.length; i++) {
         const m = ml[i];
-        const got = v.maxX >= this.goal.medals[m];
+        const got = gv >= this.goal.medals[m];
         if (this.changed(GM_KEY[m], got)) q[GM_KEY[m]].classList.toggle('got', got);
       }
     }
@@ -311,7 +313,7 @@ export class Hud {
       b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
     }
     // Schrott dieser Etappe (Weite × Wertung + Pickups) und Vorspulen/Knapp
-    if (this.scrap) this.setScrap(this.scrap.total, liveStageScrap(this.scrap.act, this.scrap.kind, v.maxX, this.goal ? this.goal.medals : null, stage.scrap + stage.scrapBonus));
+    if (this.scrap) this.setScrap(this.scrap.total, liveStageScrap(this.scrap.act, this.scrap.kind, v.maxX, this.goal ? this.goal.distMedals || this.goal.medals : null, stage.scrap + stage.scrapBonus));
     const ffOn = stage.phase === 'fly' && (stage.fastForward || !!stage.settle);
     if (this.changed('ffOn', ffOn)) show(q.ff, ffOn);
     const fft = stage.knapp ? TXT.hud.knapp(stage.knapp.pct) : stage.settle ? `${fmt(stage.settle.dist)} m` : `×${STAGE.fastForward.scale}`;

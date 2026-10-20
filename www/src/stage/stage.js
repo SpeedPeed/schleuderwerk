@@ -5,6 +5,7 @@ import { Track, PLATEAU_H } from '../physics/track.js';
 import { generateStageSpec, medalFor, gradeFor } from '../physics/trackGen.js';
 import { BIOMES } from '../data/biomes.js';
 import { mutatorById } from '../data/mutators.js';
+import { goalOf, goalValue, goalMedal, goalMedals, isDistanceGoal } from './goals.js';
 import { makeRng } from '../core/rng.js';
 import { DEG } from '../core/math.js';
 import { Launch } from './launch.js';
@@ -177,6 +178,10 @@ export class Stage {
     this.target = this.spec.target;
     this.medals = this.spec.medals;
     this.medalList = this.spec.medalList || ['bronze', 'silver', 'gold'];
+    // Paket D: Etappen-Art (stage/goals.js) – Marken in der Einheit des Ziels; Weitflug/Lieferung nutzen this.medals
+    this.goal = goalOf(this.spec);
+    this.goalMedals = goalMedals(this.spec);
+    this.pickupTotal = 0;
     this.medal = null;            // bisher erreichte Medaille
     this.fallTimer = -1;
     this.fell = false;
@@ -597,6 +602,11 @@ export class Stage {
   // Zeitlupe (Einstellung „Zeitlupe“ aus → slowmoEnabled = false, main.js)
   startSlowmo(t) { if (this.slowmoEnabled) this.slowmo = Math.max(this.slowmo, t); }
 
+  // Paket D: aktueller Wert des Etappen-Ziels (Weite, Höhe, Trickpunkte inkl. laufender Kombo, Pickups)
+  get goalNow() {
+    return goalValue(this.goal, { dist: this.vehicle.maxX, height: this.maxAlt, tricks: this.tricks + Math.round(this.chain.pts * this.chain.mult), pickups: this.pickupTotal });
+  }
+
   get altitude() { return this.vehicle.y - P.rideHeight - this.track.heightAt(this.vehicle.x); }
 
   // ---------- Fähigkeiten ----------
@@ -748,7 +758,8 @@ export class Stage {
     const r = this.project();
     this.projection = r;
     if (!r || r.reason === 'wreck') return;
-    const pct = Math.min(99, Math.floor((r.dist / Math.max(1, this.target)) * 100));
+    const pct = isDistanceGoal(this.goal) ? Math.min(99, Math.floor((r.dist / Math.max(1, this.target)) * 100))
+      : Math.min(99, Math.floor((r.goal.value / Math.max(1, this.goalMedals.bronze)) * 100));
     if (!r.medal) {
       this.knapp = { pct, dist: r.dist, timer: FF.knappDelay };
       this.settle = { kind: 'knapp', pct, dist: r.dist, grade: 'miss', timer: FF.knappDelay };
@@ -805,8 +816,8 @@ export class Stage {
       this.hooks.popup(this.bossWarn[this.bossWarnIdx++].text, 'warn');
       this.hooks.sfx('warn');
     }
-    // Medaillen-Marken überfahren
-    const md = medalFor(v.maxX, this.medals);
+    // Medaillen-Marken überfahren (Paket D: in der Einheit des Ziels)
+    const md = isDistanceGoal(this.goal) ? medalFor(v.maxX, this.medals) : medalFor(this.goalNow, this.goalMedals);
     if (md && md !== this.medal) {
       this.medal = md;
       const first = this.medalList.indexOf(md) === 0;
@@ -817,7 +828,7 @@ export class Stage {
       this.hooks.haptic('success');
     }
     // Überweite: Platin (Gold × 1,5) – Schrottkönig (Gold × 2) beendet die Etappe ('far')
-    if (this.medal === 'gold' && this.medals.platin && this.grade !== 'platin' && this.grade !== 'king' && v.maxX >= this.medals.platin) {
+    if (this.goal.type === 'distance' && this.medal === 'gold' && this.medals.platin && this.grade !== 'platin' && this.grade !== 'king' && v.maxX >= this.medals.platin) {
       this.grade = 'platin';
       this.hooks.popup(`PLATIN! ${MEDAL_ICON.platin}`, 'big');
       this.hooks.sfx('medal', this.medalList.length);
@@ -867,6 +878,11 @@ export class Stage {
       if (this.stopTimer > STAGE.stopTime) this.finish('stop');
     } else this.stopTimer = 0;
     if (this.time > STAGE.maxTime) this.finish('time');
+    // Paket D: Zeitrennen – nach timeLimit Sekunden Flug ist Schluss
+    else if (this.goal.timeLimit && this.time >= this.goal.timeLimit) {
+      this.hooks.popup('ZEIT UM!', 'info');
+      this.finish('time');
+    }
     // Ziel weit übertroffen (Gold × STAGE.farMul) → Etappe endet, statt endlos weiterzulaufen
     else if (this.farEnd && this.medals && this.medals.gold && v.maxX >= this.medals.gold * STAGE.farMul) {
       this.hooks.popup(`SCHROTTKÖNIG! ${MEDAL_ICON.king}`, 'big');
@@ -897,6 +913,7 @@ export class Stage {
         h.sfx('bolt', this.boltStreak);
         h.fx('bolt', e.x, e.y);
         if (e.big) { h.popup(`SCHRAUBENDOSE +${e.v} 🔩`, 'good'); h.haptic('light'); }
+        this.pickupTotal++;
         this.emit('pickup', { kind: 'bolt', value: e.v, x: e.x, y: e.y });
         return;
       }
@@ -991,6 +1008,7 @@ export class Stage {
   // Schrott eingesammelt (Pickup oder Regel collectScrapMass): Meta-Schrott + Ladung der Mülltonne
   collectScrap(x, y, value = 1) {
     this.scrapPickups++;
+    this.pickupTotal++;
     this.scrap += value * (this.stats.scrapGain ?? 1);
     this.pickupCounts.scrap++;
     this.hooks.fx('scrap', x, y);
@@ -1005,6 +1023,7 @@ export class Stage {
     const v = this.vehicle;
     if (e.kind === 'scrap') { this.collectScrap(e.x, e.y, e.value || PICKUPS.scrap); return; }
     this.pickupCounts[e.kind] = (this.pickupCounts[e.kind] || 0) + 1;
+    this.pickupTotal++;
     switch (e.kind) {
       case 'fuel': v.addFuel(PICKUPS.fuel); h.popup(`KANISTER +${PICKUPS.fuel} ⛽`, 'good'); break;
       case 'cool': v.cool(PICKUPS.cool); h.popup('KÜHLPACK ❄', 'good'); break;
@@ -1135,8 +1154,10 @@ export class Stage {
     if (v.durability <= 0) reason = 'wreck';
     const dist = Math.max(0, Math.round(v.maxX));
     const height = Math.max(0, Math.round(this.maxAlt));
-    const medal = reason === 'wreck' ? null : medalFor(dist, this.medals);
-    const grade = medal ? gradeFor(dist, this.medals) : 'miss';
+    // Paket D: Medaille nach der Etappen-Art (Weitflug wie bisher; Lieferung: Bruchlandungen begrenzen)
+    const goalVal = Math.round(this.goalNow);
+    const medal = reason === 'wreck' ? null : this.goal.type === 'distance' ? medalFor(dist, this.medals) : goalMedal(this.spec, this.goal.type === 'delivery' ? dist : goalVal, this.stunts.crashes);
+    const grade = !medal ? 'miss' : this.goal.type === 'distance' || (this.goal.type === 'delivery' && medal === 'gold') ? gradeFor(dist, this.medals) : medal;
     this.emit('stageEnd', { medal, dist });
     this.flushEvents();
     const r = {
@@ -1177,6 +1198,7 @@ export class Stage {
       biome: this.biome.id,
       world: this.biome.id,
       mutator: this.spec.mutator || null,
+      goal: { type: this.goal.type, value: goalVal, medals: { ...this.goalMedals } },
     };
     // Testfahrt (Dev-Menü): Schrott wie in Phase 2
     const reward = testDriveReward(r, this.stats, this.biome);

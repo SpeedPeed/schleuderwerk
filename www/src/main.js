@@ -52,6 +52,7 @@ import { Tutorial, TutorialView, tutorialProgress, resetTutorial, TUTORIAL_ORDER
 import { backAction } from './ui/backButton.js';
 import { TXT } from './data/texts.js';
 import { activeRecipes } from './items/recipes.js';
+import { goalUnit } from './stage/goals.js';
 import { FxOverlay } from './ui/fxOverlay.js';
 import { applyInputMode, inputMode } from './ui/inputMode.js';
 import { KeyNav } from './ui/keyNav.js';
@@ -566,7 +567,7 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
     boostSlot: input.boostSlot,
     weather: stage.weather,
     abilities: stage.abilities.slots.map((s) => s.def),
-    goal: { target: stage.target, medals: stage.medals, medalList: stage.medalList },
+    goal: { target: stage.goalMedals.bronze, medals: stage.goalMedals, medalList: stage.medalList, type: stage.goal.type, unit: goalUnit(stage.goal), timeLimit: stage.goal.timeLimit || 0, distMedals: stage.medals },
     items: inventory ? { inventory, napped: stage.nappedSlot } : null,
     banner, scrap,
   });
@@ -1294,6 +1295,11 @@ function devSkip(medal) {
     if (paused) resumeGame();
     if (stage.phase === 'aim') stage.launchNow(0.3);
     stage.vehicle.maxX = distFor(stage.spec);
+    // Paket D: Etappen-Arten – auch den Wert des Ziels setzen (Höhe, Trickpunkte, Pickups)
+    const gm = stage.goalMedals, gv = medal === 'miss' ? Math.round(gm.bronze * 0.6) : gm[medal] ?? gm.gold;
+    if (stage.goal.type === 'height') stage.maxAlt = gv;
+    else if (stage.goal.type === 'stunt') stage.tricks = gv;
+    else if (stage.goal.type === 'collect') stage.pickupTotal = gv;
     stage.finish('stop');
     return `Etappe beendet (${medal})`;
   }
@@ -1308,7 +1314,9 @@ function devSkip(medal) {
   if (e.kind !== 'stage') { runLogic.leaveNode(run); writeSave(save); openMap(); return `${node.type}: verlassen`; }
   const dist = distFor(e.spec);
   const md = medalFor(dist, e.spec.medals);
+  const g = e.spec.goal && e.spec.goal.medals ? e.spec.goal : null;
   const r = {
+    goal: g ? { type: g.type, value: medal === 'miss' ? Math.round(g.medals.bronze * 0.6) : g.medals[medal] ?? g.medals.gold, medals: { ...g.medals } } : null,
     reason: 'stop', cleared: !!md, medal: md, dist, target: e.spec.target, medals: e.spec.medals, medalList: e.spec.medalList, kind: e.spec.kind,
     height: 0, tricks: 0, bolts: 0, scrap: 0, blueprints: 0, crates: 0, damageTaken: 0, durability: run.durability,
     durabilityMax: runLogic.durabilityMax(run), stunts: { flips: 0, loops: 0 }, time: 0, biome: e.spec.biome,

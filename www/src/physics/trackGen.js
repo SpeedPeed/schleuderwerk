@@ -9,6 +9,7 @@
 import { FEATURES as F, TRACK, PICKUPS, ASCENSION_RULES as AR, REWARDS } from '../data/balance.js';
 import { FEATURE_DEFAULTS, FEATURE_INFO, biomeById } from '../data/biomes.js';
 import { mutatorById } from '../data/mutators.js';
+import { makeGoal } from '../stage/goals.js';
 import { clamp, lerp, DEG } from '../core/math.js';
 
 const STEP = TRACK.step;
@@ -211,7 +212,7 @@ function featureWeights(biome, kind, floor, mods = {}) {
   return out;
 }
 
-export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null, rng, bossId = null, mods = {}, mutator = null }) {
+export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null, rng, bossId = null, mods = {}, mutator = null, goal = null }) {
   const bio = typeof biome === 'string' ? biomeById(biome) : biome;
   if (!bio) throw new Error(`Unbekanntes Biom ${biome}`);
   if (!rng) throw new Error('generateStageSpec braucht rng');
@@ -309,6 +310,7 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
     weather,
     blueprintX,
     mutator: mut ? mut.id : null,
+    goal: kind === 'boss' ? null : makeGoal(goal, target, kind),   // Paket D: Etappen-Art (stage/goals.js)
   };
 }
 

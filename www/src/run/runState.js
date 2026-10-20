@@ -322,6 +322,7 @@ export function stageSpecFor(run, node) {
     biome: currentBiome(run), kind, floor: n.floor, act: run.act, rng,
     bossId: kind === 'boss' ? run.bossIds[run.act] || n.bossId : null,
     mutator: kind === 'boss' ? null : n.mutator || null,
+    goal: kind === 'boss' ? null : n.goal || null,
     mods: { targetMul: am.targetMul || 1, bossTargetMul: (am.bossTargetMul || 1) * tired, eliteHazards: !!am.eliteHazards },
   });
 }

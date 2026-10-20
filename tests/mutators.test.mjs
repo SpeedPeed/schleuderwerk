@@ -64,3 +64,43 @@ test('Belohnung: harte Mutatoren zahlen mehr Grund-Schrauben', () => {
   const a = stageRewards(2, 'elite', r), m = stageRewards(2, 'elite', { ...r, mutator: 'spiegelverkehrt' });
   assert.ok(m.base.bolts > a.base.bolts && m.base.scrap > a.base.scrap);
 });
+
+// ---------- Paket D3: Etappen-Arten ----------
+import { goalMedal, makeGoal, GOAL_TYPES, GOAL_INFO } from '../www/src/stage/goals.js';
+import { generateActMap as gam } from '../www/src/map/mapGen.js';
+
+test('Etappen-Arten: Marken je Art, Lieferung begrenzt durch Bruchlandungen, Karte verteilt Arten', () => {
+  for (const t of GOAL_TYPES) assert.ok(GOAL_INFO[t] && GOAL_INFO[t].iconId, t);
+  const h = makeGoal('height', 600, 'stage');
+  assert.ok(h.medals.bronze > 0 && h.medals.silver > h.medals.bronze && h.medals.gold > h.medals.silver);
+  assert.equal(makeGoal('distance', 600, 'stage'), null);
+  assert.equal(makeGoal('sprint', 600, 'stage').timeLimit > 0, true);
+  const spec = { goal: makeGoal('delivery', 600, 'stage'), medals: { bronze: 600, silver: 750, gold: 900 }, medalList: ['bronze', 'silver', 'gold'] };
+  assert.equal(goalMedal(spec, 950, 0), 'gold');
+  assert.equal(goalMedal(spec, 950, 2), 'silver');
+  assert.equal(goalMedal(spec, 950, 3), 'bronze');
+  assert.equal(goalMedal(spec, 950, 4), null);
+  const seen = new Set();
+  for (let i = 0; i < 20; i++) {
+    const m = gam(2, makeRng(`goal${i}`));
+    for (const n of m.floors.flat()) {
+      if (n.floor === 0 && n.type === 'stage') assert.equal(n.goal, undefined, 'Etage 0 ist Weitflug');
+      if (n.goal) seen.add(n.goal);
+    }
+  }
+  assert.ok(seen.size >= 5, [...seen].join(','));
+});
+
+test('Etappe: Zeitrennen endet nach dem Zeitlimit, Höhenjagd wertet die Höhe', () => {
+  const b = BIOMES[0];
+  const spec = generateStageSpec({ biome: b, kind: 'stage', floor: 2, rng: makeRng('sp'), goal: 'sprint' });
+  const st = makeSimStage({ spec, biome: b, save: simSave('gut'), seed: 4 }).stage;
+  let res = null;
+  st.hooks.end = (r) => { res = r; };
+  st.fire();
+  for (let i = 0; i < 60 * 20 && !res; i++) st.update(1 / 60, { hold: false, tilt: 0 });
+  assert.ok(res && res.reason === 'time' && res.time <= spec.goal.timeLimit + 0.1, `${res && res.reason} ${res && res.time}`);
+  assert.equal(res.goal.type, 'sprint');
+  const hs = generateStageSpec({ biome: b, kind: 'stage', floor: 2, rng: makeRng('hs'), goal: 'height' });
+  assert.equal(hs.goal.type, 'height');
+});

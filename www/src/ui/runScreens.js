@@ -1,5 +1,6 @@
 import { el, fmt, show, icon, cur } from './dom.js';
 import { mutatorById } from '../data/mutators.js';
+import { GOAL_INFO, goalOf, goalMedals, goalUnit, goalRule } from '../stage/goals.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeById, bossById, FEATURE_INFO } from '../data/biomes.js';
 import { FX, RUN, REWARDS } from '../data/balance.js';
@@ -52,7 +53,13 @@ export function introBannerHtml(d) {
   const sub = s.kind === 'boss' ? `Boss-Strecke · ${b.name}` : `Etage ${s.floor + 1} · ${b.name}`;
   const boss = s.kind === 'boss' ? bossById(s.bossId) || {} : null;
   const bossDesc = boss ? boss.intro || boss.desc : '';
-  const medals = s.medalList.map((m) => `<span class="ri-medal m-${m}">${icon(MEDAL[m].icon)} ${fmt(s.medals[m])} m${s.kind === 'boss' && m === 'gold' ? ' <small>Bonus</small>' : ''}</span>`).join('');
+  // Paket D: Etappen-Art – Marken in ihrer Einheit
+  const goal = goalOf(s);
+  const gm = goalMedals(s);
+  const unit = goalUnit(goal);
+  const medals = s.medalList.map((m) => `<span class="ri-medal m-${m}">${icon(MEDAL[m].icon)} ${fmt(gm[m])} ${unit}${s.kind === 'boss' && m === 'gold' ? ' <small>Bonus</small>' : ''}</span>`).join('');
+  const gi = GOAL_INFO[goal.type];
+  const goalHtml = goal.type !== 'distance' ? `<div class="ri-art">${icon(gi.iconId)}<div><b>${esc(gi.name)}</b><span>${esc(goalRule(goal))}</span></div></div>` : '';
   const hz = s.hazards.map((h) => FEATURE_INFO[h]).filter(Boolean)
     .map((f) => `<span class="chip ${f.danger ? 'danger' : ''}">${f.icon} ${f.name}</span>`).join('') || '<span class="chip">keine Besonderheiten</span>';
   const traits = biomeTraits(b).map((t) => `<span class="chip">${esc(t)}</span>`).join('');
@@ -75,9 +82,10 @@ export function introBannerHtml(d) {
   return `
     <div class="ri-head">${kindSign(def, title)}<div class="ri-sub">${esc(sub)}</div></div>
     ${bossDesc ? `<p class="ri-desc">${esc(bossDesc)}</p>` : ''}
+    ${goalHtml}
     ${mutHtml}
     ${bossHtml}
-    <div class="ri-goal"><div class="ri-target"><small>ZIEL</small><b>${fmt(s.target)} m</b></div><div class="ri-medals">${medals}</div></div>
+    <div class="ri-goal"><div class="ri-target"><small>ZIEL</small><b>${fmt(gm.bronze)} ${unit}</b></div><div class="ri-medals">${medals}</div></div>
     ${retry}
     <div class="chips">${hz}<span class="chip">${esc(weatherText(s.weather))}</span>${traits}</div>
     ${asc}
@@ -148,9 +156,13 @@ export class RunScreens {
           : r.reason === 'fall' ? T.fallFail : T.fail;
     const why = T.why[r.reason] || '';
     const ff = r.instant ? ' · vorgespult' : '';
-    const slot = (m, i, bonus) => `<div class="rm-slot m-${m}${bonus ? ' bonus' : ''}" data-medal="${m}" style="--i:${i}"><span>${icon(MEDAL[m].icon)}</span><small>${fmt(r.medals[m])} m</small></div>`;
+    // Paket D: Etappen-Art – Wert und Marken in ihrer Einheit (Weitflug/Lieferung wie bisher in m)
+    const gt = r.goal && r.goal.type !== 'distance' && r.goal.type !== 'delivery' ? r.goal : null;
+    const unit = gt ? goalUnit(gt) : 'm';
+    const gMed = gt ? gt.medals : r.medals;
+    const slot = (m, i, bonus) => `<div class="rm-slot m-${m}${bonus ? ' bonus' : ''}" data-medal="${m}" style="--i:${i}"><span>${icon(MEDAL[m].icon)}</span><small>${fmt((m === 'platin' || m === 'king' ? r.medals : gMed)[m])} ${m === 'platin' || m === 'king' ? 'm' : unit}</small></div>`;
     const slots = r.medalList.map((m, i) => slot(m, i, false))
-      + (r.medals.platin ? ['platin', 'king'].map((m, i) => slot(m, r.medalList.length + i, !(grade === m || (m === 'platin' && grade === 'king')))).join('') : '');
+      + (r.medals.platin && (!r.goal || r.goal.type === 'distance') ? ['platin', 'king'].map((m, i) => slot(m, r.medalList.length + i, !(grade === m || (m === 'platin' && grade === 'king')))).join('') : '');
     const rw = o.rewards || { bolts: 0, scrap: 0, blueprints: 0, base: {}, combo: { bolts: 0, scrap: 0 } };
     const cr = o.credited || null;
     const rows = [];
@@ -184,7 +196,9 @@ export class RunScreens {
     this.present('result', `
       <div class="sheet-paper rr-sheet">
         <h2 class="rr-title ${o.cleared ? 'good' : 'bad'}">${title}</h2>
-        <div class="rr-dist"><b>${fmt(r.dist)} m</b> <small>/ Ziel ${fmt(r.target)} m · ${why}${ff}</small></div>
+        ${gt ? `<div class="rr-art">${icon(GOAL_INFO[gt.type].iconId)} ${esc(GOAL_INFO[gt.type].name)}</div>` : ''}
+        <div class="rr-dist"><b>${fmt(gt ? gt.value : r.dist)} ${unit}</b> <small>/ Ziel ${fmt(gt ? gt.medals.bronze : r.target)} ${unit} · ${gt ? `${fmt(r.dist)} m · ` : ''}${why}${ff}</small></div>
+        ${r.goal && r.goal.type === 'delivery' ? `<div class="rr-art">${icon('kiste')} Lieferung · ${fmt(r.stunts ? r.stunts.crashes : 0)} Bruchlandung(en)</div>` : ''}
         <div class="rr-medals">${slots}</div>
         <div class="res-rows">${rows.map(([ic, a, v, sub], i) => `<div class="res-row" style="animation-delay:${0.3 + i * 0.08}s"><span>${icon(ic)} ${a}</span><span class="res-sub">${esc(sub)}</span><b data-count="${v}" data-ic="${FLY_IC[ic] || ''}">+0</b></div>`).join('')}
           <div class="res-row" style="animation-delay:${0.3 + rows.length * 0.08}s"><span>${icon('schluessel')} Schaden</span><span class="res-sub">${fmt(Math.ceil(extra.durability ?? r.durability))} / ${fmt(extra.durabilityMax)} übrig</span><b class="neg">−${fmt(r.damageTaken)}</b></div></div>

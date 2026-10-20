@@ -51,7 +51,12 @@ export const comboRewards = (tricks) => ({
 export function stageRewards(act, kind, result, { roll = 1, firstEncounter = true } = {}) {
   const a = actKey(act);
   const grade = resultGrade(result);
-  const base = { bolts: 0, scrap: distanceScrap(a, kind, result.dist, grade), blueprints: 0 };
+  // Paket D: Etappen-Arten mit eigener Einheit zahlen Weiten-Schrott nach der „gleichwertigen Weite“
+  // (Ziel-Erfüllung × Zielmarke) – ein Zeitrennen endet nach 8 s und soll nicht weniger bringen als ein Weitflug
+  const g = result.goal;
+  const dist = g && g.medals && g.medals.bronze && g.type !== 'distance' && g.type !== 'delivery' && result.target
+    ? Math.max(result.dist || 0, (g.value / g.medals.bronze) * result.target) : result.dist;
+  const base = { bolts: 0, scrap: distanceScrap(a, kind, dist, grade), blueprints: 0 };
   const km = REWARDS.kindMul[kind] || 1;
   if (grade !== 'miss') {
     const mm = REWARDS.medalMul[result.medal] || 1;

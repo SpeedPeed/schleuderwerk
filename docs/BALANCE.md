@@ -180,7 +180,7 @@ Jedes Item allein (★1) gegen „ohne Items“ (Akt 2 + 3, Etage 2, je 10 Etapp
 <!-- progression -->
 ## Progression & Ökonomie (Phase 6, mit Paket A nachgemessen)
 
-> Erzeugt von `node tools/sim/progression.mjs` (8 Karrieren, Modell vom 2026-10-20 mit 16 Etappen je Zelle; Rechenzeit 11 s). Modell neu messen: `--fit`.
+> Erzeugt von `node tools/sim/progression.mjs` (8 Karrieren, Modell vom 2026-10-20 mit 16 Etappen je Zelle; Rechenzeit 13 s). Modell neu messen: `--fit`.
 
 **Verfahren.** Der Bot misst je Akt, Knotenart/Etage und Slot-Stufe 0/3/5/8/10 (alle Slots) die Weite ÷ Ziel (log-normal), Schaden, Schrauben, Schrott und Item-Kisten; dazu die Wirkung von Items (zufällige Builds mit 2/4/6 Items, 4 Items je Seltenheit, Set-Builds 2/4/6 eines Tags) und der Schrottstufen-Physik. Die Karriere läuft mit der echten Run-Logik (Karte, Händler, Werkbank, Ereignisse, Schatz, Tankstelle, Item-Auswahl mit Synergie-Strategie, Belohnungen, Schrottstufen); nur das Etappen-Ergebnis wird aus dem Modell gewürfelt. Zwischen den Runs: Forschung (billigste zuerst), Chassis sobald bezahlbar, dann die billigste Slot-Verbesserung. Nach dem ersten Sieg spielt die Person immer die höchste freigeschaltete Schrottstufe. Paket A: verfehlte Etappen enden mit Notlandung (die Person nimmt nie „Nochmal“), jeder Neuversuch hat eine neue Strecke (eigene Streuung).
 

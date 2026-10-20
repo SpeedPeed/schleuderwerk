@@ -12,7 +12,7 @@
 //    mindestens ein Schrotthändler auf Etage 2–4; Werkbank/Schwarzmarkt nur mit erledigter Forschung
 //    (requiresResearch); keine gleichen Sonderknoten (alles außer Etappe) direkt hintereinander.
 // opts: { research: [erledigte Forschungs-IDs], eliteWeightAdd, bossId }
-import { MAP } from '../data/balance.js';
+import { MAP, GOALS } from '../data/balance.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { MUTATORS, MUTATOR_RULES } from '../data/mutators.js';
 import { TAG_IDS } from '../data/tags.js';
@@ -148,6 +148,7 @@ export function generateActMap(act, rng, opts = {}) {
   }
   assignMutators(floors, act, rng.fork('mutatoren'));
   assignRewardTags(floors, rng.fork('beute'));
+  assignGoals(floors, rng.fork('arten'));
   return { act, floors, boss };
 }
 
@@ -183,6 +184,25 @@ export function assignRewardTags(floors, rng) {
       for (const p of n.prev) for (const id of byId[p].next) if (id !== n.id && byId[id].rewardTag) sib.add(byId[id].rewardTag);
       const list = TAG_IDS.filter((t) => !sib.has(t));
       n.rewardTag = rng.pick(list.length ? list : TAG_IDS);
+    }
+  }
+}
+
+// Paket D – Etappen-Arten (stage/goals.js): Etage 0 und Boss immer Weitflug, sonst nach GOALS.weights (Elite:
+// eliteWeights); Geschwister und direkte Vorgänger bekommen möglichst eine andere Art.
+export function assignGoals(floors, rng) {
+  const byId = {};
+  for (const n of floors.flat()) byId[n.id] = n;
+  for (const row of floors) {
+    for (const n of row) {
+      if ((n.type !== 'stage' && n.type !== 'elite') || n.floor === 0) continue;
+      const avoid = new Set();
+      for (const p of n.prev) {
+        if (byId[p].goal) avoid.add(byId[p].goal);
+        for (const id of byId[p].next) if (id !== n.id && byId[id].goal) avoid.add(byId[id].goal);
+      }
+      const w = Object.entries(n.type === 'elite' ? GOALS.eliteWeights : GOALS.weights).map(([t, x]) => [t, avoid.has(t) ? x * 0.2 : x]);
+      n.goal = rng.weighted(w);
     }
   }
 }

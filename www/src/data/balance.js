@@ -256,6 +256,21 @@ export const MAP = {
   autoAdvanceDelay: 0.6,   // Paket A: nur ein Nachfolger → die Karte fährt nach so vielen Sekunden selbst weiter
 };
 
+// ---------- Paket D: Etappen-Arten (stage/goals.js, map/mapGen.js) ----------
+// perTarget: Bronze-Marke = perTarget × Weiten-Zielmarke (m) der Etappe; gold: Gold = Bronze × gold; round: Rundung.
+// Eingemessen mit dem Bot (tools/playtest/goals.mjs): gleiche Bronze-Quote wie ein Weitflug derselben Etappe.
+// weights: Anteil der Arten auf normalen Etappen (Etage 0 immer Weitflug, Boss immer Weitflug);
+// eliteWeights: Elite-Etappen.
+export const GOALS = {
+  height: { perTarget: 0.04, gold: 1.35, round: 1 },      // Akt 1 ≈ 18–25 m, Akt 3 ≈ 40–55 m Flughöhe
+  stunt: { perTarget: 1.45, gold: 2.5, round: 10 },       // Bot-Messung: Gold ×3,15 bei gleicher Quote – etwas leichter
+  collect: { perTarget: 0.043, gold: 1.5, round: 1 },     // ≈ 20–45 Pickups
+  sprint: { perTarget: 0.21, gold: 1.2, round: 5, timeLimit: 8 },   // Weite nach 8 s Flug
+  delivery: { crashCaps: { bronze: 3, silver: 2, gold: 1 } },
+  weights: { distance: 3, height: 1.2, stunt: 1, collect: 1.2, sprint: 1, delivery: 1 },
+  eliteWeights: { distance: 2, height: 1, stunt: 1, collect: 1, sprint: 1, delivery: 1 },
+};
+
 // ---------- Run (run/runState.js) ----------
 export const RUN = {
   acts: 3,
