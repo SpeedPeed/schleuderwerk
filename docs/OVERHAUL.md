@@ -350,6 +350,73 @@ kommt aus Regel-Variation (Mutatoren, Ziele, Bosse), nicht nur aus neuen Strecke
 
 ---
 
+### Umsetzungsstand Paket A
+
+> Stand 20.10.2026, Branch `claude/car-evolve-clone-enhanced-lwnjjy`. Alle Zahlen in `www/src/data/balance.js`
+> (`STAGE.fastForward`, `REWARDS`, `KOMBO`, `RUN.emergency/bossRetry`, `GARAGE`, `MAP.autoAdvanceDelay`), Verträge in
+> `docs/ARCHITEKTUR.md` (§4.8 Slot-Stufen, §7 Etappe, §8 Run, §10 Spielstand v4, Anhang A „Paket A“).
+
+**Umgesetzt**
+
+1. **Vorspulen & Hochrechnung** (`stage/stage.js`): Eingaben je Bild als Daten (Aufzeichnung), ×4 ab 0,8 s am Boden
+   ohne Boost, Tippen/Leertaste beim Ausrollen = Sofort-Ende (gleiche Physik-Schritte, stumme Hooks – Ergebnis identisch,
+   `tests/pacing.test.mjs`), Hochrechnung über eine **Schatten-Etappe** (Wiederholung aller Bilder): ohne Treibstoff und
+   Bronze unerreichbar → „Knapp: NN %“, Ende nach 1 s. Erweiterung: steht mit Bronze fest, dass kein Sprung mehr kommt,
+   endet die Etappe nach 0,4 s („Hochgerechnet“). HUD „⏩ ×4 – Tippen = Ende“, Motor höher.
+2. **Jeder Versuch zahlt** (`run/rewards.js → stageRewards`, einzige Stelle): `scrapPerM {0,12/0,16/0,22} × Weite ×
+   gradeMul` (verfehlt 0,5 · Bronze 1 · Silber 1,25 · Gold 1,5 · **Platin** (Gold × 1,5) 2 · **Schrottkönig** (Gold × 2)
+   3), Kombo 1 🔩/15 und 1 ⚙/40 Punkte, Blaupausen Gold+ 25 % · Elite 2 · Boss-Begegnung 1. Gutschrift **sofort**
+   (`runState.settleRun`), HUD-Zähler mit dem Schrott der laufenden Etappe.
+3. **Kein identischer Neuversuch**: verfehlt = Notlandung (−10 %, Trostkiste 10/14/18 🔩, weiter auf der Karte) oder
+   „↻ Nochmal“ (−15 %, neuer Strecken-Seed); Boss: neue Variante + Ziel −5 % je Neuversuch (max. 3×).
+4. **Weniger Klicks**: Intro als Banner über der Zielansicht (Knoten wird erst beim Abschuss betreten, Zurück = Karte
+   ohne Kosten), Ergebnis + Beute auf einem Bildschirm (Nehmen = weiter), Karte fährt bei einem Nachfolger nach 0,6 s
+   selbst weiter, 6 statt 10 Hinweise, Etappen-Hinweise nur als Sprechblase beim Zielen.
+5. **Spürbare Meta-Schritte**: Slot-Stufen 0–10 je Slot (Teilwechsel behält die Stufe), doppelte Wirkung, `60 × 1,32^L`,
+   jeder Verbessern-Knopf zeigt „+N m“ (Bot-Messung `tools/sim/levelGains.mjs` → `data/levelGains.js`; Teile ohne
+   messbaren Weitengewinn zeigen den Wert). Spielstand **v4**: Teile-Stufen → Slot-Stufen (mindestens gleich stark,
+   Überbezahltes zurück), SW3-Texte importierbar.
+
+**Gegengewicht für die Langzeitkurve** (Simulator, `docs/BALANCE.md` „Progression“): Paket A macht Runs ergiebiger *und*
+leichter (Notlandung statt Abschlepp-Schleife, unabhängige neue Strecken, „müder“ Boss). Ohne Ausgleich: erster Sieg
+≈ 1,8 h, Schrottstufe 15 ≈ 17 h. Nachgezogen: `RESEARCH.costMul` 1 → 1,5, Schrottstufe 2/7 `1,08/1,15 → 1,12/1,22`,
+Akt-3-Boss 740 → 830 m; Zielkorridore `PROGRESSION.targets` auf OVERHAUL §5/§6 (Akt-1-Boss 0,5–1 h, Sieg 3–5 h,
+alle Chassis 15–25 h, Schrottstufe 15 bleibt 30–50 h). `SIM.sec` neu: Etappe 45 s / Neuversuch 35 s (vorher 75 / 55).
+
+**Messwerte vorher → nachher** (gleiche Skripte, Anhang)
+
+| Kriterium | Ziel | v1.0 | Paket A | erfüllt |
+|---|---|---|---|---|
+| Echtzeit je Etappe, Median (`anatomy.mjs`, Bot ohne Items, 15 Konfigurationen × 40) | ≤ 14 s | 20–24 s | **10,8 s** (mit Tippen beim Ausrollen 7,3 s) | ✔ |
+| Anteil Auslaufen nach dem letzten Sprung (`anatomy.mjs`) | ≤ 15 % | 35–57 % (6,6–11,9 s) | **20 %** (≈ 2,2 s); Browser-Bot mit Tippen **11 %** | ≈ (s. u.) |
+| Flug-Anteil der Etappe (`anatomy.mjs`) | – | 23–36 % | 57 % | – |
+| Eingaben zwischen zwei Etappen (`browser-play.mjs`, direkt ohne Sonderknoten) | ≤ 2 | 4–6 | **Median 1, ≤ 2 in 93 %** (14 Übergänge) | ✔ |
+| Identische Wiederholungen (Browser 39 Starts / Karrieren-Modell 4.081 Starts) | < 5 % | 41 % / ≈ 50 % | **0 % / 0 %** | ✔ |
+| Schrott/h erste Stunde (`economy.mjs`, 8 Karrieren) | ≥ 1.500 | 351 | **2.568** (Runs 1–10: 218–898 ⚙ statt 61–136) | ✔ |
+| Runs mit ≥ 1 📘 (erste 3 h) | ≥ 80 % | 38 % | **100 %** | ✔ |
+| Erster Akt-1-Boss (Median, `economy.mjs`) | ≤ 45 min | 82 min | **29 min** (25–42) | ✔ |
+| Slot-Stufen nach Run 1 / Ø nach 1 h | ≥ 2 / ≥ 3 von 10 | – / 1,1 von 20 | **3 / 3,6** | ✔ |
+| Langzeit (`progression.mjs`, 8 Karrieren): erster Sieg / alle Chassis / Schrottstufe 15 | 3–5 h / 15–25 h / 30–50 h | 8,2 h / 25,4 h / 45,5 h | 2,7 h / 20,3 h / 39,7 h | ≈ / ✔ / ✔ |
+| Schlechter Run mit voller Meta gewinnt | < 30 % | 0–12 % | 1–6 % | ✔ |
+
+**Was nicht ganz erreicht ist.** Der Auslauf-Anteil liegt im Bot-Modell bei ≈ 20 % statt ≤ 15 %. Er besteht aus den
+vorgegebenen Zeiten selbst: 0,8 s am Boden vor dem Vorspulen (×1), Antrieb mit Resttreibstoff (×4, ≈ 0,9 s) und 1 s
+„Knapp“-Anzeige (81 % der Enden ohne Tippen sind Knapp-Enden). Bei 10–11 s Etappe sind das ≈ 2 s. Ein Sweep
+(0,5 s Bodenzeit, ×6, 0,7 s Anzeige) brachte nur 17 %; ≤ 15 % ginge nur, wenn die Etappe auch mit Treibstoff
+hochgerechnet endet – dann könnte niemand mehr am Boden Anlauf boosten. Im Browser-Playtest (Kopf tippt beim Ausrollen,
+wenn voraus nichts mehr kommt) sind es 11 %. In absoluten Zahlen ist das Ausrollen von 7–12 s auf ≈ 2 s gefallen.
+Die Echtzeit im Browser-Playtest (Median 16,3 s je Etappe) ist durch Software-Grafik (SwiftShader, Bildzeit-Kappung
+`STAGE.maxFrameDt`) gedehnt und gilt nur relativ; die Spielzeit dort ist länger, weil der Kopf mit Items deutlich weiter
+fliegt (Gold/Platin).
+
+**Offen / Hinweise**
+- Erste Stunde 2.568 ⚙/h liegt knapp über dem Wunschband 1.500–2.500 (bewusst: Paket A soll sich spürbar lohnen).
+- `drive_pedale` fliegt im Bot auf Stufe 0 doppelt so weit wie der Rasenmähermotor (955 vs. 450 m, `levelGains.mjs`) –
+  Balance-Ausreißer aus v1.0, für Paket C/F vormerken.
+- Die Meter-Anzeige misst eine Bezugs-Etappe (Akt 1 Etage 4) mit dem Bot – Panzerung, Kühlung, Räder zeigen keine Meter.
+
+---
+
 ### Paket B – UI- und Stil-Overhaul „Schrottplatz-Werkstatt“
 
 **Ziel:** Eine Oberfläche, die aussieht wie aus Opas Werkstatt gebaut – Blech, Nieten, Kreppband, Schablonenschrift,
@@ -652,7 +719,8 @@ npm run build:pc                                          # PC-Datei für den Br
 node tools/playtest/browser-play.mjs --runs 3 --out /tmp/sw-playtest --shots tools/playtest/shots/play
 node tools/playtest/report.mjs /tmp/sw-playtest          # Bildschirm-Zeiten, Eingaben, Etappen, Wiederholungen
 node tools/playtest/screen-tour.mjs                       # alle Bildschirme (Handy + PC) → tools/playtest/shots/tour/
-node tools/playtest/anatomy.mjs --n 40                    # Etappen-Anatomie, Abwechslung, Karte (≈ 20 s)
+node tools/playtest/anatomy.mjs --n 40                    # Etappen-Anatomie (mit/ohne Tippen), Abwechslung, Karte (≈ 30 s)
 node tools/playtest/synergy.mjs --n 12 --runs 30          # Tag-Konzentration + echte Runs (≈ 40 s)
-node tools/playtest/economy.mjs --careers 8 --hours 10    # Schrott/h, Kaufkraft, Fortschritt (≈ 5 s)
+node tools/playtest/economy.mjs --careers 8 --hours 10    # Schrott/h, Blaupausen je Run, erster Boss, Wiederholungen (≈ 20 s)
+node tools/sim/levelGains.mjs --n 24                      # Paket A: Meter je Slot-Stufe → data/levelGains.js (≈ 30 s)
 ```

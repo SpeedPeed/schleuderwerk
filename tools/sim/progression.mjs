@@ -592,11 +592,11 @@ export function summarizeCareers(careers) {
 export function progressionSection({ careers, rows, bad, botBad = null, model, secs }) {
   const L = [];
   L.push(MARK);
-  L.push('## Progression & Ökonomie (Phase 6)');
+  L.push('## Progression & Ökonomie (Phase 6, mit Paket A nachgemessen)');
   L.push('');
   L.push(`> Erzeugt von \`node tools/sim/progression.mjs\` (${careers.length} Karrieren, Modell vom ${model.created} mit ${model.n} Etappen je Zelle; Rechenzeit ${secs} s). Modell neu messen: \`--fit\`.`);
   L.push('');
-  L.push('**Verfahren.** Der Bot misst je Akt, Knotenart/Etage und Teile-Stufe 0/5/10/15/20 die Weite ÷ Ziel (log-normal), Schaden, Schrauben, Schrott und Item-Kisten; dazu die Wirkung von Items (zufällige Builds mit 2/4/6 Items, 4 Items je Seltenheit, Set-Builds 2/4/6 eines Tags) und der Schrottstufen-Physik. Die Karriere läuft mit der echten Run-Logik (Karte, Händler, Werkbank, Ereignisse, Schatz, Tankstelle, Item-Auswahl mit Synergie-Strategie, Belohnungen, Schrottstufen); nur das Etappen-Ergebnis wird aus dem Modell gewürfelt. Zwischen den Runs: Forschung (billigste zuerst), Chassis sobald bezahlbar, dann die billigste Teile-Verbesserung. Nach dem ersten Sieg spielt die Person immer die höchste freigeschaltete Schrottstufe.');
+  L.push('**Verfahren.** Der Bot misst je Akt, Knotenart/Etage und Slot-Stufe 0/3/5/8/10 (alle Slots) die Weite ÷ Ziel (log-normal), Schaden, Schrauben, Schrott und Item-Kisten; dazu die Wirkung von Items (zufällige Builds mit 2/4/6 Items, 4 Items je Seltenheit, Set-Builds 2/4/6 eines Tags) und der Schrottstufen-Physik. Die Karriere läuft mit der echten Run-Logik (Karte, Händler, Werkbank, Ereignisse, Schatz, Tankstelle, Item-Auswahl mit Synergie-Strategie, Belohnungen, Schrottstufen); nur das Etappen-Ergebnis wird aus dem Modell gewürfelt. Zwischen den Runs: Forschung (billigste zuerst), Chassis sobald bezahlbar, dann die billigste Slot-Verbesserung. Nach dem ersten Sieg spielt die Person immer die höchste freigeschaltete Schrottstufe. Paket A: verfehlte Etappen enden mit Notlandung (die Person nimmt nie „Nochmal“), jeder Neuversuch hat eine neue Strecke (eigene Streuung).');
   L.push('');
   L.push(`**Annahmen:** Etappe ${SIM.sec.stage} s (Neuversuch ${SIM.sec.retry} s; in den ersten ${CONTROLS.tutorialRuns} Runs + ${SIM.sec.tutorial} s für Hinweise), Item-Auswahl ${SIM.sec.choice} s, Händler ${SIM.sec.dealer} s, Ereignis ${SIM.sec.event} s, Werkbank ${SIM.sec.workbench} s, Schatz/Tankstelle ${SIM.sec.treasure} s, Garage ${SIM.sec.garage} s + ${SIM.sec.buy} s je Kauf, Run-Ende ${SIM.sec.runEnd} s. Einarbeitung: Weite × ${String(SIM.skill.start).replace('.', ',')} am Anfang, nach ≈ ${String(SIM.skill.tauH).replace('.', ',')} h zu 63 % aufgeholt (Bot-Niveau).`);
   L.push('');
@@ -611,9 +611,9 @@ export function progressionSection({ careers, rows, bad, botBad = null, model, s
   const c0 = careers.map((c) => c.firstRun).filter(Boolean);
   const first12 = c0.filter((r) => !r.won && r.act <= 2).length;
   L.push(`- Erster Run: endet in ${first12}/${c0.length} Karrieren in Akt 1–2 (Akte: ${c0.map((r) => (r.won ? 'Sieg' : r.act)).join(', ')}).`);
-  L.push(`- Runs bis Schrottstufe 15: Median ${median(careers.map((c) => c.runs))}, Siege ${median(careers.map((c) => c.wins))}, Etappen ${median(careers.map((c) => c.stages))}; am Ende Teile-Stufe ${median(careers.map((c) => c.partLevel)).toFixed(1).replace('.', ',')}, ${median(careers.map((c) => c.chassis))}/9 Chassis, ${Math.round(median(careers.map((c) => c.scrap)))} ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).`);
+  L.push(`- Runs bis Schrottstufe 15: Median ${median(careers.map((c) => c.runs))}, Siege ${median(careers.map((c) => c.wins))}, Etappen ${median(careers.map((c) => c.stages))}; am Ende Ø Slot-Stufe ${median(careers.map((c) => c.partLevel)).toFixed(1).replace('.', ',')}, ${median(careers.map((c) => c.chassis))}/9 Chassis, ${Math.round(median(careers.map((c) => c.scrap)))} ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).`);
   L.push('');
-  L.push('**Schlechter Run mit voller Meta** (alle Startteile Stufe 20, ganzer Forschungsbaum, Modell ohne Einarbeitung):');
+  L.push('**Schlechter Run mit voller Meta** (alle Slots Stufe 10, ganzer Forschungsbaum, Modell ohne Einarbeitung):');
   L.push('');
   L.push('| Items | Sieg | Ende Akt 1 | Akt 2 | Akt 3 |');
   L.push('|---|---|---|---|---|');
@@ -632,7 +632,16 @@ export function progressionSection({ careers, rows, bad, botBad = null, model, s
   L.push('| `GARAGE.chassisCoreMul` (neu) | – (2–6 💠, Σ 30) | 0,4 (1–2 💠, Σ 12) | alle Chassis ≈ 25 h statt nie |');
   L.push('| Einzel-Items (Bot-Ausreißer) | Nadeldose, Blitzableiter, Perpetuum Mobile, Schraubenvergaser | siehe PHASEN.md Phase 6 | ohne Items mit voller Meta gewann der Bot vorher ≈ 12 % der Runs allein mit der Nadeldose als Start-Item |');
   L.push('');
-  L.push('Unverändert geprüft: Belohnungen (`REWARDS`), Teile-Kosten (`GARAGE.costGrowth` 1,15, Basis 40), Forschungskosten (`RESEARCH.costMul` 1), Kerne je Sieg (1) – Varianten mit teureren Teilen (Basis 60) oder 2 Kernen je Sieg verschoben die Zeiten weniger zielgenau bzw. machten Kerne inflationär.');
+  L.push('Unverändert geprüft (Phase 6): Kerne je Sieg (1) – 2 Kerne je Sieg machten Kerne inflationär.');
+  L.push('');
+  L.push('**Paket A (docs/OVERHAUL.md „Umsetzungsstand Paket A“)** – jeder Versuch zahlt, Notlandung statt identischem Neuversuch, Boss-Neuversuch mit neuer Variante und −5 % Ziel, Slot-Stufen 0–10 (60 × 1,32^L), schnellere Etappen (SIM.sec 75 → 45 s). Damit wurden Runs deutlich ergiebiger und leichter; ohne Gegengewicht lagen erster Sieg bei ≈ 1,8 h und Schrottstufe 15 bei ≈ 17 h (6 Karrieren). Nachgezogen:');
+  L.push('');
+  L.push('| Wert | vorher | jetzt | Wirkung |');
+  L.push('|---|---|---|---|');
+  L.push('| `RESEARCH.costMul` | 1 | 1,5 | viel mehr Blaupausen (Gold-Chance, Boss-Begegnung, Elite 2) – der Baum wäre nach ≈ 10 h fertig |');
+  L.push('| Schrottstufe 2 `targetMul` / 7 `bossTargetMul` | 1,08 / 1,15 | 1,12 / 1,22 | Langzeitkurve: Schrottstufe 15 wieder 30–50 h |');
+  L.push('| Akt-3-Boss-Ziel (`biomes.js`) | 740 m | 830 m | erster Sieg ≈ 3 h statt ≈ 2 h (Boss-Neuversuche werden bis −15 % leichter) |');
+  L.push('| Zielkorridore (`PROGRESSION.targets`) | erster Run 10–15 min, Akt-1-Boss 1–2 h, Sieg 6–10 h, alle Chassis 20–30 h | 8–15 min, 0,5–1 h, 3–5 h, 15–25 h | Ziele aus OVERHAUL §5/§6 (Paket A: erster Boss ≤ 45 min; Gesamtbild: Sieg 3–5 h); Schrottstufe 15 bleibt 30–50 h |');
   L.push('');
   return L.join('\n');
 }
@@ -645,7 +654,11 @@ export function writeSection(text) {
     // Abschnitt bis zur nächsten Marke (oder Dateiende) ersetzen
     const rest = doc.slice(i + MARK.length);
     const j = rest.indexOf('<!-- ');
-    doc = doc.slice(0, i).trimEnd() + (j >= 0 ? `\n\n${rest.slice(j)}` : '');
+    // Abschnitt bis zur nächsten Marke ersetzen, alles danach (z. B. <!-- paket-a -->, Leistung) bleibt stehen
+    const after = j >= 0 ? rest.slice(j) : '';
+    doc = `${doc.slice(0, i).trimEnd()}\n\n${text}${after ? `\n\n${after}` : '\n'}`;
+    fs.writeFileSync(file, doc);
+    return;
   }
   doc = `${doc.trimEnd()}\n\n${text}`;
   fs.writeFileSync(file, doc);

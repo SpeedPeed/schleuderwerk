@@ -9,6 +9,10 @@
 // Gemessen: Spielzeit je Etappe (Stage.time) und Echtzeit je Bildschirm (Zustandswechsel), Anteil Flug / Boden /
 // Auslaufen nach dem letzten Sprung / Zeit nach Erreichen der Zielmarke, Eingaben je Bildschirm, Ergebnisse,
 // Item-Auslösungen und Ketten. Bildschirmfotos und JSON in --out.
+// Paket A: Eingaben zwischen zwei Etappen (gaps: vom Ende einer Etappe bis zum Abschuss der nächsten, ohne Fahren),
+// Strecken-Seed je Etappen-Start (identische Wiederholungen), Echtzeit je Etappe (Vorspulen, Sofort-Ende). Beim
+// Ausrollen tippt der Kopf (Leertaste), sobald voraus nichts mehr kommt – wie tools/sim/bot.mjs → tapAfter.
+// Verfehlt: immer „Weiter (Notlandung)“; Boss verfehlt: Neuversuch.
 //
 // Aufruf: node tools/playtest/browser-play.mjs [--runs 3] [--out <Ordner>] [--shots <Ordner>] [--w 412 --h 732] [--no-build]
 import { createRequire } from 'node:module';
@@ -62,13 +66,15 @@ async function main() {
   });
 
   const inputs = {};   // Eingaben je Bildschirmart
-  const count = (k) => { inputs[k] = (inputs[k] || 0) + 1; };
+  let gap = null;      // Eingaben seit dem Ende der letzten Etappe (Paket A: ≤ 2 bis zur nächsten)
+  const count = (k) => { inputs[k] = (inputs[k] || 0) + 1; if (gap && k !== 'stage') { gap.n++; gap.where[k] = (gap.where[k] || 0) + 1; } };
   const kb = page.keyboard;
   let where = 'garage';
   const press = async (key, wait = 120) => { count(where); await kb.press(key); await sleep(wait); };
   const shotsTaken = new Set();
   const shot = async (name, force = false) => { if (!force && shotsTaken.has(name)) return; shotsTaken.add(name); await page.screenshot({ path: path.join(SHOTS, `${String(shotsTaken.size).padStart(2, '0')}-${name}.png`) }); };
-  const snap = () => g(() => { const gm = window.__game; return { state: gm.state, tut: gm.tutorial.isOpen ? gm.tutorial.current : null, run: gm.runScreens.open ? gm.runScreens.kind : null, phase: gm.stage ? gm.stage.phase : null, modal: !!document.querySelector('.modal, .confirm') }; });
+  // Paket A: Etappen-Hinweise sind Sprechblasen beim Zielen (blockieren nichts, verschwinden von selbst) – nicht wegklicken
+  const snap = () => g(() => { const gm = window.__game; const toast = gm.tutorial.isOpen && gm.tutorial.currentStep && gm.tutorial.currentStep.mode === 'toast'; return { state: gm.state, tut: gm.tutorial.isOpen && !toast ? gm.tutorial.current : null, run: gm.runScreens.open ? gm.runScreens.kind : null, phase: gm.stage ? gm.stage.phase : null, modal: !!document.querySelector('.modal, .confirm') }; });
 
   // ---------- Entscheidungen (lesen) ----------
   const RAR = { common: 0, rare: 1, epic: 2, legendary: 3, cursed: -2 };
@@ -84,7 +90,8 @@ async function main() {
 
   for (let runNo = 1; runNo <= RUNS; runNo++) {
     _rk = runNo;   // Händler: dasselbe Item je Run nur einmal versuchen
-    const run = { no: runNo, stages: [], screens: [], startWall: Date.now() };
+    const run = { no: runNo, stages: [], screens: [], gaps: [], startWall: Date.now() };
+    gap = null;
     report.runs.push(run);
     where = 'garage';
     // Garage: Tutorial weg, Start
@@ -123,7 +130,7 @@ async function main() {
       await btn[bi].click();
       await sleep(150);
     }
-    run.partLevels = await g(() => ({ ...window.__game.save.garage.partLevels }));
+    run.slotLevels = await g(() => ({ ...window.__game.save.garage.slotLevels }));
     fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 1));
   }
 
@@ -148,7 +155,9 @@ async function main() {
     for (let i = 0; i < 8; i++) {
       const a = await g(() => (document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.node || null : null));
       if (a === target.id) break;
+      where = 'map-move';   // Pfeiltasten zum Markieren (am Handy: direkt antippen) – getrennt gezählt
       await press(i < 4 ? 'ArrowRight' : 'ArrowLeft', 120);
+      where = 'map';
     }
     await press('Enter', 500);
   }
@@ -156,8 +165,11 @@ async function main() {
   async function handleRunScreen(kind, runNo) {
     await shot(`screen-${kind}`);
     if (kind === 'intro' || kind === 'act' || kind === 'end') { if (kind === 'end') await shot(`runende-${runNo}`, true); await press('Enter', 400); return; }
-    if (kind === 'result') { await sleep(300); await shot(`ergebnis-run${runNo}`); await press('Enter', 400); return; }
-    if (kind === 'choice') {
+    // Paket A: Ergebnis mit Beute (Ziffer = nehmen) bzw. verfehlt (Enter = Weiter/Notlandung, Boss: Neuversuch)
+    const hasPick = await g(() => !!document.querySelector('#runui [data-pick]'));
+    if (kind === 'result' && !hasPick) { await sleep(300); await shot(`ergebnis-run${runNo}`); await press('Enter', 400); return; }
+    if (kind === 'choice' || kind === 'result') {
+      if (kind === 'result') await shot(`ergebnis-beute-run${runNo}`);
       const ch = await g(() => { const r = window.__game.run; const p = r.pendingChoices && r.pendingChoices[0]; return p ? p.items : []; });
       const tags = await invTags();
       if (!ch.length) { await press('KeyS', 300); return; }
@@ -210,6 +222,9 @@ async function main() {
   async function playStage(run) {
     const info0 = await g(() => { const s = window.__game.stage; const jump = s.abilities.slots.findIndex((x) => x.def.id === 'sprung'); window.__pt.samples = []; window.__pt.ev = { depth: {}, chains: 0 }; s.onEvent = (n, d, depth) => { window.__pt.ev.depth[depth] = (window.__pt.ev.depth[depth] || 0) + 1; }; return { kind: s.kind, target: s.target, medals: s.medals, features: (s.spec.features || []).map((f) => f.type), weather: s.weather && s.weather.name, jump, boostSlot: window.__game.input.boostSlot, wall: performance.now() }; });
     const wall0 = Date.now();
+    const seed = await g(() => { const s = window.__game.stage; return `${s.spec.seed}:${s.spec.bossId || ''}`; });
+    if (gap) { gap.to = info0.kind; run.gaps.push(gap); }
+    gap = null;
     // Zielen: ↑ kurz (≈ 36°), Leertaste halten bis grüner Bereich
     await sleep(250);
     await kb.down('ArrowUp'); await sleep(90); await kb.up('ArrowUp'); count('stage');
@@ -227,7 +242,7 @@ async function main() {
     // Flug: Kopf wie tools/sim/bot.mjs, Ausgabe nur über Tasten
     const held = { ArrowLeft: false, ArrowRight: false, Space: false };
     const set = async (k, on) => { if (held[k] === on) return; held[k] = on; if (on) { count('stage'); await kb.down(k); } else await kb.up(k); };
-    let jumpCd = 0, midShot = false;
+    let jumpCd = 0, midShot = false, tapFor = 0, tapped = false;
     for (let i = 0; i < 6000; i++) {
       const d = await g(({ jump }) => {
         const gm = window.__game; const s = gm.stage;
@@ -250,11 +265,17 @@ async function main() {
           hop = jump >= 0 && (o.obstacles.some((ob) => ob.alive && near(ob.x, ob.w)) || o.crushers.some((c) => near(c.x, c.w) && c.lift < 3.8) || !!tr.gaps.find((x) => x.edge - v.x > 0 && x.edge - v.x < sp * 0.12 + 0.5));
         }
         for (const k of o.strikes) if (k.t > 0 && Math.abs(v.x + v.vx * k.t - k.x) < 5.6 && v.heat < st.heatMax * 0.85) boost = true;
-        return { done: false, tilt, boost, hop, t: s.time, x: v.maxX };
+        // Paket A: beim Ausrollen tippen, wenn voraus nichts mehr kommt (Rampe/Schlucht/Looping 80 m, Hindernis 25 m)
+        const busy = (s.spec.features || []).some((f) => (f.type === 'ramp' || f.type === 'gap' || f.type === 'loop') && f.x1 > v.x && f.x0 - v.x < 80)
+          || o.obstacles.some((ob) => ob.alive && ob.x > v.x && ob.x - v.x < 25) || o.crushers.some((c) => c.x > v.x && c.x - v.x < 25);
+        const tap = (s.fastForward || !!s.settle) && !busy;
+        return { done: false, tilt, boost: tap ? false : boost, hop: tap ? false : hop, tap, t: s.time, x: v.maxX };
       }, { jump: info0.jump });
       if (d.done) break;
       await set('ArrowLeft', d.tilt === 1);
       await set('ArrowRight', d.tilt === -1);
+      if (d.tap) { tapFor += 0.03; if (tapFor >= 0.4 && !tapped) { tapped = true; await set('Space', false); count('stage'); await kb.press('Space'); } }
+      else tapFor = 0;
       await set('Space', d.boost);
       jumpCd -= 0.03;
       if (d.hop && jumpCd <= 0 && info0.jump >= 0) { jumpCd = 0.6; count('stage'); await kb.press(`Digit${info0.jump + 1}`); }
@@ -264,7 +285,7 @@ async function main() {
     for (const k of Object.keys(held)) await set(k, false);
     const end = await g(() => {
       const s = window.__game.stage; const v = s.vehicle;
-      return { time: s.time, dist: Math.round(v.maxX), medal: s.medal, triggers: s.triggerCount, maxChain: s.maxChain, flips: s.stunts ? s.stunts.flips : 0, ev: window.__pt.ev, samples: window.__pt.samples, bolts: Math.floor(s.bolts), crates: s.crates, dmg: Math.round(v.damageTaken) };
+      return { time: s.time, dist: Math.round(v.maxX), medal: s.medal, grade: s.grade, instant: s.instantDone, knapp: s.knapp ? s.knapp.pct : null, triggers: s.triggerCount, maxChain: s.maxChain, flips: s.stunts ? s.stunts.flips : 0, ev: window.__pt.ev, samples: window.__pt.samples, bolts: Math.floor(s.bolts), crates: s.crates, dmg: Math.round(v.damageTaken) };
     });
     const wallStage = (Date.now() - wall0) / 1000;
     // Auswertung der Proben: Flug/Boden, Zeit nach Bronze, Auslaufen nach letzter Landung
@@ -277,9 +298,15 @@ async function main() {
       if (S[i].g && S[i].sp < 10) slowGround += dt;
     }
     const rollout = S.length ? S[S.length - 1].t - lastAir : 0;
-    const rec = { kind: info0.kind, target: info0.target, dist: end.dist, ratio: +(end.dist / info0.target).toFixed(2), medal: end.medal, perfect, launchPresses, gameTime: +end.time.toFixed(1), wallStage: +wallStage.toFixed(1), air: +air.toFixed(1), ground: +ground.toFixed(1), afterBronze: +afterBronze.toFixed(1), rolloutAfterLastJump: +rollout.toFixed(1), slowGround: +slowGround.toFixed(1), features: info0.features, weather: info0.weather, triggers: end.triggers, maxChain: end.maxChain, evDepth: end.ev.depth, bolts: end.bolts, crates: end.crates, dmg: end.dmg };
+    // Echtzeit (Paket A: Vorspulen/Sofort-Ende verkürzen nur die Echtzeit, nicht die Spielzeit)
+    let lastAirW = S.length ? S[0].w : 0;
+    for (const x of S) if (!x.g) lastAirW = x.w;
+    const wallFly = S.length ? (S[S.length - 1].w - S[0].w) / 1000 : 0;
+    const wallRollout = S.length ? (S[S.length - 1].w - lastAirW) / 1000 : 0;
+    gap = { n: 0, where: {}, from: info0.kind, medal: end.medal };
+    const rec = { seed, instant: !!end.instant, knapp: end.knapp, kind: info0.kind, target: info0.target, dist: end.dist, ratio: +(end.dist / info0.target).toFixed(2), medal: end.medal, perfect, launchPresses, gameTime: +end.time.toFixed(1), wallStage: +wallStage.toFixed(1), wallFly: +wallFly.toFixed(1), wallRollout: +wallRollout.toFixed(1), air: +air.toFixed(1), ground: +ground.toFixed(1), afterBronze: +afterBronze.toFixed(1), rolloutAfterLastJump: +rollout.toFixed(1), slowGround: +slowGround.toFixed(1), features: info0.features, weather: info0.weather, triggers: end.triggers, maxChain: end.maxChain, evDepth: end.ev.depth, bolts: end.bolts, crates: end.crates, dmg: end.dmg };
     run.stages.push(rec);
-    console.log(`  ${rec.kind} Ziel ${rec.target} m → ${rec.dist} m (${rec.medal || 'verfehlt'}) ${rec.gameTime}s Spiel, Flug ${rec.air}s, Auslauf ${rec.rolloutAfterLastJump}s, nach Bronze ${rec.afterBronze}s, Ketten max ${rec.maxChain}`);
+    console.log(`  ${rec.kind} Ziel ${rec.target} m → ${rec.dist} m (${rec.medal || 'verfehlt'}${rec.knapp ? `, Knapp ${rec.knapp} %` : ''}${rec.instant ? ', Sofort-Ende' : ''}) ${rec.gameTime}s Spiel / ${rec.wallFly}s Echtzeit, Flug ${rec.air}s, Auslauf ${rec.rolloutAfterLastJump}s Spiel / ${rec.wallRollout}s echt, Ketten max ${rec.maxChain}`);
   }
 }
 

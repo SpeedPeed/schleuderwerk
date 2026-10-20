@@ -4,7 +4,9 @@
 //  - Ereignisse pro Etappe: Landungen, Item-Auslösungen, Ketten ≥ 3 Glieder (das HUD zeigt dann „KETTENREAKTION“)
 //  - Abwechslung: Bausteine je Etappe, Ähnlichkeit (Jaccard der Baustein-Mengen) zweier Etappen desselben Akts,
 //    Anteil Etappen mit identischer Bausteinmenge, Zieltypen, Wetter
-// Aufruf: node tools/playtest/anatomy.mjs [--n 40] [--json <Datei>]
+// Paket A: Vorspulen und Hochrechnung „Knapp“ wirken automatisch (stage.update); dazu eine zweite Messung, in der der
+// Bot wie eine Person beim Ausrollen tippt (Sofort-Ende TAP_AFTER s nach Beginn des Vorspulens, wenn voraus nichts mehr zu tun ist).
+// Aufruf: node tools/playtest/anatomy.mjs [--n 40] [--json <Datei>] [--tap 0.4]
 import fs from 'node:fs';
 import { BIOMES } from '../../www/src/data/biomes.js';
 import { generateStageSpec } from '../../www/src/physics/trackGen.js';
@@ -17,12 +19,13 @@ import { generateActMap } from '../../www/src/map/mapGen.js';
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i + 1] : d; };
 const N = Number(opt('n', 40));
+const TAP_AFTER = Number(opt('tap', 0.4));   // Reaktionszeit: Tippen 0,4 s nachdem das Vorspulen begonnen hat (nichts mehr zu tun)
 const med = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : 0; };
 const avg = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
 const r1 = (x) => Math.round(x * 10) / 10;
 
 // Etappe spielen und mitschneiden (Bot ruft stage.update mit dt = 1/60 auf → Bildzahl / 60 = Echtzeit)
-function playRecorded({ biome, kind, floor, i, save, inventory = null }) {
+function playRecorded({ biome, kind, floor, i, save, inventory = null, tap = false }) {
   const bossId = kind === 'boss' ? biome.bosses[i % biome.bosses.length].id : null;
   const spec = generateStageSpec({ biome, kind, floor, rng: makeRng(`anat:${biome.id}:${kind}:${floor}:${i}`), bossId });
   const inv = inventory ? inventory.map((itemId) => ({ itemId, tier: 1 })) : null;
@@ -51,11 +54,11 @@ function playRecorded({ biome, kind, floor, i, save, inventory = null }) {
     } else { tl.air++; tl.lastAirFrame = tl.frames; tl.wasAir = true; }
     if (v.maxX >= st.target) tl.afterBronze++;
   };
-  const r = playStage(st, () => sim.result, { seed: 61 * i + floor, tricks: wantsTricks(inv) });
+  const r = playStage(st, () => sim.result, { seed: 61 * i + floor, tricks: wantsTricks(inv), tapAfter: tap ? TAP_AFTER : null });
   const f = 1 / 60;
   return {
     kind, floor, act: biome.act, ratio: r.dist / r.target, cleared: !!r.medal, medal: r.medal, reason: r.reason,
-    real: tl.frames * f, sim: r.time, air: tl.air * f, ground: tl.ground * f, rollout: (tl.frames - tl.lastAirFrame) * f,
+    real: tl.frames * f, sim: r.time, instant: !!r.instant, knapp: r.knapp !== null && r.knapp !== undefined, air: tl.air * f, ground: tl.ground * f, rollout: (tl.frames - tl.lastAirFrame) * f,
     afterBronze: tl.afterBronze * f, dead: tl.dead * f, landings: tl.landings, slowmo: tl.slowmo * f,
     triggers: r.itemTriggers, maxChain: r.maxChain, chainMoments,
     features: (spec.features || []).map((x) => x.type), weather: spec.weather && spec.weather.name,
@@ -72,6 +75,7 @@ function summarize(rows) {
     cleared: avg(rows.map((r) => (r.cleared ? 1 : 0))), ratio: med(rows.map((r) => r.ratio)),
     triggers: med(rows.map((r) => r.triggers)), maxChain: med(rows.map((r) => r.maxChain)), chainMoments: avg(rows.map((r) => r.chainMoments)),
     reasons: rows.reduce((o, r) => { o[r.reason] = (o[r.reason] || 0) + 1; return o; }, {}),
+    knappShare: avg(rows.map((r) => (r.knapp ? 1 : 0))), instantShare: avg(rows.map((r) => (r.instant ? 1 : 0))),
   };
 }
 
@@ -124,17 +128,24 @@ const t0 = Date.now();
 const save0 = simSave('start');
 const saveG = simSave('gut');
 const result = { configs: {}, variety: variety() };
+const allNo = [], allTap = [];
 const CONF = [['stage', 0], ['stage', 3], ['stage', 5], ['elite', 3], ['boss', 6]];
 for (const b of BIOMES) {
   for (const [kind, floor] of CONF) {
     const save = b.act === 1 ? save0 : saveG;
     const rowsNo = Array.from({ length: N }, (_, i) => playRecorded({ biome: b, kind, floor, i, save }));
+    const rowsTap = Array.from({ length: N }, (_, i) => playRecorded({ biome: b, kind, floor, i, save, tap: true }));
     const rowsSyn = Array.from({ length: Math.ceil(N / 2) }, (_, i) => playRecorded({ biome: b, kind, floor, i, save: saveG, inventory: Object.values(SYNERGY)[i % 5] }));
-    result.configs[`${b.act}:${kind}:${floor}`] = { ohne: summarize(rowsNo), set6: summarize(rowsSyn) };
-    const s = result.configs[`${b.act}:${kind}:${floor}`].ohne, y = result.configs[`${b.act}:${kind}:${floor}`].set6;
-    console.log(`Akt ${b.act} ${kind.padEnd(5)} E${floor}: Echtzeit ${r1(s.real)} s (Flug ${r1(s.air)} s = ${Math.round(s.airShare * 100)} %, Auslauf nach letztem Sprung ${r1(s.rollout)} s = ${Math.round(s.rolloutShare * 100)} %, nach Bronze ${r1(s.afterBronze)} s, tot ${r1(s.dead)} s, Landungen ${s.landings}) geschafft ${Math.round(s.cleared * 100)} % · Set-6: Echtzeit ${r1(y.real)} s, Auslöser ${y.triggers}, Kette max ${y.maxChain}, Ketten-Momente ${r1(y.chainMoments)}/Etappe`);
+    result.configs[`${b.act}:${kind}:${floor}`] = { ohne: summarize(rowsNo), tippen: summarize(rowsTap), set6: summarize(rowsSyn) };
+    allNo.push(...rowsNo); allTap.push(...rowsTap);
+    const s = result.configs[`${b.act}:${kind}:${floor}`].ohne, t = result.configs[`${b.act}:${kind}:${floor}`].tippen, y = result.configs[`${b.act}:${kind}:${floor}`].set6;
+    console.log(`Akt ${b.act} ${kind.padEnd(5)} E${floor}: Echtzeit ${r1(s.real)} s (Flug ${r1(s.air)} s = ${Math.round(s.airShare * 100)} %, Auslauf nach letztem Sprung ${r1(s.rollout)} s = ${Math.round(s.rolloutShare * 100)} %, nach Bronze ${r1(s.afterBronze)} s, tot ${r1(s.dead)} s, Landungen ${s.landings}, Knapp ${Math.round(s.knappShare * 100)} %) geschafft ${Math.round(s.cleared * 100)} % · mit Tippen: ${r1(t.real)} s, Auslauf ${Math.round(t.rolloutShare * 100)} % · Set-6: Echtzeit ${r1(y.real)} s, Auslöser ${y.triggers}, Kette max ${y.maxChain}, Ketten-Momente ${r1(y.chainMoments)}/Etappe`);
   }
 }
+// Paket A – Gesamtwerte über alle Konfigurationen ohne Items (Erfolgskriterium: Median ≤ 14 s, Auslauf ≤ 15 %)
+const tot = (rows) => ({ real: med(rows.map((r) => r.real)), rolloutShare: rows.reduce((a, r) => a + r.rollout, 0) / rows.reduce((a, r) => a + r.real, 0), airShare: rows.reduce((a, r) => a + r.air, 0) / rows.reduce((a, r) => a + r.real, 0), knapp: avg(rows.map((r) => (r.knapp ? 1 : 0))) });
+result.total = { ohne: tot(allNo), tippen: tot(allTap) };
+for (const [k, v] of Object.entries(result.total)) console.log(`GESAMT ${k === 'ohne' ? 'ohne Tippen' : `mit Tippen (${TAP_AFTER} s nach Vorspul-Beginn, nichts mehr zu tun)`}: Echtzeit Median ${r1(v.real)} s, Flug ${Math.round(v.airShare * 100)} %, Auslauf ${Math.round(v.rolloutShare * 100)} % der Echtzeit, Knapp-Ende ${Math.round(v.knapp * 100)} %`);
 console.log('\nAbwechslung (200 Etappen je Biom):');
 for (const v of Object.values(result.variety)) console.log(`  ${v.name}: ${v.distinctFeatureTypes} Bausteintypen, ${v.featureTypesPerStage} je Etappe, Jaccard Nachbarn ${v.meanJaccardNeighbours}, identische Menge ${Math.round(v.identicalSetShare * 100)} %, Wetter ${JSON.stringify(v.weather)}`);
 result.map = mapChoices();

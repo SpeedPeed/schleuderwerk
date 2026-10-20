@@ -1,5 +1,5 @@
 // Balance-Check der Items (Phase 4): Wie stark verschieben Items die Weite?
-// Der Bot (tools/sim/bot.mjs; mit Salto-Items dreht er Saltos – tricks) spielt mit dem „guten“ Loadout (Startteile Stufe 10) je Akt die
+// Der Bot (tools/sim/bot.mjs; mit Salto-Items dreht er Saltos – tricks) spielt mit dem „guten“ Loadout (Slot-Stufe 5 von 10) je Akt die
 // Etagen 0, 3, 5 und den Boss – ohne Items, mit zufälligen Builds aus 6 Items (★1, ohne Verfluchte) und mit
 // Synergie-Builds (ein Tag-Set bzw. die Elektro-Ketten-Bauweise). Ziel (V2-DESIGN §8): gute Synergie-Builds schaffen
 // Akt-3-Ziele, zufällige mittelmäßige Builds scheitern meist in Akt 2–3.
@@ -227,7 +227,7 @@ export function itemsSection(rows, secs, runs = null, singles = null) {
   L.push('');
   L.push(`> Erzeugt von \`node tools/sim/items.mjs\` (${N} Etappen je Build, ${NR} zufällige Builds je Zeile; Rechenzeit ${secs} s).`);
   L.push('');
-  L.push('Bot wie bei den Zielmarken; mit Salto-Items (ein Gyro-Item oder mindestens zwei andere Items mit Auslöser auf flip bzw. minCount) dreht er zusätzlich Rückwärtssaltos, wenn bis zur Landung > 1,7 s bleiben; ist Überhitzen folgenlos (Feuer-Set 6 Nachbrenner, Kühlschrank, Waschmaschine), boostet er ohne Hitze-Reserve bis zum Überhitzen. Gutes Loadout (Startteile Stufe 10), volle Haltbarkeit je Etappe, 40 Run-Schrauben. **Zufällig (6)** = 6 zufällige nicht verfluchte Items ★1 je Etappe (mittelmäßiger Build ohne Plan). Synergie-Builds = 6 Items eines Tags (Set 2/4/6) bzw. die Elektro-Ketten-Bauweise (Salto → Stromschlag → Gratis-Boost → Kühlung). Zellen: Median Distanz ÷ Ziel · geschafft (mind. Bronze).');
+  L.push('Bot wie bei den Zielmarken; mit Salto-Items (ein Gyro-Item oder mindestens zwei andere Items mit Auslöser auf flip bzw. minCount) dreht er zusätzlich Rückwärtssaltos, wenn bis zur Landung > 1,7 s bleiben; ist Überhitzen folgenlos (Feuer-Set 6 Nachbrenner, Kühlschrank, Waschmaschine), boostet er ohne Hitze-Reserve bis zum Überhitzen. Gutes Loadout (Slot-Stufe 5 von 10), volle Haltbarkeit je Etappe, 40 Run-Schrauben. **Zufällig (6)** = 6 zufällige nicht verfluchte Items ★1 je Etappe (mittelmäßiger Build ohne Plan). Synergie-Builds = 6 Items eines Tags (Set 2/4/6) bzw. die Elektro-Ketten-Bauweise (Salto → Stromschlag → Gratis-Boost → Kühlung). Zellen: Median Distanz ÷ Ziel · geschafft (mind. Bronze).');
   L.push('');
   L.push(`| Akt | Art | Etage | ${names.join(' | ')} |`);
   L.push(`|---|---|---|${names.map(() => '---').join('|')}|`);
