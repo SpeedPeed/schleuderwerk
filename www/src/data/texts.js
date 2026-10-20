@@ -41,6 +41,7 @@ export const TXT = {
   },
 
   map: {
+    rewardTag: (tag) => `Beute: mindestens ein ${tag}-Item`,
     choose: 'Such dir einen Weg aus.',
     running: 'Knoten läuft – weiter geht’s!',
     floorDone: (n) => `Etage ${n} geschafft – wohin jetzt?`,

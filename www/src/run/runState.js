@@ -677,10 +677,14 @@ export function queueChoice(run, save, context, act = run.act) {
   normalizeRun(run);
   const rng = makeRng(hashSeed(`${run.seed}:auswahl:${run.counters.rolls++}`));
   const count = Math.max(1, Math.round(runStats(run).itemChoices) + (runAsc(run).itemChoicesAdd || 0));
+  // Paket D: Beute-Tag des Knotens (Karte) – mindestens ein Angebot aus diesem Tag (statt der stärksten Tags)
+  const bias = runChoiceBias(run);
+  const node = run.current && context !== 'boss' ? mapNode(run.map, run.current.node) : null;
+  if (node && node.rewardTag) bias.top = [node.rewardTag];
   const items = rollItemChoices({
     rng, context, act, count, research: run.research || [], all: !!run.poolAll || !!BAL_ITEMS.devAllPools,
     owned: run.inventory.flatMap((e) => entryParts(e).map((p) => p.def.id)), exclude: choiceExclude(run),
-    bias: runChoiceBias(run), guarantee: (BAL_ITEMS.guarantee && BAL_ITEMS.guarantee[context]) || null,
+    bias, guarantee: (BAL_ITEMS.guarantee && BAL_ITEMS.guarantee[context]) || null,
   });
   const choice = { context, items, skipBolts: boltIncome(run, itemSkipBolts(act)) };
   run.pendingChoices.push(choice);

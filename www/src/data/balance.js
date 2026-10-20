@@ -249,8 +249,10 @@ export const PICKUPS = {
 // ---------- Karte eines Akts (map/mapGen.js; Knotentypen in data/nodes.js) ----------
 export const MAP = {
   floors: 6,               // Etagen 0–5, danach die Boss-Strecke (Etage 6)
-  floorSizes: [[2, 0.5], [3, 0.4], [4, 0.1]], // Knoten je Etage mit Gewicht (≈ 15 Knoten je Akt)
+  floorSizes: [[2, 0.1], [3, 0.6], [4, 0.3]],   // Knoten je Etage mit Gewicht (Paket D: mehr Breite, ≈ 18 Knoten je Akt)
   extraEdgeChance: 0.35,   // zusätzliche (kreuzungsfreie) Verbindung je Knotenpaar
+  branchChance: 1,         // Paket D: Knoten mit nur einem Nachfolger bekommt mit dieser Chance einen zweiten (kreuzungsfrei)
+  siblingSameMul: 0.12,   // Paket D: Gewicht einer Knotenart, die ein Geschwister-Knoten (gleicher Vorgänger) schon hat
   autoAdvanceDelay: 0.6,   // Paket A: nur ein Nachfolger → die Karte fährt nach so vielen Sekunden selbst weiter
 };
 

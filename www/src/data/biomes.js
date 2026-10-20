@@ -158,7 +158,7 @@ export const BIOMES = [
       obstacles: { tires: 0.8, scrap: 0.2 },
     },
     pickups: { fuel: 0.32, cool: 0.12, repair: 0.07, scrap: 0.34, crate: 0.15 },
-    targets: { stage: [415, 455, 460, 545, 575, 610], eliteMult: 1.3, boss: 910 },   // Paket C: Items deutlich stärker → Ziele ×1,25 (+10 % bis Etage 5), Boss ×1,6
+    targets: { stage: [415, 455, 460, 545, 575, 610], eliteMult: 1.3, boss: 935 },   // Paket C: Items deutlich stärker → Ziele ×1,25 (+10 % bis Etage 5), Boss ×1,6; Paket D: Boss +3 %
     medals: { silver: 1.25, gold: 1.5 },
     bosses: [
       {
@@ -218,7 +218,7 @@ export const BIOMES = [
       obstacles: { cactus: 1 },
     },
     pickups: { fuel: 0.28, cool: 0.24, repair: 0.07, scrap: 0.27, crate: 0.14 },
-    targets: { stage: [755, 820, 835, 860, 915, 965], eliteMult: 1.3, boss: 1025 },  // Paket C: ×1,45 (+10 %), Boss ×1,55
+    targets: { stage: [780, 845, 860, 885, 940, 995], eliteMult: 1.3, boss: 1085 },  // Paket C: ×1,45 (+10 %), Boss ×1,55; Paket D (breitere Karte): +3 %, Boss +6 %
     medals: { silver: 1.25, gold: 1.5 },
     bosses: [
       {
@@ -277,7 +277,7 @@ export const BIOMES = [
       obstacles: { tires: 0.6, scrap: 0.4 },
     },
     pickups: { fuel: 0.3, cool: 0.1, repair: 0.1, scrap: 0.32, crate: 0.18 },
-    targets: { stage: [875, 900, 990, 1010, 1090, 1140], eliteMult: 1.3, boss: 1285 }, // Paket A: Boss 740 → 830; Paket C: ×1,55 (+10 %), Boss ×1,55
+    targets: { stage: [900, 925, 1020, 1040, 1125, 1175], eliteMult: 1.3, boss: 1360 }, // Paket A: Boss 740 → 830; Paket C: ×1,55 (+10 %), Boss ×1,55; Paket D: +3 %, Boss +6 %
     medals: { silver: 1.25, gold: 1.5 },
     bosses: [
       {

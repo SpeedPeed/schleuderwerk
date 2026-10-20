@@ -15,6 +15,7 @@
 import { MAP } from '../data/balance.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { MUTATORS, MUTATOR_RULES } from '../data/mutators.js';
+import { TAG_IDS } from '../data/tags.js';
 
 export const BOSS_FLOOR = MAP.floors;
 
@@ -48,6 +49,15 @@ function connect(n, m, rng) {
     if (step === 'i' || step === 'ij') i++;
     if (step === 'j' || step === 'ij') j++;
     edges.push([i, j]);
+  }
+  // Paket D: Abzweige – Knoten mit nur einem Nachfolger bekommen (MAP.branchChance) einen zweiten Nachbarn, sofern
+  // die neue Kante keine bestehende kreuzt
+  const crosses = (i, j) => edges.some(([a, b]) => (a - i) * (b - j) < 0);
+  for (let a = 0; a < n; a++) {
+    const out = edges.filter(([x]) => x === a).map(([, y]) => y);
+    if (out.length !== 1 || !rng.chance(MAP.branchChance)) continue;
+    const cand = [out[0] + 1, out[0] - 1].filter((j) => j >= 0 && j < m && !crosses(a, j));
+    if (cand.length) edges.push([a, cand.length > 1 ? rng.pick(cand) : cand[0]]);
   }
   return edges;
 }
@@ -124,15 +134,20 @@ export function generateActMap(act, rng, opts = {}) {
     for (const node of row) {
       if (node.type) continue;
       const weights = [];
+      // Paket D: Geschwister (andere Nachfolger derselben Vorgänger) sollen möglichst verschiedene Arten haben
+      const siblings = new Set();
+      for (const p of node.prev) for (const id of nodes[p].next) if (id !== node.id && nodes[id].type) siblings.add(nodes[id].type);
       for (const [type, def] of Object.entries(NODE_TYPES)) {
         let w = def.weight || 0;
         if (type === 'elite') w += opts.eliteWeightAdd || 0;
+        if (siblings.has(type)) w *= MAP.siblingSameMul;
         if (w > 0 && allowed(type, node, ctx)) weights.push([type, w]);
       }
       set(node, weights.length ? rng.weighted(weights) : 'stage');
     }
   }
   assignMutators(floors, act, rng.fork('mutatoren'));
+  assignRewardTags(floors, rng.fork('beute'));
   return { act, floors, boss };
 }
 
@@ -152,6 +167,22 @@ export function assignMutators(floors, act, rng) {
       const m = rng.pick(list);
       n.mutator = m.id;
       used.add(m.id);
+    }
+  }
+}
+
+// Paket D – Beute-Tag: Etappen und Elite zeigen auf der Karte, aus welchem Tag die Beute garantiert ein Item hat
+// (run/runState.js → queueChoice). Geschwister (gleicher Vorgänger) bekommen möglichst verschiedene Tags.
+export function assignRewardTags(floors, rng) {
+  const byId = {};
+  for (const n of floors.flat()) byId[n.id] = n;
+  for (const row of floors) {
+    for (const n of row) {
+      if (n.type !== 'stage' && n.type !== 'elite') continue;
+      const sib = new Set();
+      for (const p of n.prev) for (const id of byId[p].next) if (id !== n.id && byId[id].rewardTag) sib.add(byId[id].rewardTag);
+      const list = TAG_IDS.filter((t) => !sib.has(t));
+      n.rewardTag = rng.pick(list.length ? list : TAG_IDS);
     }
   }
 }

@@ -820,6 +820,9 @@ textarea {
 .mn-mut { position: absolute; right: -6px; top: -6px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
   border-radius: 50%; background: var(--paint-red); color: var(--paper); box-shadow: 0 0 0 2px var(--oil); pointer-events: none; }
 .mn-mut .ic { width: 14px; height: 14px; }
+.mn-tag { position: absolute; left: -6px; bottom: -6px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  border-radius: 3px; background: var(--tc); color: var(--oil); box-shadow: 0 0 0 2px var(--oil); transform: rotate(-6deg); pointer-events: none; }
+.mn-tag .ic { width: 14px; height: 14px; }
 .ri-mut { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0; padding: 7px 9px; border-radius: 3px; color: var(--ink);
   background: var(--hazard), var(--paint-yellow); background-size: 10px 100%, auto; background-repeat: repeat-y, no-repeat; padding-left: 18px; }
 .ri-mut .ic { width: 22px; height: 22px; flex: 0 0 auto; }

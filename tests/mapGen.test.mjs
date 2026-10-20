@@ -71,7 +71,7 @@ test('Karte: 1000 Seeds je Akt – Regeln, Erreichbarkeit, Kreuzungsfreiheit', (
     maps++;
   }
   const avg = nodes / maps;
-  assert.ok(avg >= 12 && avg <= 18, `≈ 12–15 Knoten je Akt (Mittel ${avg.toFixed(1)})`);
+  assert.ok(avg >= 16 && avg <= 22, `≈ 17–21 Knoten je Akt (Paket D: breitere Karte; Mittel ${avg.toFixed(1)})`);
   for (const t of ['stage', 'elite', 'dealer', 'event', 'treasure', 'station', 'workbench', 'blackmarket']) assert.ok(total[t] > 0, `${t} kommt vor`);
 });
 
@@ -84,4 +84,17 @@ test('Karte: deterministisch per Seed, JSON-fest', () => {
   }
   const x = generateActMap(1, makeRng(1)), y = generateActMap(1, makeRng(2));
   assert.notDeepEqual(x, y);
+});
+
+test('Paket D: Karte verzweigt (≤ 35 % Einbahn-Knoten), Beute-Tag an jeder Etappe/Elite, Geschwister meist verschieden', () => {
+  let one = 0, all = 0, tagged = 0, stages = 0;
+  for (let i = 0; i < 200; i++) {
+    const m = generateActMap(1 + (i % 3), makeRng(`d2:${i}`));
+    for (const n of m.floors.flat()) {
+      if (n.floor < 5) { all++; if (n.next.length === 1) one++; }
+      if (n.type === 'stage' || n.type === 'elite') { stages++; if (n.rewardTag) tagged++; }
+    }
+  }
+  assert.ok(one / all <= 0.35, `Einbahn ${(one / all * 100).toFixed(0)} %`);
+  assert.equal(tagged, stages);
 });

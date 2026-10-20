@@ -1,5 +1,6 @@
 import { el, fmt, show, icon, cur } from './dom.js';
 import { mutatorById } from '../data/mutators.js';
+import { TAGS } from '../data/tags.js';
 import { TXT } from '../data/texts.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeById } from '../data/biomes.js';
@@ -111,8 +112,10 @@ export class MapScreen {
         // Paket D: Mutator als kleine Plakette am Knoten
         const mut = !visited.has(n.id) ? mutatorById(n.mutator) : null;
         const mutBadge = mut ? `<span class="mn-mut" title="${esc(mut.name)}">${icon(mut.iconId)}</span>` : '';
+        const tg = !visited.has(n.id) && n.rewardTag ? TAGS[n.rewardTag] : null;
+        const tagBadge = tg ? `<span class="mn-tag" style="--tc:${tg.color}" title="${esc(tg.name)}">${icon(tg.iconId)}</span>` : '';
         html += `<button class="${cls.join(' ')}" data-node="${n.id}" style="left:${n.x * 100}%;top:${yOf(n.floor)}px;--c:${def.color}" aria-label="${esc(def.name)}">`
-          + `${icon(visited.has(n.id) ? 'haken' : def.iconId || 'etappe')}${label}${mutBadge}</button>`;
+          + `${icon(visited.has(n.id) ? 'haken' : def.iconId || 'etappe')}${label}${mutBadge}${tagBadge}</button>`;
       }
     }
     q.canvas.innerHTML = html;
@@ -154,7 +157,8 @@ export class MapScreen {
     const title = node.type === 'boss' ? bossName(run, b) : def.name;
     const why = run.visited.includes(id) ? TXT.map.visited : TXT.map.notReach;
     const mut = mutatorById(node.mutator);
-    const mutTxt = mut ? `<p><b>${icon(mut.iconId)} ${esc(mut.name)}:</b> ${esc(mut.desc)}</p>` : '';
+    const mutTxt = (mut ? `<p><b>${icon(mut.iconId)} ${esc(mut.name)}:</b> ${esc(mut.desc)}</p>` : '')
+      + (node.rewardTag && TAGS[node.rewardTag] ? `<p>${icon(TAGS[node.rewardTag].iconId)} ${esc(TXT.map.rewardTag(TAGS[node.rewardTag].name))}</p>` : '');
     this.q.info.innerHTML = `<b>${icon(def.iconId || 'etappe')} ${esc(title)}</b><p>${esc(node.type === 'boss' ? bossDesc(run, b) : def.desc)}</p>${mutTxt}<small>${why} ${TXT.tutorial.sign}</small>`;
     show(this.q.info, true);
     clearTimeout(this.infoTimer);
