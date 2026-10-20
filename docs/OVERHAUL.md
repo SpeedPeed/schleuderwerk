@@ -710,6 +710,43 @@ Boss-Vorschau am Akt-Anfang (Name + Mechanik), damit der Weg geplant werden kann
 - Karte: Anteil Einbahn-Knoten ≤ 30 %, Wahl zwischen verschiedenen Knotenarten ≥ 50 % (heute 75 % / 15 %).
 - Spieltest: in 10 Runs hintereinander keine zwei gleichen Boss-Abläufe in Folge; ≥ 10 verschiedene Ereignisse gesehen.
 
+### Umsetzungsstand Paket D
+
+> Stand 21.10.2026. Daten: `data/mutators.js`, `data/stageEvents.js`, `data/biomes.js`, `data/textEvents.js`,
+> `balance.GOALS`/`MAP`; Logik: `stage/goals.js`, `map/mapGen.js`, `physics/trackGen.js`, `physics/objects.js`.
+
+**Umgesetzt**
+1. **Etappen-Arten** (`stage/goals.js`): Weitflug, Höhenjagd, Stunt-Show, Schrottsammler, Zeitrennen (8 s), Lieferung
+   (Bruchlandungen begrenzen die Medaille). Marken mit dem Bot eingemessen (`tools/playtest/goals.mjs`): alle Arten
+   56–60 % Bronze / 33–39 % Gold wie ein Weitflug. Schrott nach „gleichwertiger Weite“. Etage 0 und Boss immer Weitflug.
+   *Nicht umgesetzt:* Zielwurf (Kiste lässt sich kaum gezielt anhalten), Abrissbirne, Drei Würfe.
+2. **14 Mutatoren** (jede Elite, 30 % der Etappen ab Akt 2, 12 % in Akt 1 ab Etage 2), sichtbar als Plakette auf der
+   Karte und im Intro; harte Mutatoren zahlen mehr. *Nicht umgesetzt:* Nachtschicht, Magnetsturm (bräuchten neue Grafik/Physik).
+3. **8 Strecken-Ereignisse** ab Etage 2 (Schraubenwolke, Tornado-Säule, Tanklaster, Schrottregen, Ring-Parade, Kalles
+   Kiste, Gewitterzelle, Werkstattwagen) aus vorhandenen Bausteinen, mit Ankündigung.
+4. **Karte**: zusätzliche kreuzungsfreie Abzweige, Geschwister mit verschiedenen Arten, Beute-Tag je Etappe/Elite
+   (garantiert ein Item des Tags), Symbol der Etappen-Art am Knoten. *Nicht umgesetzt:* 7. Etage, neue Knoten
+   Schrottwette/Probefahrt/Opas Werkstatt, eigene Boss-Vorschau (der Boss steht schon oben auf der Karte).
+5. **3 neue Biome** (Containerhafen Akt 2, Kühlhaus und Schrottstadt-Dächer Akt 3; je Run wird gezogen → 6
+   Kombinationen) mit **6 neuen Bossen**; Bosse haben einen festen Mutator. *Nicht umgesetzt:* neue Bausteine (Wasser,
+   Förderband, Kranhaken …), Boss-Mechaniken mit 2 Phasen, geheimes Biom Mondlager.
+6. **70 Text-Ereignisse** (26 → 70): 20 tag-spezifisch (ab 2 Items), 3 Figuren-Ketten über mehrere Runs (Opa Gerd,
+   Kalle, Vereinswart; `save.story.seen`).
+
+**Messwerte** (200 zufällige Wege durch 3 Akte; Karte 300 Akte)
+
+| Kriterium | Ziel | Stand |
+|---|---|---|
+| Etappen-Arten je Run | ≥ 4 | Ø 4,4 (≥ 4 in 83 %) |
+| Mutatoren je Run | ≥ 3 | Ø 4,2 (≥ 3 in 86 %) |
+| Gleiche Nachbar-Etappen (Art + Mutator) | ≤ 25 % | 17 % |
+| Einbahn-Knoten | ≤ 30 % | 32 % (vorher 75 %) |
+| Wahl zwischen verschiedenen Knotenarten | ≥ 50 % | 51 % (vorher 15 %) |
+| Biome / Bosse / Text-Ereignisse | 6 / 12 / 70 | 6 / 12 / 70 ✔ |
+
+Kalibrierung: breitere Karte → Bosse +3–6 %, Akt 2/3 +3 %; Schrottstufe 7 Boss +12 % → +6 % (mit 24 Karrieren lag
+Schrottstufe 15 sonst über 50 h – der frühere 8-Karrieren-Wert war Glück). Korridor erster Sieg auf 2,5–5 h geöffnet.
+
 ---
 
 ### Paket E – Meta: jeder Run bringt etwas, ohne die Langzeit zu zerstören
@@ -748,6 +785,24 @@ Boss-Vorschau am Akt-Anfang (Name + Mechanik), damit der Weg geplant werden kann
 - Erster Akt-1-Boss 0,5–1 h, erster Sieg **3–5 h** (heute 8,2 h Median), zweites Chassis ≤ 2 h, alle Chassis 15–20 h,
   alles inkl. Schrottstufe 15 weiterhin 30–50 h.
 - „Schlechter Run mit voller Meta“ < 30 % Siege (Meta ersetzt keine Synergien).
+
+### Umsetzungsstand Paket E
+
+> Stand 21.10.2026. Daten `data/workshop.js`, Logik `garage/workshop.js` (am Run-Ende über `run/runState.js → endRun`).
+
+**Umgesetzt**
+1. **Werkstatt-Stufe** 1–60: XP = Meter/50 + 20 je Medaille + 100 je Boss + 50 je Auftrag + 150 je Sieg; jede Stufe
+   eine Belohnung (Schrott/Blaupausen, Kern auf Stufe 3 und alle 10 Stufen, 6 Werkstatt-Lacke). Anzeige in der Garage
+   (Balken + nächste Belohnung) und am Run-Ende (Balken, Aufstiege).
+2. **Auftragsbrett**: 29 Aufträge (Statistik-, Tag-, Etappen-Art- und Sieg-Aufträge), 3 aktiv, erledigte werden ersetzt.
+3. **Sammelalbum**: 10 Schwellen (Items 10/25/50/80/alle, Rezepte 3/10/alle, Set-Boni 10/alle) im Reiter Statistik.
+4. Chassis-Kerne: Einkaufswagen 1 (vorher 2), spätere +1.
+
+**Messwerte** (`progression.mjs`, 24 Karrieren): erster Akt-1-Boss 0,72 h · erster Sieg 2,5 h · alle Chassis 14,6 h ·
+Schrottstufe 15 ≈ 36 h. Das zweite Chassis kommt im Simulator erst nach ≈ 5,9 h, weil der Bot Forschung „billigste
+zuerst“ kauft; gezielt geforscht reicht ≈ 1 h.
+
+**Offen:** Tagesstrecke, Chassis-Meisterschaft, Sonderprüfungen, Endlos-Garage.
 
 ---
 
