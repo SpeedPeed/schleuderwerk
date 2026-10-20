@@ -10,3 +10,6 @@ __pycache__/
 # PC-Version (npm run build:pc)
 dist/
 tools/playtest/shots/
+
+# fertige Test-Dateien (APK, PC-Datei) zum Verschicken
+ausgabe/
