@@ -13,3 +13,6 @@ tools/playtest/shots/
 
 # fertige Test-Dateien (APK, PC-Datei) zum Verschicken
 ausgabe/
+
+# lokale npm-Sperrdatei (das Projekt nutzt bewusst keine)
+package-lock.json
