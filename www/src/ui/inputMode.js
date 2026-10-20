@@ -39,13 +39,13 @@ export function abilityKeyLabel(i, boostSlot = 0) {
 // Eine Zeile für den Startbildschirm / die Garage
 export const KEY_LINE = 'Tastatur: Leertaste halten = Abschuss/Boost · ←/→ neigen · ↑/↓ Winkel · 1–4 Fähigkeiten · Enter = OK · Esc = zurück · K = alle Tasten';
 
-// Tastenbelegung (Pause/Einstellungen → „⌨ Tastenbelegung“, README)
+// Tastenbelegung (Pause/Einstellungen → „Tastenbelegung“, README)
 export const KEY_HELP = [
   { group: 'Etappe', rows: [
     ['Leertaste halten', 'Abschuss: Kraft laden – loslassen im grünen Bereich'],
     ['↑ / ↓', 'Winkel beim Zielen (steiler / flacher)'],
     ['← / →', 'im Flug neigen: Nase hoch / Nase runter'],
-    ['Leertaste (im Flug)', 'Boost halten (Fähigkeit mit 🚀)'],
+    ['Leertaste (im Flug)', 'Boost halten (Fähigkeit mit Rakete)'],
     ['1 – 4', 'Fähigkeit 1–4 (halten bzw. drücken)'],
     ['Esc / P', 'Pause'],
   ] },

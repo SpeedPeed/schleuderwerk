@@ -3,6 +3,7 @@
 //
 // Felder:
 //   act, name, icon, desc     Anzeige (Karte, Akt-Übergang, Etappen-Intro)
+//   iconId                    Symbol aus dem Icon-Sprite (Paket B)
 //   gravity                   Schwerkraft
 //   physics                   rollFriction (Faktor), ambientHeat (Hitze/s), landTolAdd (Grad, nasser Boden < 0)
 //   tagBoost                  Items mit diesem Tag wirken stärker (Phase 4: items/inventory.js)
@@ -134,6 +135,7 @@ export const BIOMES = [
     act: 1,
     name: 'Schrottplatz',
     icon: '🗑️',
+    iconId: 'tonne',
     desc: 'Opas Schrottplatz: Schrottberge, Schlammlöcher und Pressen, die nach dem Takt einer alten Kuckucksuhr stampfen.',
     gravity: 9.81,
     physics: { rollFriction: 1, ambientHeat: 0, landTolAdd: 0 },
@@ -191,6 +193,7 @@ export const BIOMES = [
     act: 2,
     name: 'Glutwüste',
     icon: '🏜️',
+    iconId: 'wueste',
     desc: 'Flimmernde Hitze (+4 Hitze/s), Sandfelder, Thermik und Schluchten, in die ein ganzer Bus passt. Feuer-Items +25 %.',
     gravity: 9.81,
     physics: { rollFriction: 1, ambientHeat: 4, landTolAdd: 0 },
@@ -250,6 +253,7 @@ export const BIOMES = [
     act: 3,
     name: 'Gewittersteppe',
     icon: '⛈️',
+    iconId: 'sturm',
     desc: 'Regen, Sturmböen und Blitze, die in Zonen einschlagen (Stromschlag + 6 Schaden). Nasser Boden: Landetoleranz −5°. Elektro-Items +25 %.',
     gravity: 9.81,
     physics: { rollFriction: 1, ambientHeat: 0, landTolAdd: -5 },

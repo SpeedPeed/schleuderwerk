@@ -1,4 +1,5 @@
-import { el, fmt, short, show } from './dom.js';
+import { el, fmt, short, show, icon, cur as curHtml } from './dom.js';
+import { TXT } from '../data/texts.js';
 import { inputMode, modeLabel } from './inputMode.js';
 import { GARAGE } from '../data/balance.js';
 import { CHASSIS, ABILITIES, SLOTS, SLOT_INFO, partsForSlot, partById, abilityById, isSlotAbility, researchLabel, chassisById } from '../data/index.js';
@@ -11,7 +12,7 @@ import { fmtStat, statName, statTrend, tagLabel } from './statLabels.js';
 import { ASCENSION } from '../data/ascension.js';
 import { ascensionState, ascensionSummary, fmtPlaytime, MAX_ASCENSION } from '../garage/progression.js';
 import { ITEMS } from '../data/items.js';
-import { TAG_IDS, TAGS, SET_LEVELS, setId } from '../data/tags.js';
+import { TAG_IDS, TAGS, SET_LEVELS, setId, tagById } from '../data/tags.js';
 import { RESEARCH } from '../data/research.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -45,7 +46,9 @@ function gainLabel(save, base, part, level) {
 // Garage: Währungen, 3D-Vorschau (oben, durchsichtig), Chassis-Wahl, Werte-Übersicht, 7 Teile-Slots,
 // Fähigkeiten und der Start-Knopf (RUN STARTEN bzw. RUN FORTSETZEN + Aufgeben). Teile- und Fähigkeits-Auswahl als
 // Unterblatt. Läuft ein Run, zeigt eine Zeile Akt/Biom/Haltbarkeit (die Run-Ausrüstung ist ab dem Start fest).
-// Phase 5: Reiter „🔧 Garage“ · „🧪 Labor“ (Forschungsbaum, ui/lab.js) · „🎨 Lack“ (Lackierungen, Vorschau am Modell).
+// Phase 5: Reiter „Garage“ · „Labor“ (Forschungsbaum, ui/lab.js) · „Lack“ (Lackierungen, Vorschau am Modell).
+// Paket B: Werkzeugwagen-Look – Teile-Slots als Schubladen mit Papier-Etikett, Auswahl als Karteikarten, Statistik als
+// Fahrtenbuch; Icons aus dem Sprite (ui/dom.js → icon), Texte aus data/texts.js.
 // h: { onAction(name, ...args) → Ergebnis {ok}, onPreview(override|null), onSettings(), onStart(), onGiveUp(), onCompendium(),
 //      onResearch(id), onTab(tab) }   – Lack: onAction('buyPaint'|'equipPaint', id), Vorschau onPreview({ paint })
 export class GarageScreen {
@@ -54,57 +57,57 @@ export class GarageScreen {
     this.el = el(`<div id="garage" class="hidden">
       <div class="g-top">
         <div class="g-cur">
-          <span title="Schrott">⚙ <b data-id="scrap">0</b></span>
-          <span title="Blaupausen">📘 <b data-id="bp">0</b></span>
-          <span title="Kerne">💠 <b data-id="cores">0</b></span>
+          <span class="badge b-scrap" title="Schrott">${icon('schrott')}<b data-id="scrap">0</b></span>
+          <span class="badge b-bp" title="Blaupausen">${icon('blaupause')}<b data-id="bp">0</b></span>
+          <span class="badge b-core" title="Kerne">${icon('kern')}<b data-id="cores">0</b></span>
         </div>
-        <button class="icon-btn" data-id="codex" aria-label="Kompendium">📖</button>
-        <button class="icon-btn" data-id="settings" aria-label="Einstellungen">⚙</button>
+        <button class="icon-btn" data-id="codex" aria-label="Kompendium">${icon('buch')}</button>
+        <button class="icon-btn" data-id="settings" aria-label="Einstellungen">${icon('regler')}</button>
       </div>
       <div class="g-tabs" data-id="tabs">
-        <button class="g-tab on" data-tab="garage">🔧 Garage</button>
-        <button class="g-tab" data-tab="lab">🧪 Labor</button>
-        <button class="g-tab" data-tab="paint">🎨 Lack</button>
-        <button class="g-tab" data-tab="stats">📊 Statistik</button>
+        <button class="g-tab on" data-tab="garage">${icon('garage')}${TXT.garage.tabs.garage}</button>
+        <button class="g-tab" data-tab="lab">${icon('labor')}${TXT.garage.tabs.lab}</button>
+        <button class="g-tab" data-tab="paint">${icon('lack')}${TXT.garage.tabs.paint}</button>
+        <button class="g-tab" data-tab="stats">${icon('statistik')}${TXT.garage.tabs.stats}</button>
       </div>
-      <div class="g-preview" data-id="preview"><div class="g-title" data-id="gtitle">GARAGE</div>
+      <div class="g-preview" data-id="preview"><div class="g-title" data-id="gtitle">${TXT.garage.title.garage}</div>
         <div class="g-clock hidden" data-id="clock"></div>
       </div>
       <div class="g-chassis">
-        <button class="icon-btn g-arrow" data-id="cprev" aria-label="Vorheriges Chassis">◀</button>
+        <button class="icon-btn g-arrow" data-id="cprev" aria-label="Vorheriges Chassis">${icon('zurueck')}</button>
         <div class="g-cinfo" data-id="cinfo">
           <div class="g-cname" data-id="cname"></div>
           <div class="g-cdesc" data-id="cdesc"></div>
         </div>
-        <button class="icon-btn g-arrow" data-id="cnext" aria-label="Nächstes Chassis">▶</button>
+        <button class="icon-btn g-arrow" data-id="cnext" aria-label="Nächstes Chassis">${icon('weiter')}</button>
       </div>
       <div class="sheet g-sheet">
         <div class="g-scroll" data-id="scroll">
           <div class="g-run hidden" data-id="runinfo"></div>
           <div data-id="main">
             <div class="g-stats" data-id="stats"></div>
-            <h4 class="g-h">Teile</h4>
+            <h4 class="g-h">${TXT.garage.parts}</h4>
             <div class="g-slots" data-id="slots"></div>
-            <h4 class="g-h">Fähigkeiten</h4>
+            <h4 class="g-h">${TXT.garage.abilities}</h4>
             <div class="g-abil" data-id="abil"></div>
           </div>
           <div class="g-paints hidden" data-id="paints"></div>
           <div class="g-statsv hidden" data-id="statsv"></div>
         </div>
         <div class="g-asc hidden" data-id="asc">
-          <button class="icon-btn small" data-id="ascprev" aria-label="Schrottstufe runter">◀</button>
+          <button class="icon-btn small" data-id="ascprev" aria-label="Schrottstufe runter">${icon('zurueck')}</button>
           <div class="ga-info" data-id="ascinfo"></div>
-          <button class="icon-btn small" data-id="ascnext" aria-label="Schrottstufe hoch">▶</button>
+          <button class="icon-btn small" data-id="ascnext" aria-label="Schrottstufe hoch">${icon('weiter')}</button>
         </div>
         <div class="g-startrow">
-          <button class="btn btn-danger g-giveup hidden" data-id="giveup">Aufgeben</button>
-          <button class="btn btn-start" data-id="start">RUN STARTEN ▶</button>
+          <button class="btn btn-danger g-giveup hidden" data-id="giveup">${TXT.garage.giveUp}</button>
+          <button class="btn btn-primary btn-start" data-id="start">${TXT.garage.start}</button>
         </div>
-        <div class="g-keys kbd-only">⌨ Enter = Start · Q/E = Chassis · Tab/Pfeile = auswählen · Esc = zurück · K = alle Tasten</div>
+        <div class="g-keys kbd-only">${icon('tastatur')} Enter = Start · Q/E = Chassis · Tab/Pfeile = auswählen · Esc = zurück · K = alle Tasten</div>
       </div>
       <div class="g-pick hidden" data-id="pick">
         <div class="g-pick-sheet">
-          <div class="g-pick-head"><h3 data-id="picktitle"></h3><button class="icon-btn small" data-id="pickclose" aria-label="Schließen">✕</button></div>
+          <div class="g-pick-head"><h3 data-id="picktitle"></h3><button class="icon-btn small" data-id="pickclose" aria-label="Schließen">${icon('schliessen')}</button></div>
           <div class="g-pick-stats hidden" data-id="pickstats"></div>
           <div class="g-pick-list" data-id="picklist"></div>
         </div>
@@ -133,7 +136,7 @@ export class GarageScreen {
     this.slotRows = {};
     for (const slot of SLOTS) {
       const r = el(`<div class="slot-row" data-slot="${slot}">
-        <div class="sr-icon">${SLOT_INFO[slot].icon}</div>
+        <div class="sr-icon">${icon(SLOT_INFO[slot].iconId)}</div>
         <div class="sr-info">
           <div class="sr-slot">${SLOT_INFO[slot].name} <span class="sr-lvl"></span></div>
           <div class="sr-part"></div>
@@ -227,7 +230,7 @@ export class GarageScreen {
     show(q.main, this.tab === 'garage');
     show(q.paints, this.tab === 'paint');
     show(q.statsv, this.tab === 'stats');
-    q.gtitle.textContent = this.tab === 'paint' ? 'LACKIEREREI' : this.tab === 'stats' ? 'STATISTIK' : 'GARAGE';
+    q.gtitle.textContent = TXT.garage.title[this.tab] || TXT.garage.title.garage;
     if (this.tab === 'paint') this.renderPaints();
     if (this.tab === 'stats') this.renderStatsTab();
     q.scrap.textContent = short(save.meta.scrap);
@@ -243,22 +246,22 @@ export class GarageScreen {
     show(q.clock, !cs.owned);
     if (!cs.owned) {
       const need = [];
-      if (cs.cores > 0) need.push(`💠 ${cs.cores}`);
-      if (cs.research) need.push(`${cs.researchOk ? '✔' : '🔒'} ${esc(researchLabel(cs.research))}${cs.researchOk ? '' : ' (Forschung im Labor)'}`);
-      q.clock.innerHTML = `<span>Gesperrt: ${need.join(' · ')}</span>`
-        + `<button class="btn btn-buy small-btn g-cbuy ${cs.canBuy ? '' : 'cant'}">${cs.researchOk ? `Kaufen 💠 ${cs.cores}` : '🔒 Forschung fehlt'}</button>`;
+      if (cs.cores > 0) need.push(curHtml('kern', cs.cores));
+      if (cs.research) need.push(`${icon(cs.researchOk ? 'haken' : 'schloss')} ${esc(researchLabel(cs.research))}${cs.researchOk ? '' : ' (Forschung im Labor)'}`);
+      q.clock.innerHTML = `<span>${icon('schloss')} Gesperrt: ${need.join(' · ')}</span>`
+        + `<button class="btn btn-buy small-btn g-cbuy ${cs.canBuy ? '' : 'cant'}">${cs.researchOk ? `Kaufen ${curHtml('kern', cs.cores)}` : `${icon('schloss')} Forschung fehlt`}</button>`;
       q.clock.querySelector('.g-cbuy').onclick = () => this.h.onAction('buyChassis', c.id);
     }
     // Start-Knopf: neuer Run (mit der gewählten Ausrüstung) oder laufenden Run fortsetzen
     const run = this.info.run || null;
     q.start.disabled = !run && !cs.owned;
-    q.start.textContent = run ? 'RUN FORTSETZEN ▶' : cs.owned ? 'RUN STARTEN ▶' : '🔒 Chassis gesperrt';
+    q.start.innerHTML = run ? `${TXT.garage.resume} ${icon('weiter')}` : cs.owned ? `${TXT.garage.start} ${icon('weiter')}` : `${icon('schloss')} ${TXT.garage.locked}`;
     show(q.giveup, !!run);
     show(q.runinfo, !!run);
     this.renderAscension(run);
     if (run) {
-      q.runinfo.innerHTML = `<b>Run läuft:</b> Akt ${run.act} · ${run.biomeIcon} ${esc(run.biomeName)} · 🔧 ${fmt(Math.ceil(run.durability))}/${fmt(run.durabilityMax)} · 🔩 ${fmt(run.bolts)}`
-        + '<small>Die Ausrüstung des Runs ist ab dem Start fest – Änderungen gelten ab dem nächsten Run.</small>';
+      q.runinfo.innerHTML = `<b>${TXT.garage.runOn}</b> Akt ${run.act} · ${run.biomeIcon} ${esc(run.biomeName)} · ${curHtml('schluessel', `${fmt(Math.ceil(run.durability))}/${fmt(run.durabilityMax)}`)} · ${curHtml('schraube', fmt(run.bolts))}`
+        + `<small>${TXT.garage.runFixed}</small>`;
     }
 
     // Werte (aktuelle Auswahl; beim Ansehen eines gesperrten Chassis dessen Werte als Vorschau)
@@ -277,7 +280,7 @@ export class GarageScreen {
       r.querySelector('.sr-bar div').style.width = `${(st.level / GARAGE.maxPartLevel) * 100}%`;
       const b = r.querySelector('.sr-up');
       const gain = st.maxed ? '' : gainLabel(save, cur.stats, p, st.level);
-      b.innerHTML = st.maxed ? 'MAX' : `▲ ⚙ ${short(st.upgradeCost)}${gain ? `<small class="sr-gain">${esc(gain)}</small>` : ''}`;
+      b.innerHTML = st.maxed ? 'MAX' : `${icon('pfeil_hoch')}${curHtml('schrott', short(st.upgradeCost))}${gain ? `<small class="sr-gain">${esc(gain)}</small>` : ''}`;
       b.title = st.maxed ? '' : `Nächste Stufe: ${gain}${levelGain(p.id, st.level).m >= 1 ? ` (${levelGain(p.id, st.level).ref}, Bot-Messung)` : ''} – gilt für jedes Teil in diesem Slot`;
       b.disabled = st.maxed;
       b.classList.toggle('max', st.maxed);
@@ -293,7 +296,7 @@ export class GarageScreen {
     let html = '';
     for (let i = 0; i < slots; i++) {
       const a = abilityById(g.abilities[i]);
-      html += `<button class="ab-chip" data-i="${i}">${a ? `${a.icon} ${esc(a.name)}` : '＋ leer'}<small>Slot ${i + 1}${a ? ` · ${modeLabel(a.mode)}` : ''}</small></button>`;
+      html += `<button class="ab-chip" data-i="${i}">${a ? `${a.icon} ${esc(a.name)}` : `${icon('plus')} ${TXT.garage.emptySlot}`}<small>Slot ${i + 1}${a ? ` · ${modeLabel(a.mode)}` : ''}</small></button>`;
     }
     if (cur.special) {
       const a = abilityById(cur.special);
@@ -317,10 +320,10 @@ export class GarageScreen {
     q.ascprev.disabled = lv <= 0;
     q.ascnext.disabled = lv >= a.unlocked;
     const rec = a.records[lv];
-    const best = rec && rec.wins ? ` · ✔ ${rec.wins}× gewonnen` : '';
+    const best = rec && rec.wins ? ` · ${rec.wins}× gewonnen` : '';
     q.ascinfo.innerHTML = lv === 0
-      ? `<b>☠ Schrottstufe 0</b><small>normal · freigeschaltet bis ${a.unlocked}/${MAX_ASCENSION}</small>`
-      : `<b>☠ ${lv} · ${esc(def.name)}</b><small class="ga-desc">${esc(def.desc)}</small>`
+      ? `<b>${icon('elite')} Schrottstufe 0</b><small>normal · freigeschaltet bis ${a.unlocked}/${MAX_ASCENSION}</small>`
+      : `<b>${icon('elite')} ${lv} · ${esc(def.name)}</b><small class="ga-desc">${esc(def.desc)}</small>`
         + `<small class="ga-sum" title="${esc(ascensionSummary(lv).join(' · '))}">${lv} Erschwerung${lv > 1 ? 'en' : ''} aktiv · <b>+${lv * 10} % Schrott</b>${best}</small>`;
     q.asc.classList.toggle('lv', lv > 0);
   }
@@ -330,7 +333,7 @@ export class GarageScreen {
     const save = this.save;
     const st = save.stats;
     const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
-    const bar = (label, a, b) => `<div class="gs-prog"><span>${label}</span><div class="sb-track"><div class="sb-fill" style="width:${pct(a, b)}%"></div></div><b>${fmt(a)}/${fmt(b)} · ${pct(a, b)} %</b></div>`;
+    const bar = (ic, label, a, b) => `<div class="gs-prog"><span>${icon(ic)} ${label}</span><div class="sb-track"><div class="sb-fill" style="width:${pct(a, b)}%"></div></div><b>${fmt(a)}/${fmt(b)} · ${pct(a, b)} %</b></div>`;
     const items = ITEMS.length;
     const seen = ITEMS.filter((it) => (save.codex.items[it.id] || 0) >= 1).length;
     const owned = ITEMS.filter((it) => (save.codex.items[it.id] || 0) >= 2).length;
@@ -340,32 +343,32 @@ export class GarageScreen {
     const resDone = research.filter((r) => save.research.done.includes(r.id)).length;
     const asc = ascensionState(save);
     let html = '<h4 class="g-h">Entdeckt</h4><div class="gs-progs">'
-      + bar('📖 Items gesehen', seen, items) + bar('🎒 Items besessen', owned, items) + bar('✨ Set-Boni', setsSeen, sets)
-      + bar('🚗 Chassis', save.garage.ownedChassis.length, CHASSIS.length) + bar('🧪 Forschung', resDone, research.length)
-      + bar('🎨 Lacke', PAINTS.filter((p) => paintState(save, p).owned).length, PAINTS.length) + bar('☠ Schrottstufen gewonnen', st.wins ? asc.best + 1 : 0, MAX_ASCENSION + 1)
+      + bar('buch', 'Items gesehen', seen, items) + bar('rucksack', 'Items besessen', owned, items) + bar('stern', 'Set-Boni', setsSeen, sets)
+      + bar('wagen', 'Chassis', save.garage.ownedChassis.length, CHASSIS.length) + bar('labor', 'Forschung', resDone, research.length)
+      + bar('lack', 'Lacke', PAINTS.filter((p) => paintState(save, p).owned).length, PAINTS.length) + bar('elite', 'Schrottstufen gewonnen', st.wins ? asc.best + 1 : 0, MAX_ASCENSION + 1)
       + '</div>';
     const rows = [
       ['Spielzeit', fmtPlaytime(save.meta.totalPlaytime)], ['Runs / Siege', `${fmt(st.runs)} / ${fmt(st.wins)}`],
-      ['Bester Akt', st.bestAct > 3 ? '🏆 Sieg' : st.bestAct ? `Akt ${st.bestAct}` : '–'], ['Höchste Schrottstufe gewonnen', st.wins ? `☠ ${asc.best}` : '–'],
+      ['Bester Akt', st.bestAct > 3 ? `${icon('pokal')} Sieg` : st.bestAct ? `Akt ${st.bestAct}` : '–'], ['Höchste Schrottstufe gewonnen', st.wins ? `${icon('elite')} ${asc.best}` : '–'],
       ['Weiteste Etappe', `${fmt(st.bestDist)} m`], ['Größte Höhe', `${fmt(st.bestHeight)} m`],
       ['Etappen geschafft', fmt(st.stagesCleared || 0)], ['Bosse besiegt', fmt(st.bossesBeaten || 0)],
-      ['Saltos', fmt(st.totalFlips || 0)], ['Schrott verdient', `⚙ ${fmt(st.totalScrap)}`],
+      ['Saltos', fmt(st.totalFlips || 0)], ['Schrott verdient', curHtml('schrott', fmt(st.totalScrap))],
     ];
     html += `<h4 class="g-h">Bestwerte</h4><div class="re-stats gs-best">${rows.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('')}</div>`;
     const recs = Object.entries(asc.records).map(([lv, r]) => [Number(lv), r]).sort((x, y) => x[0] - y[0]);
     if (recs.length) {
-      html += '<h4 class="g-h">Je Schrottstufe</h4><div class="gs-table"><div class="gs-tr gs-th"><span>☠</span><span>Runs</span><span>Siege</span><span>Bester Akt</span><span>Schnellster Sieg</span></div>'
-        + recs.map(([lv, r]) => `<div class="gs-tr"><span>${lv}</span><span>${fmt(r.runs)}</span><span>${fmt(r.wins)}</span><span>${r.bestAct > 3 ? '🏆' : r.bestAct}</span><span>${r.fastestWin ? fmtPlaytime(r.fastestWin) : '–'}</span></div>`).join('')
+      html += `<h4 class="g-h">Je Schrottstufe</h4><div class="gs-table"><div class="gs-tr gs-th"><span>${icon('elite')}</span><span>Runs</span><span>Siege</span><span>Bester Akt</span><span>Schnellster Sieg</span></div>`
+        + recs.map(([lv, r]) => `<div class="gs-tr"><span>${lv}</span><span>${fmt(r.runs)}</span><span>${fmt(r.wins)}</span><span>${r.bestAct > 3 ? icon('pokal') : r.bestAct}</span><span>${r.fastestWin ? fmtPlaytime(r.fastestWin) : '–'}</span></div>`).join('')
         + '</div>';
     }
     const hist = save.history || [];
     html += `<h4 class="g-h">Letzte Runs</h4>`;
     html += hist.length ? `<div class="gs-hist">${hist.map((h) => {
       const c = chassisById(h.chassis);
-      const res = h.won ? '🏆 Sieg' : `✗ Akt ${h.act}`;
-      return `<div class="gs-run ${h.won ? 'won' : ''}"><span class="gs-res">${res}</span><span>${c ? c.icon : '🚗'}${h.ascension ? ` ☠${h.ascension}` : ''}</span><span>🏁 ${fmt(h.cleared)}</span><span>⚙ ${fmt(h.scrap)}</span><span>${h.time ? fmtPlaytime(h.time) : ''}</span></div>`;
-    }).join('')}</div>` : '<p class="small">Noch keine Runs – ab in die Kiste!</p>';
-    this.q.statsv.innerHTML = html;
+      const res = h.won ? `${icon('pokal')} Sieg` : `✗ Akt ${h.act}`;
+      return `<div class="gs-run ${h.won ? 'won' : ''}"><span class="gs-res">${res}</span><span>${c ? c.icon : icon('wagen')}${h.ascension ? ` ${icon('elite')}${h.ascension}` : ''}</span><span>${icon('etappe')} ${fmt(h.cleared)}</span>${curHtml('schrott', fmt(h.scrap))}<span>${h.time ? fmtPlaytime(h.time) : ''}</span></div>`;
+    }).join('')}</div>` : `<p class="small">${TXT.garage.noRuns}</p>`;
+    this.q.statsv.innerHTML = `<div class="logbook">${html}</div>`;
   }
 
   // ---------- Lackierungen ----------
@@ -375,15 +378,15 @@ export class GarageScreen {
     const sel = this.paintSel === undefined ? cur : this.paintSel;
     const card = (id, name, colors, inner, extra = '') => `<div class="pcard paint ${sel === id ? 'sel' : ''} ${cur === id ? 'equipped' : ''} ${extra}" data-paint="${id === null ? '' : id}">
         <div class="pc-top"><span class="pt-swatch" style="--b:${colors[0]};--a:${colors[1]}"></span><div class="pc-name">${esc(name)}</div></div>${inner}</div>`;
-    let html = `<p class="small">Rein optisch – Lackierungen gelten für alle Chassis. ${inputMode.kbd ? 'Auswählen (Enter)' : 'Antippen'} = Vorschau am Modell.</p>`;
-    html += card(null, 'Original (Chassis-Farben)', ['#c8843a', '#d94a3a'], `<div class="pc-btns">${cur === null ? '<span class="pc-tag">✓ Angelegt</span>' : '<button class="btn btn-primary small-btn" data-act="equip">Anlegen</button>'}</div>`);
+    let html = `<p class="small">${TXT.garage.paintHint(inputMode.kbd)}</p>`;
+    html += card(null, 'Original (Chassis-Farben)', ['#c8843a', '#d94a3a'], `<div class="pc-btns">${cur === null ? `<span class="pc-tag">${icon('haken')} Angelegt</span>` : '<button class="btn btn-primary small-btn" data-act="equip">Anlegen</button>'}</div>`);
     for (const p of PAINTS) {
       const st = paintState(save, p);
       let btn;
-      if (st.equipped) btn = '<span class="pc-tag">✓ Angelegt</span>';
+      if (st.equipped) btn = `<span class="pc-tag">${icon('haken')} Angelegt</span>`;
       else if (st.owned) btn = '<button class="btn btn-primary small-btn" data-act="equip">Anlegen</button>';
-      else if (st.currency) btn = `<button class="btn btn-buy small-btn ${st.canBuy ? '' : 'cant'}" data-act="buy">Kaufen ${st.currency === 'scrap' ? '⚙' : '💠'} ${short(st.price)}</button>`;
-      else btn = `<span class="pc-lock">🔒 Run-Sieg auf Schrottstufe ${st.ascension}</span>`;
+      else if (st.currency) btn = `<button class="btn btn-buy small-btn ${st.canBuy ? '' : 'cant'}" data-act="buy">Kaufen ${curHtml(st.currency === 'scrap' ? 'schrott' : 'kern', short(st.price))}</button>`;
+      else btn = `<span class="pc-lock">${icon('schloss')} Run-Sieg auf Schrottstufe ${st.ascension}</span>`;
       html += card(p.id, p.name, [p.colors.body, p.colors.accent], `<div class="pc-desc">${esc(p.flavor || '')}</div><div class="pc-btns">${btn}</div>`, st.owned ? '' : 'locked-soft');
     }
     const q = this.q;
@@ -473,7 +476,7 @@ export class GarageScreen {
     const q = this.q;
     if (pk.kind === 'parts') {
       const slot = pk.slot;
-      q.picktitle.textContent = `${SLOT_INFO[slot].icon} ${SLOT_INFO[slot].name}`;
+      q.picktitle.innerHTML = `${icon(SLOT_INFO[slot].iconId)} ${SLOT_INFO[slot].name}`;
       const base = this.loadout.stats;
       q.picklist.innerHTML = partsForSlot(slot).map((p) => {
         const st = partState(this.save, p);
@@ -481,12 +484,12 @@ export class GarageScreen {
         let btns = '';
         if (!st.owned) {
           btns = st.researchOk
-            ? `<button class="btn btn-buy ${st.canBuy ? '' : 'cant'}" data-act="buy">Kaufen ⚙ ${short(st.price)}</button>`
-            : `<span class="pc-lock">🔒 ${esc(researchLabel(st.research))} (Forschung)</span>`;
+            ? `<button class="btn btn-buy ${st.canBuy ? '' : 'cant'}" data-act="buy">Kaufen ${curHtml('schrott', short(st.price))}</button>`
+            : `<span class="pc-lock">${icon('schloss')} ${esc(researchLabel(st.research))} (Forschung)</span>`;
         } else {
-          btns = st.equipped ? '<span class="pc-tag">✓ Ausgerüstet</span>' : '<button class="btn btn-primary small-btn" data-act="equip">Ausrüsten</button>';
+          btns = st.equipped ? '' : '<button class="btn btn-primary small-btn" data-act="equip">Einbauen</button>';
           btns += st.maxed ? '<span class="pc-tag">MAX</span>'
-            : `<button class="btn btn-buy small-btn ${st.canUpgrade ? '' : 'cant'}" data-act="upgrade">▲ Slot-Stufe ${st.level + 1} · ⚙ ${short(st.upgradeCost)}${(() => { const g = gainLabel(this.save, base, p, st.level); return g ? ` · ${esc(g)}` : ''; })()}</button>`;
+            : `<button class="btn btn-buy small-btn ${st.canUpgrade ? '' : 'cant'}" data-act="upgrade">${icon('pfeil_hoch')} Stufe ${st.level + 1} · ${curHtml('schrott', short(st.upgradeCost))}${(() => { const g = gainLabel(this.save, base, p, st.level); return g ? ` <span class="gain">· ${esc(g)}</span>` : ''; })()}</button>`;
         }
         const cls = ['pcard', st.equipped ? 'equipped' : '', !st.owned && !st.researchOk ? 'locked' : '', pk.sel === p.id ? 'sel' : ''].join(' ');
         // Ausgerüstet: Wirkung der nächsten Stufe zeigen (sonst Vergleich mit dem ausgerüsteten Teil)
@@ -497,7 +500,7 @@ export class GarageScreen {
         } else diff = diffRows(base, lo.stats);
         return `<div class="${cls}" data-id="${p.id}">
           <div class="pc-top"><span class="pc-icon">${p.icon}</span>
-            <div class="pc-name">${esc(p.name)}${st.owned ? ` <small>Slot-St. ${st.level}/${GARAGE.maxPartLevel}</small>` : ''}${p.tag ? ` <small class="pc-tagname">${esc(tagLabel(p.tag))}</small>` : ''}</div></div>
+            <div class="pc-name">${esc(p.name)}${st.owned ? ` <small>Slot-St. ${st.level}/${GARAGE.maxPartLevel}</small>` : ''}${p.tag ? ` <small class="pc-tagname">${tagById(p.tag) ? icon(tagById(p.tag).iconId) : ''} ${esc(tagLabel(p.tag))}</small>` : ''}</div></div>
           <div class="pc-desc">${esc(p.desc)}</div>
           <div class="pc-diff">${diff}</div>
           <div class="pc-btns">${btns}</div>
@@ -531,12 +534,12 @@ export class GarageScreen {
         const fuel = boost ? this.loadout.stats.boostFuel : a.fuel;
         const heat = boost ? this.loadout.stats.boostHeat : a.heat;
         const n1 = (v) => String(Math.round(v * 10) / 10).replace('.', ',');
-        if (a.cooldown) costs.push(`⏱ ${n1(a.cooldown)} s`);
-        if (fuel) costs.push(`⛽ ${n1(fuel)}${a.mode === 'hold' ? '/s' : ''}`);
-        if (heat) costs.push(`🌡 ${n1(heat)}${a.mode === 'hold' ? '/s' : ''}`);
+        if (a.cooldown) costs.push(`${icon('zeit')} ${n1(a.cooldown)} s`);
+        if (fuel) costs.push(`${icon('tank')} ${n1(fuel)}${a.mode === 'hold' ? '/s' : ''}`);
+        if (heat) costs.push(`${icon('hitze')} ${n1(heat)}${a.mode === 'hold' ? '/s' : ''}`);
         let btn;
-        if (!st.unlocked) btn = `<span class="pc-lock">🔒 ${esc(researchLabel(st.research))} (Forschung)</span>`;
-        else if (here) btn = '<span class="pc-tag">✓ In diesem Slot</span>';
+        if (!st.unlocked) btn = `<span class="pc-lock">${icon('schloss')} ${esc(researchLabel(st.research))} (Forschung)</span>`;
+        else if (here) btn = `<span class="pc-tag">${icon('haken')} In diesem Slot</span>`;
         else btn = `<button class="btn btn-primary small-btn" data-act="equip">${st.equipped ? `Tauschen (Slot ${st.slot + 1})` : 'Ausrüsten'}</button>`;
         return `<div class="pcard ${here ? 'equipped' : ''} ${st.unlocked ? '' : 'locked'}" data-id="${a.id}">
           <div class="pc-top"><span class="pc-icon">${a.icon}</span><div class="pc-name">${esc(a.name)} <small>${costs.join(' · ')}</small></div></div>

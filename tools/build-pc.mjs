@@ -1,6 +1,8 @@
 // PC-Version als EINE Datei: dist/Schleuderwerk-PC.html (npm run build:pc)
 // Bündelt www/src/main.js samt three.js (www/vendor, kein Download) mit esbuild zu einem klassischen Skript (IIFE)
-// und schreibt es zusammen mit style.css, Icon und Startbild (als data:-URL) in eine HTML-Datei. Die Datei startet per
+// und schreibt es zusammen mit style.css, Icon und Startbild (als data:-URL) in eine HTML-Datei.
+// Paket B: die Schriften (www/fonts/*.woff2) werden als data:-URL ins CSS eingebettet; das Icon-Sprite steht schon
+// inline in index.html (tools/make-icons.mjs). Die Datei startet per
 // Doppelklick (file://) in Chrome, Edge und Firefox: keine Modul-Importe, keine Import-Map, kein fetch auf lokale
 // Dateien. Der Spielstand liegt wie im Browser im localStorage.
 //
@@ -15,7 +17,6 @@ const WWW = path.join(ROOT, 'www');
 const OUT_DIR = path.join(ROOT, 'dist');
 const OUT = path.join(OUT_DIR, 'Schleuderwerk-PC.html');
 const ICON = path.join(ROOT, 'tools', 'android-res', 'mipmap-xxhdpi', 'ic_launcher_round.png');
-const SPLASH = path.join(ROOT, 'tools', 'android-splash', 'splash.png');
 const minify = !process.argv.includes('--no-minify');
 
 const dataUrl = (file, mime) => `data:${mime};base64,${fs.readFileSync(file).toString('base64')}`;
@@ -45,9 +46,16 @@ export async function buildPc({ quiet = false } = {}) {
     logLevel: 'warning',
   });
   const js = res.outputFiles[0].text;
-  const css = fs.readFileSync(path.join(WWW, 'style.css'), 'utf8');
-  // Startbild (Android-Splash) als Hintergrund des Ladebildschirms
-  const pcCss = `\n/* ---------- PC-Version (tools/build-pc.mjs) ---------- */\n#boot { background: #3d82c4 url("${dataUrl(SPLASH, 'image/png')}") center 58% / cover no-repeat; }\n`;
+  // Schriften einbetten: url("fonts/x.woff2") → data:font/woff2;base64,…
+  let fonts = 0;
+  const css = fs.readFileSync(path.join(WWW, 'style.css'), 'utf8').replace(/url\("(fonts\/[^"]+\.woff2)"\)/g, (m, rel) => {
+    fonts++;
+    return `url("${dataUrl(path.join(WWW, rel), 'font/woff2')}")`;
+  });
+  if (!fonts) throw new Error('style.css: keine Schriften gefunden (fonts/*.woff2)');
+  if (!/<symbol id="i-/.test(fs.readFileSync(path.join(WWW, 'index.html'), 'utf8'))) throw new Error('index.html: Icon-Sprite fehlt (node tools/make-icons.mjs)');
+  // Paket B: der Ladebildschirm (Blechschild „SCHLEUDERWERK“) kommt aus style.css – kein eigenes Startbild mehr
+  const pcCss = '';
 
   let html = fs.readFileSync(path.join(WWW, 'index.html'), 'utf8');
   html = replaceOnce(html, '<link rel="stylesheet" href="style.css">',
@@ -59,7 +67,8 @@ export async function buildPc({ quiet = false } = {}) {
 
   // Prüfen: nichts lädt mehr nach (alles inline)
   const outside = html.replace(/<script>[\s\S]*?<\/script>/g, '').replace(/<style>[\s\S]*?<\/style>/g, '');
-  const ext = outside.match(/\s(src|href)="(?!data:)[^"]*"/g);
+  const ext = outside.match(/\s(src|href)="(?!data:|#)[^"]*"/g);   // #i-… = Icon im eingebetteten Sprite
+  if (/url\("?(?!data:)fonts\//.test(html)) throw new Error('Schrift nicht eingebettet');
   if (ext) throw new Error(`Externe Verweise übrig: ${ext.join(', ')}`);
   if (/type="(module|importmap)"/.test(html)) throw new Error('Modul-Skript übrig');
   if (/\bimport\s*\(/.test(js)) throw new Error('dynamischer import() im Bündel');
@@ -67,7 +76,7 @@ export async function buildPc({ quiet = false } = {}) {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(OUT, html);
   const kb = Math.round(fs.statSync(OUT).size / 1024);
-  if (!quiet) console.log(`✔ ${path.relative(ROOT, OUT)} geschrieben (${kb} KB${minify ? '' : ', nicht minimiert'}) – per Doppelklick starten.`);
+  if (!quiet) console.log(`✔ ${path.relative(ROOT, OUT)} geschrieben (${kb} KB${minify ? '' : ', nicht minimiert'}, ${fonts} Schriften eingebettet) – per Doppelklick starten.`);
   return { file: OUT, kb };
 }
 

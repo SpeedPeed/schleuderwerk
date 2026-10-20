@@ -64,9 +64,9 @@ export function statTrend(stat, from, to) {
   return d;
 }
 
-// Anzeige-Namen der Tags (bis data/tags.js mit Set-Boni in Phase 4 kommt; Namen/Symbole wie in den Inhaltsdaten)
+// Anzeige-Namen der Tags (Symbol kommt als Sprite-Icon dazu, siehe data/tags.js → iconId)
 export const TAG_LABELS = {
-  feuer: '🔥 Feuer', elektro: '⚡ Elektro', magnet: '🧲 Magnet', hydraulik: '💧 Hydraulik', rakete: '🚀 Rakete',
-  gummi: '🟣 Gummi', eis: '❄️ Eis', gyro: '🌀 Gyro', schrott: '🗑️ Schrott', gluck: '🍀 Glück',
+  feuer: 'Feuer', elektro: 'Elektro', magnet: 'Magnet', hydraulik: 'Hydraulik', rakete: 'Rakete',
+  gummi: 'Gummi', eis: 'Eis', gyro: 'Gyro', schrott: 'Schrott', gluck: 'Glück',
 };
 export const tagLabel = (id) => TAG_LABELS[id] || id;

@@ -7,45 +7,49 @@
 //   - tutorialWants / markSeen / resetTutorial / skipTutorial / tutorialProgress – reine Logik auf dem Spielstand
 //   - Tutorial – Warteschlange + Anzeige-Steuerung (Anzeige über einen „view“-Adapter → mit node --test testbar)
 //   - TutorialView – die DOM-Anzeige (Karte mit Abdunklung bzw. „Toast“ während der Etappe)
-// Arten: 'card' (Garage, Karte, Shops: dunkelt ab, „Verstanden ✔“) und 'toast' (Etappe: blockiert nichts,
+// Arten: 'card' (Garage, Karte, Shops: dunkelt ab, „Verstanden“) und 'toast' (Etappe: blockiert nichts,
 // verschwindet nach TUTORIAL.toastTime Sekunden oder per Antippen).
 // Paket A: höchstens 6 Hinweise; Etappen-Hinweise sind kleine Sprechblasen (place 'mid') und erscheinen nur, solange
 // h.allow(step) es erlaubt (main.js: beim Zielen) – nie im Flug über dem HUD. Ein nicht erlaubter Hinweis bleibt
 // eingereiht, bis poke() ihn bei passender Gelegenheit zeigt.
-import { el, show } from './dom.js';
+import { el, show, icon } from './dom.js';
+import { TXT } from '../data/texts.js';
 import { TUTORIAL } from '../data/balance.js';
 import { inputMode } from './inputMode.js';
 
+// Paket B: Hinweise sind Notizzettel von Opa Gerd (Handschrift, Kreppband). icon = Symbol aus dem Icon-Sprite;
+// I('id') setzt ein Sprite-Icon in den Text (statt Emoji).
+const I = (id) => icon(id);
 export const TUTORIAL_STEPS = {
   garage: {
-    icon: '🔧', title: 'Deine Garage', mode: 'card', place: 'top', target: '#garage [data-id=start]',
-    text: 'Hier baust du deine Kiste: ◀ ▶ wählt das Chassis, darunter rüstest du Teile aus und verbesserst sie mit ⚙ Schrott. Unten wählst du zwei Fähigkeiten – dann <b>RUN STARTEN</b>!',
-    textKbd: 'Hier baust du deine Kiste: <b>Q/E</b> wechselt das Chassis, mit <b>Tab/Pfeiltasten</b> wählst du Teile und Fähigkeiten, <b>Enter</b> drückt den markierten Knopf. Ohne Auswahl startet <b>Enter</b> den Run – RUN STARTEN!',
+    icon: 'garage', title: 'Deine Garage', mode: 'card', place: 'top', target: '#garage [data-id=start]',
+    text: `Hier baust du deine Kiste: Pfeile wählen das Chassis, darunter baust du Teile ein und machst sie mit ${I('schrott')} Schrott besser. Unten zwei Fähigkeiten aussuchen – dann <b>AB AUF DEN PLATZ</b>!`,
+    textKbd: 'Hier baust du deine Kiste: <b>Q/E</b> wechselt das Chassis, mit <b>Tab/Pfeiltasten</b> wählst du Teile und Fähigkeiten, <b>Enter</b> drückt den markierten Knopf. Ohne Auswahl startet <b>Enter</b> den Run – ab auf den Platz!',
   },
   map: {
-    icon: '🗺', title: 'Die Karte', mode: 'card', place: 'top', target: '#map .mnode.reach',
-    text: 'Tippe einen <b>pulsierenden Knoten</b> an. ⚑ Etappen bringen Items, 🛒 Händler und 🔧 Werkbank helfen beim Bauen. Ganz oben wartet der Boss des Akts.',
-    textKbd: 'Wähle mit den <b>Pfeiltasten</b> einen pulsierenden Knoten, <b>Enter</b> betritt ihn. ⚑ Etappen bringen Items, 🛒 Händler und 🔧 Werkbank helfen beim Bauen – ganz oben wartet der Boss.',
+    icon: 'karte', title: 'Die Blaupause', mode: 'card', place: 'top', target: '#map .mnode.reach',
+    text: `Tipp einen <b>gestrichelten Kreis</b> an. ${I('etappe')} Etappen bringen Items, ${I('haendler')} Händler und ${I('werkbank')} Werkbank helfen beim Bauen. Ganz oben wartet der Boss – da steht „Hier nicht lang!“, aber du musst trotzdem hin.`,
+    textKbd: `Wähle mit den <b>Pfeiltasten</b> einen gestrichelten Kreis, <b>Enter</b> fährt hin. ${I('etappe')} Etappen bringen Items, ${I('haendler')} Händler und ${I('werkbank')} Werkbank helfen beim Bauen – ganz oben wartet der Boss.`,
   },
   launch: {
-    icon: '🎯', title: 'Abschuss & Ziel', mode: 'toast', place: 'mid', target: '#hud .power-meter',
-    text: '<b>Finger irgendwo halten</b> – die Kraft pendelt, hoch/runter ziehen = Winkel. <b>Loslassen im grünen Bereich!</b> Jeder Meter bringt ⚙ Schrott, die Zielmarke 🥉 und mehr.',
-    textKbd: '<b>Leertaste halten</b> = Kraft (pendelt), <b>↑/↓</b> = Winkel. <b>Loslassen im grünen Bereich!</b> Jeder Meter bringt ⚙ Schrott, die Zielmarke 🥉 und mehr.',
+    icon: 'etappe', title: 'Abschuss & Ziel', mode: 'toast', place: 'mid', target: '#hud .power-meter',
+    text: `<b>Finger irgendwo halten</b> – die Kraft pendelt, hoch/runter ziehen = Winkel. <b>Loslassen im grünen Bereich!</b> Jeder Meter bringt ${I('schrott')} Schrott, die Zielmarke ${I('bronze')} und mehr.`,
+    textKbd: `<b>Leertaste halten</b> = Kraft (pendelt), <b>↑/↓</b> = Winkel. <b>Loslassen im grünen Bereich!</b> Jeder Meter bringt ${I('schrott')} Schrott, die Zielmarke ${I('bronze')} und mehr.`,
   },
   fly: {
-    icon: '🪂', title: 'Fliegen & Ausrollen', mode: 'toast', place: 'mid', target: '#hud .ab-0',
-    text: 'In der Luft: <b>links halten</b> = Nase hoch, <b>rechts</b> = runter – gerade landen. Runde Knöpfe = Fähigkeiten (🚀 Boost halten). Rollt die Kiste aus, spult das Spiel vor – <b>Tippen</b> beendet sofort.',
-    textKbd: 'In der Luft: <b>←</b> = Nase hoch, <b>→</b> = runter – gerade landen. <b>Leertaste halten</b> = 🚀 Boost, <b>1–4</b> = Fähigkeiten. Rollt die Kiste aus, spult das Spiel vor – <b>Leertaste</b> beendet sofort.',
+    icon: 'wind', title: 'Fliegen & Ausrollen', mode: 'toast', place: 'mid', target: '#hud .ab-0',
+    text: `In der Luft: <b>links halten</b> = Nase hoch, <b>rechts</b> = runter – gerade landen. Die runden Knöpfe sind Fähigkeiten (${I('rakete')} Boost halten). Rollt die Kiste aus, spult das Spiel vor – <b>Tippen</b> beendet sofort.`,
+    textKbd: `In der Luft: <b>←</b> = Nase hoch, <b>→</b> = runter – gerade landen. <b>Leertaste halten</b> = ${I('rakete')} Boost, <b>1–4</b> = Fähigkeiten. Rollt die Kiste aus, spult das Spiel vor – <b>Leertaste</b> beendet sofort.`,
   },
   items: {
-    icon: '🎁', title: 'Items & Tags', mode: 'card', place: 'bottom', target: '#runui .ch-cards',
-    text: 'Wähle ein Item. Die farbigen Chips sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei. Im 🎒 Rucksack siehst du deine Sets.',
-    textKbd: 'Nimm ein Item mit <b>1/2/3</b> (<b>S</b> = überspringen). Die farbigen Chips sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei.',
+    icon: 'kiste', title: 'Fundstücke & Tags', mode: 'card', place: 'bottom', target: '#runui .ch-cards',
+    text: `Pack ein Fundstück ein. Die bunten Plaketten sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei. Im ${I('rucksack')} Rucksack siehst du deine Sets.`,
+    textKbd: 'Pack eins ein mit <b>1/2/3</b> (<b>S</b> = liegen lassen). Die bunten Plaketten sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei.',
   },
   lab: {
-    icon: '🧪', title: 'Erfinder-Labor', mode: 'card', place: 'bottom', target: '#garage [data-tab=lab]',
-    text: 'Dein erster Run ist vorbei! Im Reiter <b>🧪 Labor</b> erforschst du mit 📘 Blaupausen neue Items, Teile, Chassis und Kartenknoten.',
-    textKbd: 'Dein erster Run ist vorbei! Im Reiter <b>🧪 Labor</b> (mit Tab erreichbar) erforschst du mit 📘 Blaupausen neue Items, Teile, Chassis und Kartenknoten.',
+    icon: 'labor', title: 'Erfinder-Labor', mode: 'card', place: 'bottom', target: '#garage [data-tab=lab]',
+    text: `Dein erster Run ist rum! Im Reiter <b>Labor</b> erforschst du mit ${I('blaupause')} Blaupausen neue Items, Teile, Chassis und Kartenknoten.`,
+    textKbd: `Dein erster Run ist rum! Im Reiter <b>Labor</b> (mit Tab erreichbar) erforschst du mit ${I('blaupause')} Blaupausen neue Items, Teile, Chassis und Kartenknoten.`,
   },
 };
 export const TUTORIAL_ORDER = Object.keys(TUTORIAL_STEPS);
@@ -176,11 +180,12 @@ export class TutorialView {
       <div class="tut-card" data-id="card" role="dialog" aria-live="polite">
         <div class="tut-head"><span class="tut-icon" data-id="icon"></span><b data-id="title"></b><small data-id="count"></small></div>
         <p class="tut-text" data-id="text"></p>
+        <div class="tut-sig">${icon('opa')} ${TXT.tutorial.sign}</div>
         <div class="tut-btns" data-id="btns">
-          <button class="btn btn-secondary tut-skip" data-a="skip">Alle Hinweise aus</button>
-          <button class="btn btn-primary tut-ok" data-a="ok">Verstanden ✔<small class="kbd-only"> Enter</small></button>
+          <button class="btn btn-secondary tut-skip" data-a="skip">${TXT.tutorial.off}</button>
+          <button class="btn btn-primary tut-ok" data-a="ok">${TXT.tutorial.ok}<small class="kbd-only"> Enter</small></button>
         </div>
-        <div class="tut-tap" data-id="tap"><span class="touch-only">antippen zum Schließen</span><span class="kbd-only">verschwindet von selbst · Esc schließt</span></div>
+        <div class="tut-tap" data-id="tap"><span class="touch-only">${TXT.tutorial.tapClose}</span><span class="kbd-only">${TXT.tutorial.keyClose}</span></div>
       </div>
     </div>`);
     root.appendChild(this.el);
@@ -197,7 +202,7 @@ export class TutorialView {
   show(step, id, n, total) {
     const q = this.q;
     this.mode = step.mode;
-    q.icon.textContent = step.icon;
+    q.icon.innerHTML = icon(step.icon);
     q.title.textContent = step.title;
     q.count.textContent = `${n}/${total}`;
     q.text.innerHTML = stepText(step, inputMode.kbd);

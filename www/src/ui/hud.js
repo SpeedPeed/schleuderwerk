@@ -1,4 +1,5 @@
-import { el, fmt, show } from './dom.js';
+import { el, fmt, show, icon } from './dom.js';
+import { TXT } from '../data/texts.js';
 import { KOMBO, RESOURCES, SOFTCAPS, ITEMS, STAGE } from '../data/balance.js';
 import { liveStageScrap } from '../run/rewards.js';
 import { DEG } from '../core/math.js';
@@ -14,27 +15,53 @@ export const MAX_ABILITY_BUTTONS = SOFTCAPS.abilitySlots.max + 1;
 // Phase 7: DOM wird nur bei Änderung angefasst (changed()), pro Bild entstehen keine neuen Objekte oder Funktionen;
 // die Ketten-Einblendung wächst mit der Kettenlänge (--n). Bedienhinweise kommen vom Tutorial (ui/tutorial.js).
 // Paket A: Etappen-Intro als Banner über der Zielansicht (nur beim Zielen), Schrott-Zähler mit dem Schrott dieser
-// Etappe (wächst mit der Weite, run/rewards.js → liveStageScrap), Anzeige „⏩ ×4“ beim Vorspulen (Tippen = Ende)
+// Etappe (wächst mit der Weite, run/rewards.js → liveStageScrap), Anzeige „×4“ beim Vorspulen (Tippen = Ende)
 // und „Knapp: NN %“ nach der Hochrechnung.
+// Paket B: Armaturenbrett vom Sperrmüll – Weite als Rollen-Zählwerk (ODO_DIGITS Ziffernrollen, nur transform),
+// Tacho, Tank- und Hitze-Zeiger als Rundinstrumente (Nadel = transform), Haltbarkeit als Kette aus NUTS Schraubenmuttern.
+
+const ODO_DIGITS = 5;
+const NUTS = 10;
+const NEEDLE = 240;                 // Zeigerausschlag der Rundinstrumente (Grad, −120 … +120)
+const SPEED_MAX = 60;               // Tacho-Vollausschlag (m/s)
+// Lage einer Ziffernrolle wie im echten Kilometerzähler: Rolle k dreht sich mit, sobald alle Rollen rechts davon auf 9 stehen
+export function odoPositions(d, n = ODO_DIGITS) {
+  const out = new Array(n);
+  const v = Math.max(0, Math.min(10 ** n - 1, d));
+  for (let k = 0; k < n; k++) {
+    const p = 10 ** k;
+    const whole = Math.floor(v / p) % 10;
+    const rest = v % p;                       // Stand der Rollen rechts davon
+    const turn = k === 0 ? v % 1 : Math.max(0, rest - (p - 1));   // letzte Einheit davor: mitdrehen
+    out[n - 1 - k] = whole + turn;
+  }
+  return out;
+}
+
 export class Hud {
   constructor(root, { onPause }) {
     const abBtns = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) =>
-      `<button class="ability-btn ab-${i} hidden" data-id="ab${i}" aria-label="Fähigkeit ${i + 1}"><span data-id="abi${i}">🚀</span><i class="ab-key" data-id="abk${i}">${i + 1}</i></button>`).join('');
+      `<button class="ability-btn ab-${i} hidden" data-id="ab${i}" aria-label="Fähigkeit ${i + 1}"><span data-id="abi${i}"></span><i class="ab-key" data-id="abk${i}">${i + 1}</i></button>`).join('');
+    const drum = '<span class="odo-s">' + Array.from({ length: 11 }, (_, i) => `<span>${i % 10}</span>`).join('') + '</span>';
+    const odo = Array.from({ length: ODO_DIGITS }, (_, i) => `<span class="odo-d" data-id="od${i}">${drum}</span>`).join('');
+    const nuts = Array.from({ length: NUTS }, () => '<i class="nut"></i>').join('');
     this.el = el(`<div id="hud" class="hidden">
       <div class="tilt-zone tz-left hidden" data-id="tzl"><span>↺</span></div>
       <div class="tilt-zone tz-right hidden" data-id="tzr"><span>↻</span></div>
       <div class="hud-top">
-        <button class="icon-btn hud-pause" data-id="pause" aria-label="Pause">❚❚<i class="key-badge kbd-only">Esc</i></button>
-        <div class="hud-dist"><span data-id="dist">0</span><small> m</small></div>
-        <div class="hud-bolts">🔩 <span data-id="bolts">0</span></div>
-        <div class="hud-bolts hud-scrap hidden" data-id="scrapbox">⚙ <span data-id="scrap">0</span><small data-id="scrapadd"></small></div>
+        <button class="icon-btn hud-pause" data-id="pause" aria-label="Pause">${icon('pause')}<i class="key-badge kbd-only">Esc</i></button>
+        <div class="hud-dist" data-id="dist" aria-label="Weite"><span class="odo">${odo}</span><small>m</small></div>
+        <div class="hud-cnt">
+          <div class="hud-bolts">${icon('schraube')}<span data-id="bolts">0</span></div>
+          <div class="hud-bolts hud-scrap hidden" data-id="scrapbox">${icon('schrott')}<span data-id="scrap">0</span><small data-id="scrapadd"></small></div>
+        </div>
       </div>
-      <div class="hud-ff hidden" data-id="ff"><b data-id="fftext">⏩ ×${STAGE.fastForward.scale}</b><small><span class="touch-only">Tippen = Ende</span><span class="kbd-only">Leertaste = Ende</span></small></div>
+      <div class="hud-ff hidden" data-id="ff"><b data-id="fftext">×${STAGE.fastForward.scale}</b><small><span class="touch-only">${TXT.hud.tapEnd}</span><span class="kbd-only">${TXT.hud.keyEnd}</span></small></div>
       <div class="stage-banner card hidden" data-id="banner"></div>
       <div class="hud-sub">
         <span data-id="alt">↑ 0 m</span>
         <span data-id="wind" class="hud-wind"></span>
-        <span data-id="best">🏁 0 m</span>
+        <span>${icon('etappe')} <span data-id="best">0 m</span></span>
       </div>
       <div class="goal hidden" data-id="goal">
         <div class="goal-track"><div class="goal-fill" data-id="gfill"></div>
@@ -48,10 +75,13 @@ export class Hud {
       <div class="combo hidden" data-id="combo"><div class="combo-mult" data-id="mult">×1,0</div><div class="combo-pts" data-id="pts">0</div></div>
       <div class="ground-ind hidden" data-id="ground">Boden ↓ 0 m</div>
       <div class="res-bars" data-id="bars">
-        <div class="rbar rb-fuel"><b>⛽</b><div class="rb-track"><div class="rb-fill" data-id="fuel"></div></div></div>
-        <div class="rbar rb-heat" data-id="heatrow"><b>🌡</b><div class="rb-track"><div class="rb-fill" data-id="heat"></div><em data-id="stall">ÜBERHITZT</em></div></div>
-        <div class="rbar rb-dur" data-id="durrow"><b>🔧</b><div class="rb-track"><div class="rb-fill" data-id="dur"></div><em class="rb-num" data-id="durnum">100</em></div></div>
-        <div class="rbar rb-rpm hidden" data-id="rpmrow"><b>⚙️</b><div class="rb-track"><div class="rb-fill" data-id="rpm"></div><em class="rb-num">Drehzahl</em></div></div>
+        <div class="gauges">
+          <div class="gauge g-speed" title="Tacho"><i class="g-needle" data-id="spd"></i><b>m/s</b></div>
+          <div class="gauge g-fuel rb-fuel" data-id="fuelrow" title="Treibstoff"><i class="g-needle" data-id="fuel"></i>${icon('tank')}</div>
+          <div class="gauge g-heat rb-heat" data-id="heatrow" title="Hitze"><i class="g-needle" data-id="heat"></i>${icon('hitze')}<em data-id="stall">${TXT.hud.overheat}</em></div>
+        </div>
+        <div class="nuts rb-dur" data-id="durrow" title="Haltbarkeit">${icon('schluessel')}<span class="nut-row" data-id="nuts">${nuts}</span><em data-id="durnum">100</em></div>
+        <div class="rbar rb-rpm hidden" data-id="rpmrow"><b>${icon('antrieb')}</b><div class="rb-track"><div class="rb-fill" data-id="rpm"></div><em class="rb-num">Drehzahl</em></div></div>
       </div>
       ${abBtns}
       <div class="aim hidden" data-id="aim">
@@ -68,6 +98,9 @@ export class Hud {
     this.q = {};
     this.el.querySelectorAll('[data-id]').forEach((e) => { this.q[e.dataset.id] = e; });
     this.q.pause.addEventListener('pointerdown', (e) => { e.stopPropagation(); onPause(); });
+    this.odo = Array.from({ length: ODO_DIGITS }, (_, i) => this.q[`od${i}`].firstElementChild);
+    this.odoBox = Array.from({ length: ODO_DIGITS }, (_, i) => this.q[`od${i}`]);
+    this.nutEls = [...this.q.nuts.children];
     this.last = {};
     this.abilityCount = 0;
     this.feed = [];          // { text, t }
@@ -88,7 +121,7 @@ export class Hud {
       }
     }
     if (info && info.recharge) return;
-    const extra = info && info.echo ? ' ×2 🍀' : info && info.tierUp ? ' ★+1 🍀' : '';
+    const extra = info && info.echo ? ' ×2 (Glück)' : info && info.tierUp ? ' ★+1 (Glück)' : '';
     const label = `${src.icon || '•'} ${src.name || src.id}${extra}`;
     const f = this.feed;
     if (f.length && f[f.length - 1].label === label && now - f[f.length - 1].t < 0.5) { f[f.length - 1].n++; f[f.length - 1].t = now; }
@@ -110,7 +143,7 @@ export class Hud {
     c.n = n;
     c.t = now;
     const e = this.q.chain;
-    e.textContent = `KETTENREAKTION ×${n}!`;
+    e.textContent = TXT.hud.chain(n);
     e.style.setProperty('--n', String(Math.min(8, n)));
     show(e, true);
     e.classList.remove('go');
@@ -150,7 +183,8 @@ export class Hud {
     this.chainShown = { n: 0, t: -1e9 };
     this.q.items.innerHTML = items && items.inventory.length ? itemBarHtml(items.inventory, items.inventory.length, items.napped ?? -1) : '';
     this.goal = goal;
-    this.q.best.textContent = goal ? `🏁 Ziel ${fmt(goal.target)} m` : `🏁 ${fmt(best)} m`;
+    this.q.best.textContent = goal ? `Ziel ${fmt(goal.target)} m` : `${fmt(best)} m`;
+    this.setOdo(0);
     show(this.q.goal, !!goal);
     if (goal) {
       this.goalMax = goal.medals.gold * 1.08;
@@ -168,7 +202,7 @@ export class Hud {
     show(this.q.wind, !calm);
     if (!calm) {
       const b = Math.round(weather.base);
-      const dir = weather.gust ? '↔' : b >= 0 ? '→' : '←';
+      const dir = weather.gust ? '←→' : b >= 0 ? '→' : '←';
       this.q.weather.innerHTML = `${weather.icon} <b>${weather.name}</b> ${dir} ${weather.gust ? `bis ${Math.round(weather.gust)}` : Math.abs(b)} m/s`
         + `<small>${weather.gust ? 'Wind wechselt ständig' : b >= 0 ? 'schiebt dich an – flach & weit fliegen!' : 'bremst – lieber hoch & mit Boost'}</small>`;
     }
@@ -199,6 +233,18 @@ export class Hud {
     show(q.banner, !!banner);
     const b = q.banner.querySelector('[data-a=back]');
     if (b && banner.onBack) b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); banner.onBack(); });
+  }
+
+  // Rollen-Zählwerk: d in Metern (Kommastellen drehen die letzte Rolle weich mit), führende Nullen gedimmt
+  setOdo(d) {
+    const pos = odoPositions(d);
+    const lead = Math.max(1, String(Math.floor(Math.max(0, d))).length);
+    for (let i = 0; i < ODO_DIGITS; i++) {
+      const p = Math.round(pos[i] * 50) / 50;
+      if (this.changed(ODO_KEY[i], p)) this.odo[i].style.transform = `translateY(${-p * 34}px)`;
+      const dim = ODO_DIGITS - i > lead;
+      if (this.changed(ODO_LEAD[i], dim)) this.odoBox[i].classList.toggle('lead', dim);
+    }
   }
 
   // Schrott-Zähler: Spielstand + Schrott dieser Etappe (n), mit kurzem Hüpfer bei Änderung
@@ -244,8 +290,7 @@ export class Hud {
     if (this.changed('groundOn', groundOn)) show(q.ground, groundOn);
     if (groundOn && this.changed('groundText', ind.text)) q.ground.textContent = ind.text;
 
-    const d = Math.max(0, Math.round(v.x));
-    if (this.changed('dist', d)) q.dist.textContent = fmt(d);
+    this.setOdo(Math.max(0, v.x));
     if (this.goal) {
       const f = Math.max(0, Math.min(1, v.maxX / this.goalMax));
       const p = Math.round(f * 400);
@@ -267,8 +312,8 @@ export class Hud {
     if (this.scrap) this.setScrap(this.scrap.total, liveStageScrap(this.scrap.act, this.scrap.kind, v.maxX, this.goal ? this.goal.medals : null, stage.scrap + stage.scrapBonus));
     const ffOn = stage.phase === 'fly' && (stage.fastForward || !!stage.settle);
     if (this.changed('ffOn', ffOn)) show(q.ff, ffOn);
-    const fft = stage.knapp ? `📉 Knapp: ${stage.knapp.pct} %` : stage.settle ? `⏩ ${fmt(stage.settle.dist)} m` : `⏩ ×${STAGE.fastForward.scale}`;
-    if (ffOn && this.changed('fft', fft)) { q.fftext.textContent = fft; q.ff.classList.toggle('knapp', !!stage.knapp); }
+    const fft = stage.knapp ? TXT.hud.knapp(stage.knapp.pct) : stage.settle ? `${fmt(stage.settle.dist)} m` : `×${STAGE.fastForward.scale}`;
+    if (ffOn && this.changed('fft', fft)) { q.fftext.innerHTML = `${stage.knapp ? '' : icon('vorspulen')}${fft}`; q.ff.classList.toggle('knapp', !!stage.knapp); }
     const alt = Math.max(0, Math.round(stage.altitude));
     if (this.changed('alt', alt)) q.alt.textContent = `↑ ${fmt(alt)} m`;
     if (this.weather) {
@@ -276,22 +321,24 @@ export class Hud {
       if (this.changed('wind', w)) q.wind.textContent = `${w > 0 ? '→' : w < 0 ? '←' : '·'} ${Math.abs(w)} m/s`;
     }
 
-    // Ressourcen-Leisten
-    const fp = Math.round(v.fuelFrac * 200);
+    // Rundinstrumente: Tacho, Tank, Hitze (Nadel −120° … +120°)
+    const sp = Math.round(Math.min(1, v.speed / SPEED_MAX) * 120);
+    if (this.changed('spd', sp)) q.spd.style.transform = `rotate(${(sp / 120) * NEEDLE - NEEDLE / 2}deg)`;
+    const fp = Math.round(Math.max(0, Math.min(1, v.fuelFrac)) * 120);
     if (this.changed('fuel', fp)) {
-      q.fuel.style.width = `${fp / 2}%`;
-      q.fuel.parentElement.parentElement.classList.toggle('empty', fp <= 0);
+      q.fuel.style.transform = `rotate(${(fp / 120) * NEEDLE - NEEDLE / 2}deg)`;
+      q.fuelrow.classList.toggle('empty', fp <= 0);
     }
     const hf = Math.max(0, Math.min(1, v.heatFrac));
-    const hp = Math.round(hf * 200);
-    if (this.changed('heat', hp)) q.heat.style.width = `${hp / 2}%`;
+    const hp = Math.round(hf * 120);
+    if (this.changed('heat', hp)) q.heat.style.transform = `rotate(${(hp / 120) * NEEDLE - NEEDLE / 2}deg)`;
     const warn = hf >= RESOURCES.heatWarn;
     if (this.changed('heatWarn', warn)) q.heatrow.classList.toggle('warn', warn);
     const stall = v.stall > 0;
     if (this.changed('stall', stall)) { show(q.stall, stall); q.heatrow.classList.toggle('stalled', stall); }
     const df = Math.max(0, Math.min(1, v.durabilityFrac));
-    const dp = Math.round(df * 200);
-    if (this.changed('dur', dp)) q.dur.style.width = `${dp / 2}%`;
+    const dp = Math.ceil(df * NUTS - 1e-6);
+    if (this.changed('dur', dp)) for (let i = 0; i < NUTS; i++) this.nutEls[i].classList.toggle('off', i >= dp);
     // Farbe: grün → gelb unter RESOURCES.durWarn → rot unter RESOURCES.durCrit (Klassen in style.css)
     const dl = df < RESOURCES.durCrit ? 2 : df < RESOURCES.durWarn ? 1 : 0;
     if (this.changed('durLevel', dl)) {
@@ -341,5 +388,7 @@ export class Hud {
 
 // Schlüssel einmal anlegen (keine Texte pro Bild zusammensetzen)
 const GM_KEY = { bronze: 'gm_bronze', silver: 'gm_silver', gold: 'gm_gold' };
+const ODO_KEY = Array.from({ length: ODO_DIGITS }, (_, i) => `odo${i}`);
+const ODO_LEAD = Array.from({ length: ODO_DIGITS }, (_, i) => `odl${i}`);
 const AB_KEY = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) => `ab${i}`);
 const AB_KEYS = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) => ({ p: `abp${i}`, o: `abo${i}`, a: `aba${i}`, r: `abr${i}` }));

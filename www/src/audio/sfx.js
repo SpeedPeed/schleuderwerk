@@ -190,10 +190,10 @@ export class Sfx {
   trick(mult = 1) { const f = 440 * Math.min(3, 0.8 + mult * 0.25); this.tone(f, 0.1, { type: 'square', vol: 0.06 }); this.tone(f * 1.26, 0.16, { type: 'triangle', vol: 0.12, delay: 0.06 }); }
   perfect() { [0, 4, 7, 12, 16].forEach((s, i) => this.tone(523 * semi(s), 0.25, { type: 'triangle', vol: 0.1, delay: i * 0.03 })); }
   bank() { this.tone(1318, 0.08, { type: 'square', vol: 0.06 }); this.tone(1760, 0.2, { type: 'triangle', vol: 0.12, delay: 0.07 }); }
-  click() { this.tone(900, 0.04, { type: 'triangle', vol: 0.12 }); }
+  click() { this.metalButton(); }   // Paket B: jeder Knopf klingt nach Blech
   denied() { this.tone(180, 0.15, { type: 'square', vol: 0.1 }); this.tone(140, 0.2, { type: 'square', vol: 0.1, delay: 0.1 }); }
   record() { [0, 4, 7, 12, 7, 12, 16].forEach((s, i) => this.tone(523 * semi(s), 0.2, { type: 'square', vol: 0.07, delay: i * 0.09 })); }
-  money() { this.tone(1500 + Math.random() * 300, 0.04, { type: 'square', vol: 0.03 }); }
+  money() { this.ratchet(); }       // Paket B: Zählwerk = Ratsche
   // Medaille erreicht (i = 0 Bronze, 1 Silber, 2 Gold): Fanfare, je Stufe höher und länger
   medal(i = 0) {
     [0, 4, 7, 12].forEach((s, k) => this.tone(440 * semi(s + i * 3), 0.22, { type: 'triangle', vol: 0.12, delay: k * 0.07 }));
@@ -250,6 +250,36 @@ export class Sfx {
   research() {
     for (let i = 0; i < 5; i++) this.tone(600 + Math.random() * 800, 0.06, { type: 'sine', vol: 0.08, slide: 1.6, delay: i * 0.06 });
     [0, 5, 9].forEach((s) => this.tone(659 * semi(s), 0.5, { type: 'triangle', vol: 0.07, delay: 0.32 }));
+  }
+
+  // ---- Paket B: Werkstatt-Klänge ----
+  // Blechknopf: kurzes „Klack“ (Blech schlägt auf Blech) – alle Knöpfe der Oberfläche
+  metalButton() {
+    this.burst(0.05, 2600, { vol: 0.22, type: 'bandpass', q: 3 });
+    this.tone(420, 0.06, { type: 'square', vol: 0.05, slide: 0.6 });
+    this.tone(1750, 0.04, { type: 'triangle', vol: 0.05, delay: 0.012 });
+  }
+  // Ratsche (Zählwerk rattert hoch): ein Zahn
+  ratchet() {
+    this.burst(0.022, 3800 + Math.random() * 700, { vol: 0.14, type: 'bandpass', q: 8 });
+    this.tone(2400, 0.015, { type: 'square', vol: 0.02 });
+  }
+  // Stempel: dumpfer Schlag + Papier-Knistern
+  stamp() {
+    this.tone(95, 0.18, { type: 'sine', vol: 0.4, slide: 0.55 });
+    this.burst(0.12, 900, { vol: 0.35, slide: 0.4 });
+    this.burst(0.06, 4200, { vol: 0.08, type: 'highpass', delay: 0.03 });
+  }
+  // Kreppband abreißen: rauschender Riss, der hochzieht
+  tapeTear() {
+    this.burst(0.2, 1200, { vol: 0.2, type: 'bandpass', q: 1.5, slide: 3.2 });
+    for (let i = 0; i < 4; i++) this.burst(0.018, 3000 + i * 500, { vol: 0.07, type: 'bandpass', q: 6, delay: 0.03 + i * 0.035 });
+  }
+  // Schraube fällt in die Dose: helles „Ting“ + kurzes Klappern
+  screwDrop() {
+    this.tone(2900 + Math.random() * 300, 0.18, { type: 'triangle', vol: 0.07 });
+    this.tone(4100, 0.08, { type: 'sine', vol: 0.03, delay: 0.01 });
+    [0, 1, 2].forEach((i) => this.burst(0.02, 2200 + i * 400, { vol: 0.09, type: 'bandpass', q: 5, delay: 0.07 + i * 0.045 }));
   }
 
   // Tutorial-Hinweis erscheint: freundliches „Pling“

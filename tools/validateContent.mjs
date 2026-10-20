@@ -12,7 +12,7 @@
 // Grundlage: docs/ARCHITEKTUR.md 4.1–4.11 (verbindliches Vokabular) und docs/V2-DESIGN.md.
 // Das Vokabular steht hier bewusst als Konstanten (Inhalte dürfen nur das verwenden, was die Engine kennt).
 
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -154,7 +154,7 @@ const CHASSIS_KEYS = new Set(['id', 'name', 'icon', 'desc', 'flavor', 'model', '
 const PART_KEYS = new Set(['id', 'slot', 'name', 'icon', 'desc', 'flavor', 'model', 'unlock', 'stats', 'perLevel', 'tag', 'rules', 'ruleSpec', 'triggers']);
 const ABILITY_KEYS = new Set(['id', 'name', 'icon', 'desc', 'flavor', 'mode', 'cooldown', 'fuel', 'heat', 'effects', 'rules', 'ruleSpec', 'unlock', 'chassis']);
 const RESEARCH_KEYS = new Set(['id', 'name', 'icon', 'desc', 'flavor', 'branch', 'cost', 'requires', 'unlocks', 'pos', 'repeatable']);
-const NODE_KEYS = new Set(['name', 'icon', 'desc', 'color', 'weight', 'minFloor', 'maxPerAct', 'requiresResearch', 'forcedFloors', 'minPerAct', 'guaranteeFloors', 'params']);
+const NODE_KEYS = new Set(['name', 'icon', 'iconId', 'desc', 'color', 'weight', 'minFloor', 'maxPerAct', 'requiresResearch', 'forcedFloors', 'minPerAct', 'guaranteeFloors', 'params']);
 const EVENT_KEYS = new Set(['id', 'acts', 'title', 'text', 'options']);
 const OPTION_KEYS = new Set(['label', 'hint', 'cost', 'outcomes']);
 const OUTCOME_KEYS = new Set(['p', 'text', 'effects']);
@@ -254,6 +254,15 @@ function checkText(where, obj, key, max, { required = true } = {}) {
   if (max && len(v) > max) err(where, `${key} zu lang: ${len(v)} > ${max} Zeichen (${fmt(v)})`);
   if (v !== v.trim()) warn(where, `${key} hat Leerzeichen am Anfang/Ende`);
   if (/ {2,}/.test(v)) warn(where, `${key} enthält doppelte Leerzeichen`);
+}
+
+// Paket B: iconId muss ein Symbol im Icon-Sprite sein (www/assets/icons.svg, erzeugt von tools/make-icons.mjs)
+const SPRITE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'www', 'assets', 'icons.svg');
+const SPRITE_IDS = existsSync(SPRITE) ? new Set([...readFileSync(SPRITE, 'utf8').matchAll(/<symbol id="i-([^"]+)"/g)].map((m) => m[1])) : null;
+function checkIconId(where, id, required = true) {
+  if (id === undefined) { if (required) err(where, 'iconId fehlt (Symbol aus www/assets/icons.svg)'); return; }
+  if (typeof id !== 'string' || !id) return err(where, `iconId muss Text sein (${fmt(id)})`);
+  if (SPRITE_IDS && !SPRITE_IDS.has(id)) err(where, `iconId ${fmt(id)} fehlt im Icon-Sprite (tools/make-icons.mjs)`);
 }
 
 function checkKeys(where, obj, allowed, what) {
@@ -1094,6 +1103,25 @@ for (const [id, rids] of listedItems) if (rids.length > 1) err(`Item ${id}`, `in
   }
 }
 
+// ═══════════════════════════════════ Icons (Paket B) ═══════════════════════════════════
+// Tags (data/tags.js → TAG_PAINT), Teile-Slots (data/index.js → SLOT_INFO), Biome: Symbol und Lack-Ton aus dem Sprite
+{
+  const imp = async (f) => { try { return await import(pathToFileURL(join(DIR, f)).href); } catch (e) { return null; } };
+  const tagsMod = await imp('tags.js');
+  if (tagsMod && tagsMod.TAG_PAINT) {
+    for (const t of TAG_IDS) {
+      const tp = tagsMod.TAG_PAINT[t];
+      if (!tp) { err('tags.js › TAG_PAINT', `Tag ${fmt(t)} fehlt`); continue; }
+      checkIconId(`tags.js › TAG_PAINT.${t}`, tp.iconId);
+      if (!HEX.test(tp.color || '')) err(`tags.js › TAG_PAINT.${t}`, 'color muss #rrggbb sein');
+    }
+  }
+  const idx = await imp('index.js');
+  if (idx && idx.SLOT_INFO) for (const [k, v] of Object.entries(idx.SLOT_INFO)) checkIconId(`index.js › SLOT_INFO.${k}`, v.iconId);
+  const bio = await imp('biomes.js');
+  if (bio && bio.BIOMES) for (const b of bio.BIOMES) checkIconId(`biomes.js › ${b.id}`, b.iconId);
+}
+
 // ═══════════════════════════════════ Knotentypen ═══════════════════════════════════
 
 for (const id of NODE_TYPE_IDS) if (!NODE_TYPES[id]) err('nodes.js', `Knotentyp ${id} fehlt`);
@@ -1107,6 +1135,7 @@ for (const [id, n] of Object.entries(NODE_TYPES)) {
   checkText(w, n, 'desc', MAX.desc);
   noPlaceholders(w, n.desc);
   checkIcon(w, n.icon);
+  checkIconId(w, n.iconId);
   if (!HEX.test(n.color || '')) err(w, `color muss #rrggbb sein`);
   if (!isNum(n.weight) || n.weight < 0) err(w, 'weight muss Zahl ≥ 0 sein');
   if (!isInt(n.minFloor) || n.minFloor < 0 || n.minFloor > 6) err(w, 'minFloor muss 0..6 sein');

@@ -11,12 +11,13 @@ import { ITEMS as I_LEGEND_CURSE } from './content/content_legend_curse.js';
 export const ITEMS = [...I_FEUER_EIS, ...I_ELEKTRO_GYRO, ...I_MAGNET_SCHROTT, ...I_HYDRAULIK_GUMMI, ...I_RAKETE_GLUCK, ...I_LEGEND_CURSE];
 
 // Seltenheiten: Anzeige (Name, Farbe) in Reihenfolge. Gewichte der Item-Auswahl: balance.ITEMS.rarityWeights.
+// color: Stempelfarbe (Paket B – Seltenheit wird auf die Karteikarte gestempelt)
 export const RARITIES = {
-  common: { name: 'Gewöhnlich', color: '#b8c0c8' },
-  rare: { name: 'Selten', color: '#4fa3ff' },
-  epic: { name: 'Episch', color: '#b36bff' },
-  legendary: { name: 'Legendär', color: '#ffb52e' },
-  cursed: { name: 'Verflucht', color: '#d6334a' },
+  common: { name: 'Gewöhnlich', color: '#8a8273' },
+  rare: { name: 'Selten', color: '#24508a' },
+  epic: { name: 'Episch', color: '#683c83' },
+  legendary: { name: 'Legendär', color: '#c9921a' },
+  cursed: { name: 'Verflucht', color: '#b3261e' },
 };
 export const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary', 'cursed'];
 

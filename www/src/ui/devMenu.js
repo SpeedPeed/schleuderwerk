@@ -1,4 +1,4 @@
-import { el, fmt, show } from './dom.js';
+import { el, fmt, show, icon } from './dom.js';
 import * as BAL from '../data/balance.js';
 import { MILESTONES, fmtPlaytime, milestoneTarget, ascensionState, MAX_ASCENSION } from '../garage/progression.js';
 import { BIOMES } from '../data/biomes.js';
@@ -56,7 +56,7 @@ export const TWEAKS = [
   ['RESOURCES', 'dmgPerMps', 'Aufprallschaden je m/s'],
   ['RESOURCES', 'overheatStall', 'Überhitzungs-Stillstand'],
   ['GARAGE', 'costGrowth', 'Preisanstieg je Stufe'],
-  ['TESTDRIVE', 'distDiv', 'Testfahrt: Meter je ⚙'],
+  ['TESTDRIVE', 'distDiv', 'Testfahrt: Meter je Schrott'],
   ['RUN', 'towPenalty', 'Abschlepp-Strafe (Anteil)'],
 ];
 const ORIGINAL = TWEAKS.map(([g, k]) => GROUPS[g][k]);
@@ -71,10 +71,10 @@ const SECTION_NAMES = {
 
 // Kurze Hilfe (aufklappbar oben im Menü)
 const HELP = [
-  ['Währungen', '⚙ Schrott, 📘 Blaupausen, 💠 Kerne für die Garage; 🔩 Schrauben nur im laufenden Run.'],
+  ['Währungen', 'Schrott, Blaupausen, Kerne für die Garage; Schrauben nur im laufenden Run.'],
   ['Freischalten', '„Forschung erfüllen“ erfüllt nur die Bedingungen (kaufen musst du noch), „Ganzen Baum erforschen“ erforscht alles. „Alles freischalten“ schenkt Chassis und Fähigkeiten.'],
   ['Run', '„Etappe: Gold/Bronze/verfehlt“ beendet die laufende Etappe bzw. spielt auf der Karte den nächsten Knoten mit diesem Ergebnis (Shops werden übersprungen). „Zum Boss“ setzt dich vor den Boss, „Nächster Akt“ wechselt den Akt. „Typ erzwingen“ macht alle wählbaren Knoten zu diesem Typ.'],
-  ['Items', 'Item suchen (Name, ID oder Tag) → hinzufügen; ★ erhöhen auf einem Inventar-Platz. Ketten-Log schreibt jede Auslösung in die Konsole (F12).'],
+  ['Items', 'Item suchen (Name, ID oder Tag) → hinzufügen; Stufe erhöhen auf einem Inventar-Platz. Ketten-Log schreibt jede Auslösung in die Konsole (F12).'],
   ['Werte live', 'Jede Zahl aus data/balance.js ist hier änderbar (↺ = Originalwert). Fahrzeug-Grundwerte wirken sofort, alles andere ab der nächsten Etappe. Änderungen gelten bis zum Neuladen.'],
   ['Meilensteine', 'Spielzeit bis zu jedem Meilenstein mit Zielkorridor: grün = im Korridor, gelb = zu früh, rot = zu spät.'],
   ['Leistung', '„Leistungsanzeige“ zeigt oben Bilder/s, Bildzeit, Logik-/Render-Zeit, Draw Calls, Dreiecke und Partikel.'],
@@ -89,55 +89,55 @@ export class DevMenu {
   constructor(root, h) {
     this.h = h;
     this.el = el(`<div id="devmenu" class="overlay hidden"><div class="card dev-card">
-      <h2>🛠 Dev-Menü</h2>
-      <details class="dev-sec dev-help"><summary>❓ Hilfe – was macht was?</summary>
+      <h2>Hinterzimmer</h2>
+      <details class="dev-sec dev-help"><summary>${icon('info')} Hilfe – was macht was?</summary>
         ${HELP.map(([t, d]) => `<p class="small"><b>${t}:</b> ${d}</p>`).join('')}
       </details>
       <h3>Währungen</h3>
       <div class="dev-grid">
-        <button class="btn btn-secondary" data-a="scrap1k">+1.000 ⚙</button>
-        <button class="btn btn-secondary" data-a="scrap10k">+10.000 ⚙</button>
-        <button class="btn btn-secondary" data-a="bp">+10 📘</button>
-        <button class="btn btn-secondary" data-a="cores">+3 💠</button>
-        <button class="btn btn-secondary" data-a="bolts">+100 🔩 (Run)</button>
+        <button class="btn btn-secondary" data-a="scrap1k">+1.000 ${icon('schrott')}</button>
+        <button class="btn btn-secondary" data-a="scrap10k">+10.000 ${icon('schrott')}</button>
+        <button class="btn btn-secondary" data-a="bp">+10 ${icon('blaupause')}</button>
+        <button class="btn btn-secondary" data-a="cores">+3 ${icon('kern')}</button>
+        <button class="btn btn-secondary" data-a="bolts">+100 ${icon('schraube')} (Run)</button>
       </div>
       <h3>Freischalten</h3>
       <div class="dev-grid">
-        <button class="btn btn-secondary" data-a="research">📘 Forschung erfüllen</button>
-        <button class="btn btn-secondary" data-a="researchAll">🧪 Ganzen Baum erforschen</button>
-        <button class="btn btn-secondary" data-a="unlock">🔓 Alles freischalten</button>
-        <button class="btn btn-secondary" data-a="gift">🎁 Alle Teile geschenkt</button>
-        <button class="btn btn-secondary" data-a="asc">☠ Schrottstufen 1–${MAX_ASCENSION} freischalten</button>
-        <button class="btn btn-danger" data-a="end">⏹ Etappe sofort beenden</button>
+        <button class="btn btn-secondary" data-a="research">Forschung erfüllen</button>
+        <button class="btn btn-secondary" data-a="researchAll">Ganzen Baum erforschen</button>
+        <button class="btn btn-secondary" data-a="unlock">Alles freischalten</button>
+        <button class="btn btn-secondary" data-a="gift">Alle Teile geschenkt</button>
+        <button class="btn btn-secondary" data-a="asc">Schrottstufen 1–${MAX_ASCENSION} freischalten</button>
+        <button class="btn btn-danger" data-a="end">Etappe sofort beenden</button>
       </div>
       <h3>Run</h3>
       <div class="dev-grid">
-        <button class="btn btn-secondary" data-a="skipGold">⏭ Etappe: 🥇 Gold</button>
-        <button class="btn btn-secondary" data-a="skipBronze">⏭ Etappe: 🥉 Bronze</button>
-        <button class="btn btn-secondary" data-a="skipMiss">⏭ Etappe: verfehlt</button>
-        <button class="btn btn-secondary" data-a="boss">👹 Zum Boss</button>
-        <button class="btn btn-secondary" data-a="act">➡ Nächster Akt</button>
+        <button class="btn btn-secondary" data-a="skipGold">Etappe: Gold</button>
+        <button class="btn btn-secondary" data-a="skipBronze">Etappe: Bronze</button>
+        <button class="btn btn-secondary" data-a="skipMiss">Etappe: verfehlt</button>
+        <button class="btn btn-secondary" data-a="boss">Zum Boss</button>
+        <button class="btn btn-secondary" data-a="act">Nächster Akt</button>
       </div>
-      <div class="dev-tw dev-tier"><span>Nächste Knoten<small>Typ erzwingen</small></span><select data-id="ntype">${Object.entries(NODE_TYPES).filter(([t]) => t !== 'boss').map(([t, d]) => `<option value="${t}">${d.icon} ${d.name}</option>`).join('')}</select><button class="icon-btn small" data-a="force" aria-label="Erzwingen">✔</button></div>
+      <div class="dev-tw dev-tier"><span>Nächste Knoten<small>Typ erzwingen</small></span><select data-id="ntype">${Object.entries(NODE_TYPES).filter(([t]) => t !== 'boss').map(([t, d]) => `<option value="${t}">${d.icon} ${d.name}</option>`).join('')}</select><button class="icon-btn small" data-a="force" aria-label="Erzwingen">${icon('haken')}</button></div>
       <label class="dev-tw"><span>Haltbarkeit setzen<small>run.durability</small></span>
-        <input type="number" step="any" inputmode="decimal" data-id="dur"><button class="icon-btn small" data-a="setdur" aria-label="Setzen">✔</button></label>
+        <input type="number" step="any" inputmode="decimal" data-id="dur"><button class="icon-btn small" data-a="setdur" aria-label="Setzen">${icon('haken')}</button></label>
       <h3>Items (Run)</h3>
       <div class="dev-items">
         <input type="search" data-id="isearch" placeholder="Item suchen (Name, ID, Tag) …" autocomplete="off">
         <select data-id="ilist" size="6"></select>
         <div class="dev-grid">
-          <button class="btn btn-secondary" data-a="iadd">➕ Item hinzufügen</button>
-          <button class="btn btn-secondary" data-a="ipool">🎲 Alle Items in den Pool</button>
+          <button class="btn btn-secondary" data-a="iadd">Item hinzufügen</button>
+          <button class="btn btn-secondary" data-a="ipool">Alle Items in den Pool</button>
         </div>
-        <div class="dev-tw dev-tier"><span>★ erhöhen<small>Inventar-Platz</small></span><select data-id="islot"></select><button class="icon-btn small" data-a="itier" aria-label="★ erhöhen">★</button></div>
-        <label class="dev-check"><input type="checkbox" data-id="ilog"> 🔗 Ketten-Log in der Konsole</label>
+        <div class="dev-tw dev-tier"><span>Stufe erhöhen<small>Inventar-Platz</small></span><select data-id="islot"></select><button class="icon-btn small" data-a="itier" aria-label="Stufe erhöhen">${icon('stern')}</button></div>
+        <label class="dev-check"><input type="checkbox" data-id="ilog"> Ketten-Log in der Konsole</label>
       </div>
       <h3>Tutorial & Leistung</h3>
       <div class="dev-grid">
-        <button class="btn btn-secondary" data-a="tutReset">🎓 Tutorial zurücksetzen</button>
-        <button class="btn btn-secondary" data-a="tutOff">🎓 Alle Hinweise aus</button>
+        <button class="btn btn-secondary" data-a="tutReset">Tutorial zurücksetzen</button>
+        <button class="btn btn-secondary" data-a="tutOff">Alle Hinweise aus</button>
       </div>
-      <label class="dev-check"><input type="checkbox" data-id="perf"> 📈 Leistungsanzeige</label>
+      <label class="dev-check"><input type="checkbox" data-id="perf"> Leistungsanzeige</label>
       <div class="dev-perf small" data-id="perfTxt"></div>
       <h3>Testfahrt (ohne Run)</h3>
       <div class="dev-grid">${BIOMES.map((b) => `<button class="btn btn-secondary" data-test="${b.id}">${b.icon} ${b.name}</button>`).join('')}</div>
@@ -163,7 +163,7 @@ export class DevMenu {
     on('bolts', () => { this.say(h.onCurrency('bolts', 100) || ''); });
     on('tutReset', () => { this.say(h.onTutorial ? h.onTutorial('reset') : ''); });
     on('tutOff', () => { this.say(h.onTutorial ? h.onTutorial('off') : ''); });
-    on('research', () => { h.onResearch(); this.say('Forschungs-Bedingungen erfüllt – Chassis jetzt mit 💠 kaufbar, Teile mit ⚙'); });
+    on('research', () => { h.onResearch(); this.say('Forschungs-Bedingungen erfüllt – Chassis jetzt mit Kernen kaufbar, Teile mit Schrott'); });
     on('researchAll', () => { h.onResearchAll(); this.say('Ganzer Forschungsbaum erforscht (Feinschliff Stufe 1) – Werkbank/Schwarzmarkt ab dem nächsten Akt bzw. Run'); });
     on('force', () => { this.say(h.onForceNode(this.q.ntype.value)); });
     on('unlock', () => { h.onUnlockAll(); this.say('Alle Chassis, Fähigkeiten und Forschungs-Bedingungen freigeschaltet'); });

@@ -14,14 +14,15 @@ export { CHASSIS, PARTS, ABILITIES };
 // Die 7 Teile-Slots in Anzeige-Reihenfolge
 export const SLOTS = ['drive', 'wheels', 'aero', 'armor', 'tank', 'cooling', 'gadget'];
 
+// iconId: Symbol aus dem Icon-Sprite (www/assets/icons.svg, Paket B); icon bleibt als Emoji-Ersatz für Texte
 export const SLOT_INFO = {
-  drive: { name: 'Antrieb', icon: '⚙️' },
-  wheels: { name: 'Räder', icon: '🛞' },
-  aero: { name: 'Aerodynamik', icon: '💨' },
-  armor: { name: 'Panzerung', icon: '🛡️' },
-  tank: { name: 'Tank', icon: '⛽' },
-  cooling: { name: 'Kühlung', icon: '❄️' },
-  gadget: { name: 'Gadget', icon: '🔧' },
+  drive: { name: 'Antrieb', icon: '⚙️', iconId: 'antrieb' },
+  wheels: { name: 'Räder', icon: '🛞', iconId: 'raeder' },
+  aero: { name: 'Aerodynamik', icon: '💨', iconId: 'aero' },
+  armor: { name: 'Panzerung', icon: '🛡️', iconId: 'panzerung' },
+  tank: { name: 'Tank', icon: '⛽', iconId: 'tank' },
+  cooling: { name: 'Kühlung', icon: '❄️', iconId: 'kuehlung' },
+  gadget: { name: 'Gadget', icon: '🔧', iconId: 'gadget' },
 };
 
 const byId = (list) => {

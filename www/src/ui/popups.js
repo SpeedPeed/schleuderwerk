@@ -1,6 +1,7 @@
-import { el } from './dom.js';
+import { el, iconize } from './dom.js';
 
-// Kurze Einblendungen wie „SALTO!“ oder „+120 gesichert“.
+// Kurze Einblendungen wie „SALTO!“ oder „+120 gesichert“. Paket B: Schablonen-Schrift; Währungs-Emoji in den Texten
+// (aus main.js/Spiellogik) werden zu Sprite-Icons (ui/dom.js → iconize).
 export class Popups {
   constructor(root) {
     this.box = el('<div id="popups"></div>');
@@ -9,7 +10,7 @@ export class Popups {
 
   show(text, kind = 'good') {
     const p = el(`<div class="popup popup-${kind}"></div>`);
-    p.textContent = text;
+    p.innerHTML = iconize(text);
     this.box.appendChild(p);
     while (this.box.children.length > 4) this.box.firstChild.remove();
     setTimeout(() => p.remove(), kind === 'big' ? 1500 : 1200);

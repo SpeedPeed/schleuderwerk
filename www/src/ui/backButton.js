@@ -11,9 +11,9 @@ export const BACK_ACTIONS = [
   'closeTutorial',   // Hinweis schließen
   'closeKeys',       // Tastenbelegung (PC) schließen
   'closeDev', 'closeItemSheet', 'closeSettings',
-  'runBack',         // Overlay-Knopf „◀ Zurück“ (Ersetzen, Platz wählen)
-  'runContinue',     // Overlay-Knopf „Weiter ▶“ (Ereignis/Schatz erledigt)
-  'askLeaveShop',    // „Laden verlassen?“ → Weiter ▶
+  'runBack',         // Overlay-Knopf „Zurück“ (Ersetzen, Platz wählen)
+  'runContinue',     // Overlay-Knopf „Weiter“ (Ereignis/Schatz erledigt)
+  'askLeaveShop',    // „Laden verlassen?“ → Weiter
   'choiceHint',      // Item-Auswahl: nur über die Knöpfe (Hinweis zeigen)
   'shopHint',        // Ereignis/Tankstelle: erst entscheiden (Hinweis zeigen)
   'introBack',       // Etappen-Intro → Karte

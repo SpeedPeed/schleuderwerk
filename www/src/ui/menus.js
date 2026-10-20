@@ -1,21 +1,23 @@
-import { el, show, confirmDialog } from './dom.js';
+import { el, show, confirmDialog, icon } from './dom.js';
+import { TXT } from '../data/texts.js';
 import { GAME_VERSION, CONTROLS } from '../data/balance.js';
 import { keyHelpHtml } from './inputMode.js';
 
 // Pause-Menü und Einstellungen (inkl. Spielstand exportieren/importieren).
+// Paket B: Werkzeugkasten-Deckel mit Typenschild; Schalter als Kippschalter (style.css → .toggles input).
 export class Menus {
   constructor(root, h) {
     this.root = root;
     this.h = h;
     this.pause = el(`<div id="pause" class="overlay hidden"><div class="card">
-      <h2>Pause</h2>
+      <h2>${TXT.pause.title}</h2>
       <div class="btn-col">
-        <button class="btn btn-primary" data-a="resume">▶ Weiter</button>
-        <button class="btn btn-secondary" data-a="settings">⚙ Einstellungen</button>
-        <button class="btn btn-secondary kbd-only" data-a="keys">⌨ Tastenbelegung</button>
-        <button class="btn btn-danger" data-a="quit">⏹ Testfahrt beenden</button>
+        <button class="btn btn-primary" data-a="resume">${icon('weiter')} ${TXT.pause.resume}</button>
+        <button class="btn btn-secondary" data-a="settings">${icon('regler')} ${TXT.pause.settings}</button>
+        <button class="btn btn-secondary kbd-only" data-a="keys">${icon('tastatur')} ${TXT.pause.keys}</button>
+        <button class="btn btn-danger" data-a="quit">${TXT.pause.quitTest}</button>
       </div>
-      <p class="small kbd-only pause-keys">Esc / P / Enter = weiter · K = Tastenbelegung</p></div></div>`);
+      <p class="small kbd-only pause-keys">${TXT.pause.keyLine}</p></div></div>`);
     this.pause.querySelector('[data-a=resume]').onclick = h.onResume;
     this.pause.querySelector('[data-a=settings]').onclick = () => this.openSettings();
     this.pause.querySelector('[data-a=quit]').onclick = h.onQuit;
@@ -23,18 +25,18 @@ export class Menus {
     root.appendChild(this.pause);
 
     this.settings = el(`<div id="settings" class="overlay hidden"><div class="card">
-      <h2>Einstellungen</h2>
+      <h2>${TXT.settings.title}</h2>
       <h3>Ton</h3>
       <div class="toggles">
-        <label><input type="checkbox" data-k="sound"> 🔊 Ton an</label>
+        <label><input type="checkbox" data-k="sound"> ${icon('ton')} Ton an</label>
       </div>
-      <label class="slider"><span>💥 Effekte</span><input type="range" min="0" max="100" step="5" data-v="sfxVol" aria-label="Lautstärke Effekte"><b data-id="sfxVolTxt"></b></label>
-      <label class="slider"><span>🎵 Musik</span><input type="range" min="0" max="100" step="5" data-v="musicVol" aria-label="Lautstärke Musik"><b data-id="musicVolTxt"></b></label>
+      <label class="slider"><span>Effekte</span><input type="range" min="0" max="100" step="5" data-v="sfxVol" aria-label="Lautstärke Effekte"><b data-id="sfxVolTxt"></b></label>
+      <label class="slider"><span>Musik</span><input type="range" min="0" max="100" step="5" data-v="musicVol" aria-label="Lautstärke Musik"><b data-id="musicVolTxt"></b></label>
       <h3>Spielgefühl</h3>
       <div class="toggles">
-        <label><input type="checkbox" data-k="vibration"> 📳 Vibration</label>
-        <label><input type="checkbox" data-k="shake"> 💥 Bildschirmwackeln & Blitze</label>
-        <label><input type="checkbox" data-k="slowmo"> 🐌 Zeitlupe bei Stunts</label>
+        <label><input type="checkbox" data-k="vibration"> Vibration</label>
+        <label><input type="checkbox" data-k="shake"> Bildschirmwackeln & Blitze</label>
+        <label><input type="checkbox" data-k="slowmo"> Zeitlupe bei Stunts</label>
       </div>
       <h3>Grafik</h3>
       <div class="seg" data-id="quality" role="radiogroup" aria-label="Grafikqualität">
@@ -42,25 +44,25 @@ export class Menus {
       </div>
       <p class="small">Niedrig = schneller und sparsamer (weniger Bildpunkte). Schatten kosten ebenfalls Leistung.</p>
       <div class="toggles">
-        <label><input type="checkbox" data-k="shadows"> 🌗 Schatten</label>
+        <label><input type="checkbox" data-k="shadows"> Schatten</label>
       </div>
       <h3 class="kbd-only">Tastatur</h3>
-      <div class="btn-col kbd-only"><button class="btn btn-secondary" data-a="keys">⌨ Tastenbelegung</button></div>
+      <div class="btn-col kbd-only"><button class="btn btn-secondary" data-a="keys">${icon('tastatur')} ${TXT.pause.keys}</button></div>
       <h3>Tutorial</h3>
       <p class="small" data-id="tutTxt"></p>
-      <div class="btn-col"><button class="btn btn-secondary" data-a="tutReset">🎓 Hinweise wieder zeigen</button></div>
+      <div class="btn-col"><button class="btn btn-secondary" data-a="tutReset">${icon('opa')} Hinweise wieder zeigen</button></div>
       <h3>Spielstand</h3>
       <p class="small">Sichere den Text z. B. in einer Notiz. So geht beim Neuinstallieren nichts verloren.</p>
       <textarea data-id="text" rows="3" placeholder="Hier erscheint der Export – oder füge hier einen Spielstand zum Importieren ein."></textarea>
       <div class="btn-row">
-        <button class="btn btn-secondary" data-a="export">📤 Exportieren</button>
-        <button class="btn btn-secondary" data-a="import">📥 Importieren</button>
+        <button class="btn btn-secondary" data-a="export">Exportieren</button>
+        <button class="btn btn-secondary" data-a="import">Importieren</button>
       </div>
       <div class="msg" data-id="msg"></div>
-      <div class="btn-col"><button class="btn btn-secondary small-btn hidden" data-a="backup">🛟 Backup anzeigen (nicht ladbarer Spielstand)</button></div>
+      <div class="btn-col"><button class="btn btn-secondary small-btn hidden" data-a="backup">Backup anzeigen (nicht ladbarer Spielstand)</button></div>
       <div class="btn-row">
-        <button class="btn btn-danger small-btn" data-a="reset">🗑 Spielstand löschen</button>
-        <button class="btn btn-primary" data-a="close">Fertig</button>
+        <button class="btn btn-danger small-btn" data-a="reset">${icon('tonne')} Spielstand löschen</button>
+        <button class="btn btn-primary" data-a="close">${TXT.settings.done}</button>
       </div>
       <div class="version" data-id="version">Schleuderwerk v${GAME_VERSION}${typeof window !== 'undefined' && window.SW_PC_BUILD ? ' · PC-Version' : ''}</div>
     </div></div>`);
@@ -70,9 +72,9 @@ export class Menus {
 
     // Tastenbelegung (PC): eigene Ebene über Pause/Einstellungen
     this.keys = el(`<div id="keys" class="overlay hidden"><div class="card keys-card">
-      <h2>⌨ Tastenbelegung</h2>
+      <h2>${TXT.pause.keys}</h2>
       ${keyHelpHtml()}
-      <div class="btn-row"><button class="btn btn-primary" data-a="close">Fertig</button></div>
+      <div class="btn-row"><button class="btn btn-primary" data-a="close">${TXT.settings.done}</button></div>
     </div></div>`);
     this.keys.querySelector('[data-a=close]').onclick = () => this.closeKeys();
     this.keys.addEventListener('click', (e) => { if (e.target === this.keys) this.closeKeys(); });
@@ -94,7 +96,7 @@ export class Menus {
     s.querySelector('[data-a=tutReset]').onclick = () => {
       if (h.onTutorialReset) h.onTutorialReset();
       this.refreshTutorial();
-      this.say('✔ Die Hinweise erscheinen wieder an den passenden Stellen.');
+      this.say('Alles klar – die Hinweise erscheinen wieder an den passenden Stellen.');
     };
     s.querySelector('[data-a=close]').onclick = () => this.closeSettings();
     // Verstecktes Dev-Menü: CONTROLS.devTaps× schnell hintereinander auf die Versionsnummer tippen
@@ -115,14 +117,14 @@ export class Menus {
       let copied = false;
       try { await navigator.clipboard.writeText(this.text.value); copied = true; } catch (_) { /* egal */ }
       if (!copied) { try { copied = document.execCommand('copy'); } catch (_) { /* egal */ } }
-      this.say(copied ? '✔ In die Zwischenablage kopiert.' : 'Text markieren und kopieren.');
+      this.say(copied ? 'In die Zwischenablage kopiert.' : 'Text markieren und kopieren.');
     };
     s.querySelector('[data-a=import]').onclick = async () => {
       const t = this.text.value.trim();
       if (!t) { this.say('Bitte zuerst einen Spielstand-Text einfügen.'); return; }
       if (!(await confirmDialog(root, 'Aktuellen Spielstand durch den eingefügten ersetzen?', 'Ersetzen'))) return;
       const err = h.onImport(t);
-      this.say(err ? `✖ ${err}` : '✔ Spielstand geladen!');
+      this.say(err ? `Fehler: ${err}` : 'Spielstand geladen!');
     };
     // Rohtext eines Spielstands, der sich nicht laden ließ (save.js → BACKUP_KEY), zum Kopieren anzeigen
     this.backupBtn = s.querySelector('[data-a=backup]');
@@ -145,7 +147,7 @@ export class Menus {
 
   // mode 'run': „Run aufgeben“, sonst (Testfahrt im Dev-Menü) „Testfahrt beenden“
   showPause(on, mode = null) {
-    if (mode) this.pause.querySelector('[data-a=quit]').textContent = mode === 'run' ? '🏳 Run aufgeben' : '⏹ Testfahrt beenden';
+    if (mode) this.pause.querySelector('[data-a=quit]').textContent = mode === 'run' ? TXT.pause.quitRun : TXT.pause.quitTest;
     show(this.pause, on);
   }
 

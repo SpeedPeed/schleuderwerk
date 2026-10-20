@@ -1,4 +1,4 @@
-import { el, fmt, show } from './dom.js';
+import { el, fmt, show, icon } from './dom.js';
 import { FX } from '../data/balance.js';
 
 const TITLES = { stop: 'Testfahrt beendet', wreck: 'Totalschaden!', time: 'Zeit abgelaufen', fall: 'Abgestürzt!' };
@@ -10,10 +10,10 @@ export class Results {
       <h2 data-id="title">Testfahrt beendet</h2>
       <div class="res-badges" data-id="badges"></div>
       <div class="res-rows" data-id="rows"></div>
-      <div class="res-total">⚙ +<span data-id="total">0</span> <small>Schrott</small></div>
+      <div class="res-total">${icon('schrott')} +<span data-id="total">0</span> <small>Schrott</small></div>
       <div class="btn-row">
-        <button class="btn btn-secondary" data-id="garage">🔧 Garage</button>
-        <button class="btn btn-primary" data-id="again">↻ Nochmal</button>
+        <button class="btn btn-secondary" data-id="garage">${icon('garage')} Garage</button>
+        <button class="btn btn-primary" data-id="again">${icon('wuerfel')} Nochmal</button>
       </div>
       <div class="res-tip" data-id="tip"></div>
     </div></div>`);
@@ -31,9 +31,9 @@ export class Results {
   present(r, { newDist, newHeight, canUpgrade }) {
     const q = this.q;
     q.title.textContent = TITLES[r.reason] || TITLES.stop;
-    q.badges.innerHTML = (newDist ? '<span class="badge">🏁 NEUER WEITEN-REKORD!</span>' : '')
-      + (newHeight ? '<span class="badge">↑ NEUER HÖHEN-REKORD!</span>' : '')
-      + (r.medal ? `<span class="badge">${{ bronze: '🥉', silver: '🥈', gold: '🥇' }[r.medal]} Ziel ${fmt(r.target)} m geschafft</span>` : '');
+    q.badges.innerHTML = (newDist ? '<span class="stamp">NEUER WEITEN-REKORD!</span>' : '')
+      + (newHeight ? '<span class="stamp">NEUER HÖHEN-REKORD!</span>' : '')
+      + (r.medal ? `<span class="stamp">${icon({ bronze: 'bronze', silver: 'silber', gold: 'gold' }[r.medal])} Ziel ${fmt(r.target)} m geschafft</span>` : '');
     const p = r.testDrive.parts;
     const rows = [
       ['Distanz', `${fmt(r.dist)} m`, `+${fmt(p.dist)}`],
@@ -41,13 +41,13 @@ export class Results {
       ['Tricks', `${fmt(r.tricks)} Punkte`, `+${fmt(p.tricks)}`],
     ];
     if (p.pickups) rows.push(['Schrott eingesammelt', `${fmt(r.scrapPickups)} Stück`, `+${fmt(p.pickups)}`]);
-    rows.push(['Schrauben', `🔩 ${fmt(r.bolts)}`, '–']);
-    rows.push(['Schaden', `−${fmt(r.damageTaken)} 🔧 (${fmt(r.durability)}/${fmt(r.durabilityMax)})`, '']);
+    rows.push(['Schrauben', `${icon('schraube')} ${fmt(r.bolts)}`, '–']);
+    rows.push(['Schaden', `−${fmt(r.damageTaken)} ${icon('schluessel')} (${fmt(r.durability)}/${fmt(r.durabilityMax)})`, '']);
     q.rows.innerHTML = rows.map(([a, b, c], i) =>
       `<div class="res-row" style="animation-delay:${i * 0.12}s"><span>${a}</span><span class="res-sub">${b}</span><b>${c}</b></div>`).join('')
       + (r.testDrive.factor !== 1 ? `<div class="res-row"><span>Bonus</span><span></span><b>×${String(Math.round(r.testDrive.factor * 100) / 100).replace('.', ',')}</b></div>` : '');
     q.garage.classList.toggle('glow', canUpgrade);
-    q.tip.textContent = canUpgrade ? 'Du kannst ein Teil verbessern!' : '';
+    q.tip.textContent = canUpgrade ? 'Da geht was – du kannst ein Teil verbessern!' : '';
     const total = r.testDrive.total;
     this.show(true);
 

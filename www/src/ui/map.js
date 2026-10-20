@@ -1,4 +1,5 @@
-import { el, fmt, show } from './dom.js';
+import { el, fmt, show, icon, cur } from './dom.js';
+import { TXT } from '../data/texts.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeById } from '../data/biomes.js';
 import { RESOURCES } from '../data/balance.js';
@@ -9,25 +10,29 @@ import { ascensionList } from '../garage/progression.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const ROW_H = 92;        // Abstand der Etagen (px)
-const PAD = 70;          // Rand oben/unten (px)
+const PAD = 70;          // Rand unten (px)
+const PAD_TOP = 104;     // Rand oben: Platz für „HIER NICHT LANG!“ über dem Boss
 
 // Kartenbildschirm eines Akts (Hochformat, scrollbar): Etage 0 unten, Boss oben, Linien zwischen verbundenen
 // Knoten, Knoten-Symbole, aktuelle Position, erreichbare Knoten pulsieren. Kopfleiste: Akt/Biom, Haltbarkeit,
 // Schrauben. Tippen auf einen erreichbaren Knoten → h.onNode(id); andere Knoten zeigen nur ihre Beschreibung.
 // Unter der Kopfleiste die Item-Leiste (Tippen → Inventar mit Set-Übersicht).
+// Paket B: Blaupause mit Raster, Knoten als gestempelte Sprite-Symbole, Wege als Bleistift-Strich, der gewählte Weg
+// mit Rotstift nachgezogen, Boss rot eingekreist („HIER NICHT LANG!“), Haltbarkeit als Kette aus Schraubenmuttern.
 // h: { onNode(id), onGarage(), onInventory() }
+const NUTS = 10;
 export class MapScreen {
   constructor(root, h) {
     this.h = h;
     this.el = el(`<div id="map" class="hidden">
       <div class="map-head">
-        <button class="icon-btn" data-id="garage" aria-label="Zur Garage">🔧</button>
+        <button class="icon-btn" data-id="garage" aria-label="Zur Garage">${icon('garage')}</button>
         <div class="map-title"><b data-id="act">Akt 1</b><small data-id="biome"></small></div>
-        <button class="map-asc hidden" data-id="asc" aria-label="Schrottstufe">☠ <b data-id="ascn">0</b></button>
-        <div class="map-bolts">🔩 <b data-id="bolts">0</b></div>
+        <button class="map-asc hidden" data-id="asc" aria-label="Schrottstufe">${icon('elite')} <b data-id="ascn">0</b></button>
+        <div class="badge b-bolt map-bolts">${icon('schraube')}<b data-id="bolts">0</b></div>
       </div>
       <div class="map-res">
-        <div class="map-dur" data-id="durrow"><b>🔧</b><div class="rb-track"><div class="rb-fill" data-id="dur"></div><em class="rb-num" data-id="durnum">100</em></div></div>
+        <div class="map-dur nuts" data-id="durrow" title="Haltbarkeit">${icon('schluessel')}<span class="nut-row" data-id="nuts">${'<i class="nut"></i>'.repeat(NUTS)}</span><em data-id="durnum">100</em></div>
         <div class="map-mods" data-id="mods"></div>
       </div>
       <button class="map-items" data-id="items" aria-label="Inventar"><span class="mi-bar" data-id="ibar"></span><small data-id="icount"></small></button>
@@ -50,30 +55,31 @@ export class MapScreen {
     this.run = run;
     const q = this.q;
     const b = biomeById(run.biome);
-    q.act.textContent = `Akt ${run.act} · ${b.icon} ${b.name}`;
-    q.biome.textContent = run.current ? 'Knoten läuft – weiter geht’s!' : run.pos.floor < 0 ? 'Wähle deinen Weg (Etage 0)' : `Etage ${run.pos.floor + 1} geschafft – wähle die nächste`;
+    q.act.innerHTML = `Akt ${run.act} · ${b.iconId ? icon(b.iconId) : b.icon} ${esc(b.name)}`;
+    q.biome.textContent = run.current ? TXT.map.running : run.pos.floor < 0 ? TXT.map.choose : TXT.map.floorDone(run.pos.floor + 1);
     q.bolts.textContent = fmt(run.bolts);
     show(q.asc, (run.ascension || 0) > 0);
     q.ascn.textContent = String(run.ascension || 0);
     const max = durabilityMax(run);
     const df = Math.max(0, Math.min(1, run.durability / max));
-    q.dur.style.width = `${df * 100}%`;
+    const nn = Math.ceil(df * NUTS - 1e-6);
+    q.nuts.querySelectorAll('.nut').forEach((e, i) => e.classList.toggle('off', i >= nn));
     q.durnum.textContent = `${fmt(Math.ceil(run.durability))} / ${fmt(max)}`;
     q.durrow.classList.toggle('warn', df < RESOURCES.durWarn && df >= RESOURCES.durCrit);
     q.durrow.classList.toggle('crit', df < RESOURCES.durCrit);
     const mods = [];
     const sign = (v) => (v > 0 ? `+${fmt(v)}` : `−${fmt(-v)}`);
-    if (run.runMods.fuelMaxAdd) mods.push(`⛽ ${sign(run.runMods.fuelMaxAdd)}`);
-    if (run.runMods.coolMul) mods.push(`❄ ${sign(Math.round(run.runMods.coolMul * 100))} %`);
-    q.mods.textContent = mods.join(' · ');
+    if (run.runMods.fuelMaxAdd) mods.push(`${icon('tank')} ${sign(run.runMods.fuelMaxAdd)}`);
+    if (run.runMods.coolMul) mods.push(`${icon('kuehlung')} ${sign(Math.round(run.runMods.coolMul * 100))} %`);
+    q.mods.innerHTML = mods.join(' · ');
     const slots = itemSlots(run);
     q.ibar.innerHTML = itemBarHtml(run.inventory || [], slots);
-    q.icount.textContent = `🎒 ${(run.inventory || []).length}/${slots} ›`;
+    q.icount.innerHTML = `${icon('rucksack')} ${(run.inventory || []).length}/${slots} ›`;
 
     // Knoten-Lage: Etage 0 unten, Boss oben
     const map = run.map;
     const floors = [...map.floors, [map.boss]];
-    const H = PAD * 2 + BOSS_FLOOR * ROW_H;
+    const H = PAD_TOP + PAD + BOSS_FLOOR * ROW_H;
     q.canvas.style.height = `${H}px`;
     const yOf = (floor) => H - PAD - floor * ROW_H;
     const reach = new Set(reachableNodes(run).map((n) => n.id));
@@ -92,7 +98,7 @@ export class MapScreen {
     }
     if (run.pos.floor < 0) for (const n of map.floors[0]) lines += `<line x1="50" y1="${H - 8}" x2="${n.x * 100}" y2="${yOf(0)}" class="start" />`;
     let html = `<svg class="map-lines" viewBox="0 0 100 ${H}" preserveAspectRatio="none">${lines}</svg>`;
-    html += `<div class="map-start" style="top:${H - 22}px">▲ Start</div>`;
+    html += `<div class="map-start" style="top:${H - 24}px">▲ ${TXT.map.start}</div>`;
     for (const row of floors) {
       for (const n of row) {
         const def = NODE_TYPES[n.type] || NODE_TYPES.stage;
@@ -100,9 +106,9 @@ export class MapScreen {
         if (visited.has(n.id)) cls.push('visited');
         if (reach.has(n.id)) cls.push('reach');
         if (run.pos.node === n.id || (run.current && run.current.node === n.id)) cls.push('here');
-        const label = n.type === 'boss' ? `<span class="mn-label">${esc(bossName(run, b))}</span>` : '';
+        const label = n.type === 'boss' ? `<span class="mn-label">${esc(bossName(run, b))}</span><span class="mn-warn">${TXT.map.bossWarn}</span>` : '';
         html += `<button class="${cls.join(' ')}" data-node="${n.id}" style="left:${n.x * 100}%;top:${yOf(n.floor)}px;--c:${def.color}" aria-label="${esc(def.name)}">`
-          + `<span class="mn-icon">${visited.has(n.id) ? '✓' : def.icon}</span>${label}</button>`;
+          + `${icon(visited.has(n.id) ? 'haken' : def.iconId || 'etappe')}${label}</button>`;
       }
     }
     q.canvas.innerHTML = html;
@@ -128,7 +134,7 @@ export class MapScreen {
   showAscension() {
     const lv = (this.run && this.run.ascension) || 0;
     if (!lv) return;
-    this.q.info.innerHTML = `<b>☠ Schrottstufe ${lv}</b>${ascensionList(lv).map((a) => `<p><b>${a.level}</b> · ${esc(a.desc)}</p>`).join('')}<small>+${lv * 10} % Schrott</small>`;
+    this.q.info.innerHTML = `<b>${icon('elite')} Schrottstufe ${lv}</b>${ascensionList(lv).map((a) => `<p><b>${a.level}</b> · ${esc(a.desc)}</p>`).join('')}<small>+${lv * 10} % Schrott – ${TXT.tutorial.sign}</small>`;
     show(this.q.info, true);
     clearTimeout(this.infoTimer);
     this.infoTimer = setTimeout(() => show(this.q.info, false), 8000);
@@ -141,9 +147,9 @@ export class MapScreen {
     if (reachable) { this.h.onNode(id); return; }
     const def = NODE_TYPES[node.type] || NODE_TYPES.stage;
     const b = biomeById(run.biome);
-    const title = node.type === 'boss' ? `${def.icon} ${bossName(run, b)}` : `${def.icon} ${def.name}`;
-    const why = run.visited.includes(id) ? 'Schon besucht.' : 'Noch nicht erreichbar – folge den Linien.';
-    this.q.info.innerHTML = `<b>${esc(title)}</b><p>${esc(node.type === 'boss' ? bossDesc(run, b) : def.desc)}</p><small>${why}</small>`;
+    const title = node.type === 'boss' ? bossName(run, b) : def.name;
+    const why = run.visited.includes(id) ? TXT.map.visited : TXT.map.notReach;
+    this.q.info.innerHTML = `<b>${icon(def.iconId || 'etappe')} ${esc(title)}</b><p>${esc(node.type === 'boss' ? bossDesc(run, b) : def.desc)}</p><small>${why} ${TXT.tutorial.sign}</small>`;
     show(this.q.info, true);
     clearTimeout(this.infoTimer);
     this.infoTimer = setTimeout(() => show(this.q.info, false), 3500);

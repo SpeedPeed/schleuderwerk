@@ -12,8 +12,17 @@ export const TAG_IDS = ['feuer', 'eis', 'elektro', 'gyro', 'magnet', 'schrott', 
 
 const ALL = { ...T_FEUER_EIS, ...T_ELEKTRO_GYRO, ...T_MAGNET_SCHROTT, ...T_HYDRAULIK_GUMMI, ...T_RAKETE_GLUCK };
 
+// Paket B: Anzeige als Lack-Töne statt Neon (OVERHAUL.md §5) und Symbol aus dem Icon-Sprite – überschreibt nur die
+// Darstellung der geprüften Inhaltsdateien (color), die Regeln bleiben unberührt.
+export const TAG_PAINT = {
+  feuer: { color: '#d3562a', iconId: 'feuer' }, elektro: { color: '#e0b52a', iconId: 'elektro' }, magnet: { color: '#a33a3a', iconId: 'magnet' },
+  hydraulik: { color: '#3f6f86', iconId: 'hydraulik' }, rakete: { color: '#c7672f', iconId: 'rakete' }, gummi: { color: '#5c8a3a', iconId: 'gummi' },
+  eis: { color: '#7fb2c4', iconId: 'eis' }, gyro: { color: '#7a5c8f', iconId: 'gyro' }, schrott: { color: '#8a7a5c', iconId: 'tonne' },
+  gluck: { color: '#3f8a5a', iconId: 'gluck' },
+};
+
 export const TAGS = {};
-for (const id of TAG_IDS) TAGS[id] = ALL[id];
+for (const id of TAG_IDS) TAGS[id] = { ...ALL[id], ...TAG_PAINT[id] };
 
 // Set-Stufen (Anzahl Items/Tag-Teile eines Tags)
 export const SET_LEVELS = [2, 4, 6];

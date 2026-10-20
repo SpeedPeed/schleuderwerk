@@ -1,8 +1,11 @@
 // Oberfläche der Items: Karten (Item-Auswahl, Inventar, Kompendium), Set-Übersicht 2/4/6 je Tag und das Item-Blatt
 // (Inventar im Run bzw. Kompendium in der Garage). Nur Anzeige – Spiellogik in items/inventory.js und run/runState.js.
-import { el, show } from './dom.js';
+// Paket B: Items sind Karteikarten mit Kreppband (Schräglage deterministisch aus der Item-ID, ui/dom.js → tiltOf),
+// die Seltenheit wird gestempelt, Tags sind Schablonen-Plaketten mit Sprite-Icon, das Item-Emoji klebt auf einem Etikett.
+import { el, show, icon, tiltOf, inkOn } from './dom.js';
 import { ITEMS, RARITIES, RARITY_ORDER } from '../data/items.js';
 import { TAGS, TAG_IDS, SET_LEVELS, setId } from '../data/tags.js';
+import { TXT } from '../data/texts.js';
 import { describeItem, describeEntry, entryParts, entryRarity, entryName, isHybrid, setOverview, setProgressFor, MAX_TIER } from '../items/inventory.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -10,8 +13,12 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&am
 export function tagChip(tag, extra = '') {
   const t = TAGS[tag];
   if (!t) return '';
-  return `<span class="tag-chip" style="--c:${t.color}">${t.icon} ${esc(t.name)}${extra}</span>`;
+  return `<span class="tag-chip" style="--c:${t.color};--fg:${inkOn(t.color)}">${icon(t.iconId)}${esc(t.name)}${extra}</span>`;
 }
+
+// Seltenheits-Stempel (Gewöhnlich: nur Bleistift-Notiz in der Kopfzeile)
+const STAMP = { rare: 'Selten', epic: 'Episch', legendary: 'Legendär', cursed: 'Verflucht' };
+const stampHtml = (rarity) => (STAMP[rarity] ? `<span class="stamp st-${rarity}">${STAMP[rarity]}</span>` : '');
 
 export const stars = (tier) => `<span class="stars">${'★'.repeat(Math.max(1, tier))}${'☆'.repeat(Math.max(0, MAX_TIER - tier))}</span>`;
 
@@ -23,7 +30,7 @@ function progressHtml(progress) {
   return `<div class="ic-sets">${progress.map((p) => {
     const t = TAGS[p.tag];
     const txt = p.reaches ? `<b>Set ${p.reaches} aktiv!</b>` : p.next ? `${p.to}/${p.next} bis Set ${p.next}` : `${p.to} (alle Sets aktiv)`;
-    return `<span class="ic-set ${p.reaches ? 'reach' : ''}" style="--c:${t.color}">${t.icon} ${esc(t.name)}: ${txt}</span>`;
+    return `<span class="ic-set ${p.reaches ? 'reach' : ''}" style="--c:${t.color}">${icon(t.iconId)} ${esc(t.name)}: ${txt}</span>`;
   }).join('')}</div>`;
 }
 
@@ -32,13 +39,14 @@ export function itemCardHtml(id, opts = {}) {
   const d = describeItem(id, opts.tier || 1, { scale: opts.scale || 1 });
   if (!d) return '';
   const r = rarityOf(d.rarity);
-  return `<div class="icard r-${d.rarity} ${opts.cls || ''}" style="--rc:${r.color}" data-item="${d.id}">
+  return `<div class="icard r-${d.rarity} ${opts.cls || ''}" style="--rc:${r.color};--tilt:${tiltOf(d.id)}deg" data-item="${d.id}">
+    ${stampHtml(d.rarity)}
     <div class="ic-top"><span class="ic-icon">${d.icon}</span>
       <div class="ic-head"><div class="ic-name">${esc(d.name)}</div>
-        <div class="ic-meta"><span class="ic-rar">${esc(r.name)}</span> ${stars(d.tier)}</div></div></div>
+        <div class="ic-meta">${d.rarity === 'common' ? `<span class="ic-rar">${esc(r.name)}</span>` : ''} ${stars(d.tier)}</div></div></div>
     <div class="ic-tags">${d.tags.map((t) => tagChip(t)).join('')}</div>
     <div class="ic-desc">${esc(d.desc)}</div>
-    ${d.curse ? `<div class="ic-curse">☠ ${esc(d.curse)}</div>` : ''}
+    ${d.curse ? `<div class="ic-curse">${icon('elite')} ${esc(d.curse)}</div>` : ''}
     ${progressHtml(opts.progress)}
     ${opts.extra || ''}
   </div>`;
@@ -53,15 +61,16 @@ export function entryRowHtml(entry, slot, opts = {}) {
   // Hybride: eigener Name (Werkbank), darunter die beiden Ursprungs-Items
   const name = esc(entryName(entry));
   const sub = isHybrid(entry) ? ` <small>Hybrid ×0,75 · ${parts.map(({ def }) => esc(def.name)).join(' + ')}</small>` : '';
-  const icon = parts.map(({ def }) => def.icon).join('');
+  const emo = parts.map(({ def }) => def.icon).join('');
   const tags = [...new Set(parts.flatMap(({ def }) => def.tags))];
   const tierTxt = isHybrid(entry) ? parts.map(({ tier }) => stars(tier)).join(' + ') : stars(entry.tier || 1);
   return `<div class="irow r-${rar} ${opts.napped ? 'napped' : ''} ${opts.sel ? 'sel' : ''}" style="--rc:${r.color}" data-slot="${slot}">
-    <div class="ir-top"><span class="ic-icon">${icon}</span>
+    ${stampHtml(rar)}
+    <div class="ir-top"><span class="ic-icon">${emo}</span>
       <div class="ic-head"><div class="ic-name">${name}${sub}</div>
-        <div class="ic-meta"><span class="ic-rar">${esc(r.name)}</span> ${tierTxt}${opts.napped ? ' <small>😴 schläft (Schwarze Katze)</small>' : ''}</div></div></div>
+        <div class="ic-meta">${rar === 'common' ? `<span class="ic-rar">${esc(r.name)}</span>` : ''} ${tierTxt}${opts.napped ? ` <small>${icon('schlafen')} schläft (Schwarze Katze)</small>` : ''}</div></div></div>
     <div class="ic-tags">${tags.map((t) => tagChip(t)).join('')}</div>
-    ${descs.map((d) => `<div class="ic-desc">${esc(d.desc)}</div>${d.curse ? `<div class="ic-curse">☠ ${esc(d.curse)}</div>` : ''}${d.cleansedCurse ? `<div class="ic-cleansed">✨ Fluch entfernt: <s>${esc(d.cleansedCurse)}</s></div>` : ''}`).join('')}
+    ${descs.map((d) => `<div class="ic-desc">${esc(d.desc)}</div>${d.curse ? `<div class="ic-curse">${icon('elite')} ${esc(d.curse)}</div>` : ''}${d.cleansedCurse ? `<div class="ic-cleansed">${icon('stern')} Fluch entfernt: <s>${esc(d.cleansedCurse)}</s></div>` : ''}`).join('')}
     ${opts.actions || ''}
   </div>`;
 }
@@ -76,7 +85,7 @@ export function setOverviewHtml(counts, { onlyActive = false, codex = null } = {
     }).join('');
     const pct = Math.min(1, o.count / SET_LEVELS[SET_LEVELS.length - 1]);
     return `<div class="so-tag" style="--c:${t.color}">
-      <div class="so-head"><span>${t.icon} ${esc(t.name)}</span><b>${o.count}${o.next ? ` / ${o.next}` : ' ✔'}</b></div>
+      <div class="so-head"><span>${icon(t.iconId)} ${esc(t.name)}</span><b>${o.count}${o.next ? ` / ${o.next}` : ` ${icon('haken')}`}</b></div>
       <div class="so-bar"><div style="width:${pct * 100}%"></div></div>
       ${lv}
     </div>`;
@@ -102,7 +111,7 @@ export class ItemSheet {
   constructor(root, h = {}) {
     this.h = h;
     this.el = el(`<div id="itemsheet" class="overlay hidden"><div class="card is-card">
-      <div class="is-head"><h2 data-id="title">Inventar</h2><button class="icon-btn small" data-id="close" aria-label="Schließen">✕</button></div>
+      <div class="is-head"><h2 data-id="title">Inventar</h2><button class="icon-btn small" data-id="close" aria-label="Schließen">${icon('schliessen')}</button></div>
       <div class="is-tabs" data-id="tabs"></div>
       <div class="is-body" data-id="body"></div>
     </div></div>`);
@@ -152,7 +161,7 @@ export class ItemSheet {
   render() {
     const d = this.data;
     if (this.kind === 'inventory') {
-      this.q.title.textContent = `🎒 Inventar ${d.inventory.length}/${d.slots}`;
+      this.q.title.innerHTML = `${icon('rucksack')} Rucksack ${d.inventory.length}/${d.slots}`;
       this.tabs([['items', 'Items'], ['sets', 'Set-Boni']]);
       if (this.tab === 'items') {
         const rows = d.inventory.map((e, i) => entryRowHtml(e, i, { napped: i === d.napped })).join('');
@@ -170,18 +179,18 @@ export class ItemSheet {
     // Kompendium
     const codex = d.codex || { items: {}, sets: {} };
     const known = ITEMS.filter((it) => (codex.items[it.id] || 0) > 0).length;
-    this.q.title.textContent = `📖 Kompendium ${known}/${ITEMS.length}`;
+    this.q.title.innerHTML = `${icon('buch')} Kompendium ${known}/${ITEMS.length}`;
     this.tabs([['items', 'Items'], ['sets', 'Set-Boni']]);
     if (this.tab === 'items') {
       let h = '<p class="small">Entdeckt wird ein Item, sobald es dir zur Auswahl angeboten wird.</p>';
       for (const tag of TAG_IDS) {
         const t = TAGS[tag];
         const list = ITEMS.filter((it) => it.tags[0] === tag).sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity));
-        h += `<h4 class="is-h" style="--c:${t.color}">${t.icon} ${esc(t.name)}</h4><div class="is-grid">`;
+        h += `<h4 class="is-h" style="--c:${t.color}">${icon(t.iconId)} ${esc(t.name)}</h4><div class="is-grid">`;
         for (const it of list) {
           const lvl = codex.items[it.id] || 0;
           if (lvl > 0) h += itemCardHtml(it.id, { cls: 'small' });
-          else h += `<div class="icard unknown r-${it.rarity}" style="--rc:${rarityOf(it.rarity).color}"><div class="ic-top"><span class="ic-icon">❔</span><div class="ic-head"><div class="ic-name">???</div><div class="ic-meta"><span class="ic-rar">${esc(rarityOf(it.rarity).name)}</span></div></div></div></div>`;
+          else h += `<div class="icard unknown r-${it.rarity}" style="--rc:${rarityOf(it.rarity).color};--tilt:${tiltOf(it.id, 1)}deg"><div class="ic-top"><span class="ic-icon">?</span><div class="ic-head"><div class="ic-name">???</div><div class="ic-meta"><span class="ic-rar">${esc(rarityOf(it.rarity).name)}</span></div></div></div></div>`;
         }
         h += '</div>';
       }
@@ -200,7 +209,7 @@ export function choiceCardsHtml(choice, { inventory, parts }) {
   return choice.items.map((id, i) => itemCardHtml(id, {
     progress: setProgressFor(id, inventory, parts),
     cls: 'pickable',
-    extra: `<button class="btn btn-primary ic-pick" data-pick="${i}">Nehmen <kbd class="kbd-only">${i + 1}</kbd></button>`,
+    extra: `<button class="btn btn-primary ic-pick" data-pick="${i}">${TXT.result.take} <kbd class="kbd-only">${i + 1}</kbd></button>`,
   })).join('');
 }
 

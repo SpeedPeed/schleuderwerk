@@ -50,6 +50,7 @@ import { itemById, itemPools } from './data/items.js';
 import { setChainLog } from './items/triggerEngine.js';
 import { Tutorial, TutorialView, tutorialProgress, resetTutorial, TUTORIAL_ORDER } from './ui/tutorial.js';
 import { backAction } from './ui/backButton.js';
+import { TXT } from './data/texts.js';
 import { FxOverlay } from './ui/fxOverlay.js';
 import { applyInputMode, inputMode } from './ui/inputMode.js';
 import { KeyNav } from './ui/keyNav.js';
@@ -186,8 +187,10 @@ const mapScreen = new MapScreen(uiRoot, {
   onInventory: () => { sfx.click(); openInventory(); },
 });
 const itemSheet = new ItemSheet(uiRoot, {});
+// Paket B: Medaillen werden gestempelt (Stempel + Fanfare), Zählwerk = Ratsche, Währung fliegt zum Zähler
 const runScreens = new RunScreens(uiRoot, {
-  onTick: (kind, i) => { if (kind === 'medal') sfx.medal(i); else sfx.money(); },
+  onTick: (kind, i) => { if (kind === 'medal') { sfx.stamp(); sfx.medal(i); platform.haptic('light'); } else sfx.ratchet(); },
+  onFly: (from, to, ic) => fxOverlay.fly(from, to, ic, 3, () => sfx.screwDrop()),
 });
 const shopScreens = new ShopScreens(runScreens);
 const results = new Results(uiRoot, {
@@ -360,6 +363,8 @@ function garageAction(name, ...args) {
   if (name === 'selectChassis') sfx.click();
   else if (name === 'equipPart' || name === 'setAbility') { sfx.click(); platform.haptic('light'); }
   else { sfx.buy(); platform.haptic('success'); emitFx('sparkle', REST.x, REST.y + 1); }
+  // Paket B: bezahlter Schrott fliegt vom Zähler zur Schublade
+  if (name === 'upgradePart' || name === 'buyPart') fxOverlay.fly(document.querySelector('#garage .b-scrap'), args[1] || document.querySelector(`#garage .slot-row[data-slot="${(partById(args[0]) || {}).slot}"]`), 'schrott', 3);
   if (name === 'setAbility') garage.closePicker(true);
   if (name === 'buyChassis') garage.viewId = args[0];
   vehicleFromSave(garage.previewOverride());   // im Teile-Unterblatt bleibt das angetippte Teil in der Vorschau
@@ -720,7 +725,7 @@ function showRunResult(r) {
         onSkip: () => {
           const sk = runLogic.skipChoice(run);
           writeSave(save);
-          sfx.money();
+          sfx.screwDrop();
           if (sk.ok && sk.bolts) popups.show(`+${fmtN(sk.bolts)} 🔩`, 'good');
           showChoices(after);
         },
@@ -801,7 +806,7 @@ function showChoices(then) {
     onSkip: () => {
       const r = runLogic.skipChoice(run);
       writeSave(save);
-      sfx.money();
+      sfx.screwDrop();
       if (r.ok && r.bolts) popups.show(`+${fmtN(r.bolts)} 🔩`, 'good');
       showChoices(then);
     },
@@ -832,6 +837,7 @@ function showReplace(ch, index, then) {
 
 function gotItem(res) {
   const d = itemById(res.itemId);
+  sfx.tapeTear();   // Karteikarte vom Klemmbrett gerissen
   sfx.buy();
   platform.haptic('success');
   if (d) popups.show(`${d.icon} ${d.name}${res.replaced ? ' (ersetzt)' : ''}`, 'big');
@@ -1056,9 +1062,13 @@ function shopWorkbench(keep = false) {
       const e = run.inventory[i];
       const yes = await confirmDialog(uiRoot, `${itemById(e.itemId).name} zerlegen? Das Item ist danach weg (+${fmtN(Workbench.scrapValue(run, e))} 🔩).`, 'Zerlegen');
       if (!yes || !save.run) return;
+      const row = document.querySelector(`#runui .irow[data-slot="${i}"]`);
+      const from = row ? row.getBoundingClientRect() : null;
       const r = Workbench.scrapItem(run, i);
       if (shopFeedback(r, `🔩 +${fmtN(r.bolts)} Schrauben`)) sfx.sell();
       shopWorkbench(true);
+      // Paket B: die Schrauben fliegen in die Dose (Zähler oben)
+      if (r.ok && from) fxOverlay.fly(from, document.querySelector('#runui .sh-bar .b-bolt'), 'schraube', 4, () => sfx.screwDrop());
     },
     onLeave: () => leaveShop(),
   }, keep);
@@ -1197,7 +1207,7 @@ function finishRun() {
 
 async function giveUpRun() {
   if (!save.run) return;
-  const yes = await confirmDialog(uiRoot, 'Run wirklich aufgeben? Gesammelter Schrott und Blaupausen werden trotzdem ausgezahlt.', 'Aufgeben');
+  const yes = await confirmDialog(uiRoot, TXT.dialog.giveUp, TXT.dialog.giveUpYes);
   if (!yes || !save.run) return;
   if (stage) { stage.phase = 'over'; stage = null; }
   runLogic.giveUp(save.run);
@@ -1412,12 +1422,12 @@ async function handleBack() {
     case 'runContinue': click('[data-a=cont]'); break;
     case 'askLeaveShop': {
       const kind = runScreens.kind;
-      const yes = await confirmDialog(uiRoot, kind === 'treasure' ? 'Den Schatz liegen lassen und weiter?' : 'Laden verlassen und weiter zur Karte?', kind === 'treasure' ? 'Liegen lassen' : 'Verlassen');
+      const yes = await confirmDialog(uiRoot, kind === 'treasure' ? TXT.dialog.leaveTreasure : TXT.dialog.leaveShop, kind === 'treasure' ? TXT.dialog.leaveTreasureYes : TXT.dialog.leaveShopYes);
       if (yes && runScreens.open && runScreens.kind === kind) click('[data-a=leave]');
       break;
     }
-    case 'choiceHint': popups.show('Wähle ein Item – oder überspringe', 'info'); break;
-    case 'shopHint': popups.show('Erst eine Entscheidung treffen', 'info'); break;
+    case 'choiceHint': popups.show(TXT.hints.choice, 'info'); break;
+    case 'shopHint': popups.show(TXT.hints.shop, 'info'); break;
     case 'introBack': click('[data-a=back]'); break;
     case 'stageBack': stageBackToMap(); break;
     case 'runPrimary': runScreens.card.querySelector('.btn-row .btn-primary')?.click(); break;
@@ -1430,7 +1440,7 @@ async function handleBack() {
     case 'exitAsk': {
       if (exitAsked) break;
       exitAsked = true;
-      const yes = await confirmDialog(uiRoot, 'Spiel beenden? Dein Fortschritt ist gespeichert.', 'Beenden');
+      const yes = await confirmDialog(uiRoot, TXT.dialog.exitGame, TXT.dialog.exitYes);
       exitAsked = false;
       if (yes) { writeSave(save); platform.exitApp(); }
       break;
