@@ -109,7 +109,7 @@ test('Freischaltungen: Item-Pool (pool/items), Teile, Fähigkeiten, Chassis (For
   const save = withResearch(['r_gyro_1']);
   const pool = itemPool(save.research.done).map((i) => i.id);
   for (const id of researchById('r_gyro_1').unlocks.items) assert.ok(pool.includes(id), id);
-  assert.ok(!itemPool([]).some((i) => i.id === 'gyro_jojo'));
+  assert.ok(!itemPool([]).some((i) => i.id === 'gyro_fahrraddynamo'), 'Paket C: r_gyro_1 schaltet Dynamo und Plattenspieler frei');
   // Teile: kaufbar nur mit Forschung
   const part = partById('wheels_kugellager');
   assert.ok(!GL.partState(defaultSave(), part).researchOk);

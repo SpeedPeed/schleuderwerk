@@ -3,7 +3,7 @@
 // heatToThrust prüft tests/resources.test.mjs; hier zusätzlich noOverheat als Item-Regel (Ewiger Eiszapfen).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PHYSICS as P, RESOURCES as R, RULES, ITEMS as BAL, BASE_STATS, FEATURES } from '../www/src/data/balance.js';
+import { PHYSICS as P, RESOURCES as R, RULES, ITEMS as BAL, BASE_STATS, FEATURES, SYNERGY } from '../www/src/data/balance.js';
 import { Vehicle, thrustFactor } from '../www/src/physics/vehicle.js';
 import { Objects } from '../www/src/physics/objects.js';
 import { baseStats } from '../www/src/items/statMods.js';
@@ -15,7 +15,7 @@ import { BIOMES, biomeById } from '../www/src/data/biomes.js';
 import { buildLoadout } from '../www/src/garage/loadout.js';
 import { defaultSave } from '../www/src/save/save.js';
 import { chassisById } from '../www/src/data/index.js';
-import { itemById } from '../www/src/data/items.js';
+import { itemById, ITEMS } from '../www/src/data/items.js';
 import { setBonus } from '../www/src/data/tags.js';
 import { makeRng } from '../www/src/core/rng.js';
 import { DEG } from '../www/src/core/math.js';
@@ -120,17 +120,17 @@ test('groundSpeedStacks (Rasenmäher): Bodenberührung stapelt Antrieb, Bruchlan
 });
 
 test('setBonusDouble (Badewanne): Set-Stats und Effekte ×2, stack.max ×2, chance.p ×2', () => {
-  const sets = activeSets({ ...tagCounts([]), feuer: 2, gummi: 4, gluck: 4 });
+  const sets = activeSets({ ...tagCounts([]), feuer: 2, gummi: 3, gluck: 3 });
   const single = buildSetParts(sets, false);
   const dbl = buildSetParts(sets, true);
   assert.equal(single.statSets[0].scale, 1);
   assert.equal(dbl.statSets[0].scale, 2);
   for (const s of dbl.sources) assert.equal(s.scale, 2);
-  // Glück-Set 4 enthält chance → p verdoppelt (≤ chanceMax); die Inhaltsdaten bleiben unverändert
-  const pOf = (srcs) => Number(JSON.stringify(srcs.find((x) => x.id === 'set_gluck4').triggers).match(/"p":([\d.]+)/)[1]);
+  // Glück-Set 3 enthält chance → p verdoppelt (≤ chanceMax); die Inhaltsdaten bleiben unverändert
+  const pOf = (srcs) => Number(JSON.stringify(srcs.find((x) => x.id === 'set_gluck3').triggers).match(/"p":([\d.]+)/)[1]);
   const p1 = pOf(single.sources), p2 = pOf(dbl.sources);
   near(p2, Math.min(BAL.chanceMax, p1 * 2), 1e-9, 'chance.p');
-  assert.equal(pOf([{ id: 'set_gluck4', triggers: setBonus('gluck', 4).triggers }]), p1, 'Inhaltsdaten unverändert');
+  assert.equal(pOf([{ id: 'set_gluck3', triggers: setBonus('gluck', 3).triggers }]), p1, 'Inhaltsdaten unverändert');
   // Badewanne mit 2 Feuer-Items: Feuer-Set 2 (+12 % Boost-Schub) wirkt doppelt
   const save = defaultSave();
   save.garage.chassis = 'badewanne'; save.garage.ownedChassis.push('badewanne');
@@ -142,8 +142,10 @@ test('setBonusDouble (Badewanne): Set-Stats und Effekte ×2, stack.max ×2, chan
   assert.ok(a.rules.setBonusDouble && !b.rules.setBonusDouble);
   const setTub = a.statInput.sets.find((s) => s.id === 'set_feuer2');
   const setNorm = b.statInput.sets.find((s) => s.id === 'set_feuer2');
-  assert.equal(setTub.scale, 2);
-  assert.equal(setNorm.scale, 1);
+  // Paket C: × Tag-Stärke (2 Feuer-Items = +20 %), davon wirkt der Anteil SYNERGY.tagStrength.onSets auf Set-Boni
+  const sf = 1 + 2 * SYNERGY.tagStrength.perItem * SYNERGY.tagStrength.onSets;
+  near(setTub.scale, 2 * sf, 1e-9);
+  near(setNorm.scale, sf, 1e-9);
   // Item-Slots: Badewanne −1
   assert.equal(tub.stats.itemSlots, BASE_STATS.itemSlots - 1);
 });
@@ -155,19 +157,21 @@ test('tagBoost (Kühlschrank Eis +50 %, Biome Feuer/Elektro +25 %): skalierte We
   const inv = [{ itemId: 'eis_kuehlerschlauch', tier: 1 }, { itemId: 'feuer_zuendkerzen_kette', tier: 2 }, { itemId: 'elektro_peltier_kuehlbox', tier: 1 }];
   const setup = applyInventory(fridge, inv, { biome: biomeById('gluewueste') });
   const by = (id) => setup.sources.find((s) => s.id === id);
-  near(by('eis_kuehlerschlauch').scale, 1.5, 1e-9, 'Eis +50 %');
-  near(by('feuer_zuendkerzen_kette').scale, BAL.tierMult[1] * 1.25, 1e-9, 'Feuer ★2 in der Glutwüste');
-  near(by('elektro_peltier_kuehlbox').scale, 1.5, 1e-9, 'Hybrid Elektro/Eis zählt als Eis');
+  // Paket C: dazu die Tag-Stärke (+10 % je Item des Tags; Eis 2 Items, Feuer 1)
+  const k = SYNERGY.tagStrength.perItem;
+  near(by('eis_kuehlerschlauch').scale, 1.5 * (1 + 2 * k), 1e-9, 'Eis +50 %');
+  near(by('feuer_zuendkerzen_kette').scale, BAL.tierMult[1] * 1.25 * (1 + k), 1e-9, 'Feuer ★2 in der Glutwüste');
+  near(by('elektro_peltier_kuehlbox').scale, 1.5 * (1 + 2 * k), 1e-9, 'Hybrid Elektro/Eis zählt als Eis');
   // passive Stats: Eis-Bohnerwachs ohne/mit Kühlschrank
   const st = (lo) => applyInventory(lo, [{ itemId: 'eis_bohnerwachs', tier: 1 }]).statInput.items[0].scale;
-  assert.equal(st(buildLoadout(defaultSave())), 1);
-  assert.equal(st(fridge), 1.5);
+  near(st(buildLoadout(defaultSave())), 1 + k, 1e-9);
+  near(st(fridge), 1.5 * (1 + k), 1e-9);
   // Gewittersteppe: Elektro +25 %
   const storm = applyInventory(buildLoadout(defaultSave()), [{ itemId: 'elektro_blitzableiter', tier: 1 }], { biome: biomeById('gewittersteppe') });
-  near(storm.sources.find((s) => s.kind === 'item').scale, 1.25, 1e-9);
+  near(storm.sources.find((s) => s.kind === 'item').scale, 1.25 * (1 + k), 1e-9);
 });
 
-// ================= Set-Regeln (Set 6) =================
+// ================= Set-Regeln (Paket C: Set 5, bis v1.0 Set 6) =================
 
 test('shockArc (Elektro-Set 6): Stromschlag zerstört das nächste Hindernis und holt Pickups', () => {
   const st = stageWith({ rules: { shockArc: true } });
@@ -192,7 +196,7 @@ test('shockArc (Elektro-Set 6): Stromschlag zerstört das nächste Hindernis und
 });
 
 test('spinToSpeed (Gyro-Set 6): Schub je Salto nach perfekter/sauberer Landung', () => {
-  const set = { id: 'set_gyro6', kind: 'set', triggers: setBonus('gyro', 6).triggers, rules: { spinToSpeed: true } };
+  const set = { id: 'set_gyro5', kind: 'set', triggers: setBonus('gyro', 5).triggers, rules: { spinToSpeed: true } };
   const t = engine([set], { spinToSpeed: true });
   t.ev('landing', { quality: 'perfect', flips: 3 });
   t.ev('landing', { quality: 'clean', flips: 2 });
@@ -469,13 +473,13 @@ test('boltsAreFuel (Schraubenvergaser): leerer Tank wird mit Schrauben bezahlt (
   assert.ok(!v.boosting);
 });
 
-test('boltHoardThrust (Schraubenvergaser): Boost-Schub +1 % je 5 Schrauben, max. +30 %', () => {
+test('boltHoardThrust (Schraubenvergaser): Boost-Schub +1 % je 10 Schrauben, max. +15 % (Paket C)', () => {
   const base = stageWith({}).stats.boostThrust;
-  const a = stageWith({ rules: { boltHoardThrust: true }, runInfo: { bolts: 52, counters: {} } });
+  const a = stageWith({ rules: { boltHoardThrust: true }, runInfo: { bolts: 102, counters: {} } });
   near(a.stats.boostThrust, base * 1.1, 1e-6);
   const b = stageWith({ rules: { boltHoardThrust: true }, runInfo: { bolts: 999, counters: {} } });
   near(b.stats.boostThrust, base * (1 + RULES.boltHoardThrust.max), 1e-6);
-  a.addBolts(10);
+  a.addBolts(20);
   a.recomputeStats();
   near(a.stats.boostThrust, base * 1.12, 1e-6, 'neu berechnet');
 });
@@ -587,16 +591,17 @@ test('Regeln aus Items/Sets landen in stage.rules und vehicle.rules (Anhang A vo
     'collectScrapMass', 'noOverheat', 'tagBoost', 'lowGrip', 'heatIsResource', 'shockArc', 'spinToSpeed', 'overheatAfterburner', 'coldGlide',
     'impactToThrust', 'gapTrampoline', 'heatIsFuel', 'flipsNeverCrash', 'obstacleBounce', 'boostHorizontal', 'perfectLaunchLowGrav',
     'allLandingsPerfect', 'doubleDamage', 'boltsAreFuel', 'boltHoardThrust', 'shockRecharge', 'everyThirdTierUp', 'iceLanding', 'blackCatNap',
-    'noPerfectLanding', 'obstacleMagnet', 'endlessSpin', 'mutualAttraction', 'wreckingBall', 'boostOvercap', 'luckyEcho']);
+    'noPerfectLanding', 'obstacleMagnet', 'endlessSpin', 'mutualAttraction', 'wreckingBall', 'boostOvercap', 'luckyEcho',
+    'crashBounce', 'lowGravHigh', 'airDrive', 'chainLetter']);
   const found = new Set();
   const add = (r) => { for (const k of Object.keys(r || {})) found.add(k); };
   for (const id of ['feuer_perpetuum_mobile', 'gyro_schiffskompass', 'gummi_huepfburg', 'rakete_wasserwaagen_rakete', 'magnet_levitron', 'hydraulik_hubstuetzen',
     'schrott_schraubenvergaser', 'elektro_teslaspule', 'gluck_dreiblatt_klee', 'eis_schlittschuhkufen', 'gluck_schwarze_katze', 'eis_ewiger_eiszapfen',
-    'gummi_gummihuhn', 'magnet_geisterbahn_magnet', 'gyro_spieluhr']) {
+    'gummi_gummihuhn', 'magnet_geisterbahn_magnet', 'gyro_spieluhr', ...ITEMS.filter((i) => i.rarity === 'legendary').map((i) => i.id)]) {
     const it = itemById(id);
     add(it.rules); add(it.curse && it.curse.rules);
   }
-  for (const t of ['feuer', 'eis', 'elektro', 'gyro', 'magnet', 'schrott', 'hydraulik', 'gummi', 'rakete', 'gluck']) add(setBonus(t, 6).rules);
+  for (const t of ['feuer', 'eis', 'elektro', 'gyro', 'magnet', 'schrott', 'hydraulik', 'gummi', 'rakete', 'gluck']) add(setBonus(t, 5).rules);
   for (const k of found) assert.ok(known.has(k), `Regel ${k} hat eine Auswertungsstelle`);
   // Hubstützen über das Inventar: Regeln kommen im Fahrzeug an
   const st = stageWith({ inventory: [{ itemId: 'hydraulik_hubstuetzen', tier: 1 }] });

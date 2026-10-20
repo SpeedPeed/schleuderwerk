@@ -203,7 +203,9 @@ test('Kette Elektro + Gyro + Kühlung: Salto → Stromschlag → Gratis-Boost �
   assert.ok(stage.stats.speedSoftCap > capBefore * 1.1, `Tempo: Tempogrenze ${capBefore} → ${stage.stats.speedSoftCap}`);
   assert.ok(stage.maxChain >= 3, `Kette mit ${stage.maxChain} Gliedern`);
   // Reihenfolge der Items (dazwischen wirkt das Elektro-Set 2: Stromschlag schiebt an)
-  assert.deepEqual(log.filter((l) => !l.id.startsWith('set_')).slice(0, 3).map((l) => l.id), ['gyro_fahrraddynamo', 'elektro_blitzableiter', 'eis_kuehlerschlauch']);
+  assert.deepEqual(log.filter((l) => !l.id.startsWith('set_') && !l.id.startsWith('recipe_')).slice(0, 3).map((l) => l.id), ['gyro_fahrraddynamo', 'elektro_blitzableiter', 'eis_kuehlerschlauch']);
+  // Paket C: Blitzableiter + Fahrraddynamo = Rezept „Gewittermaschine“ (Stromschlag schiebt an)
+  assert.ok(log.some((l) => l.id === 'recipe_gewittermaschine' && l.depth === 1), 'Rezept Gewittermaschine aktiv');
   assert.ok(log.some((l) => l.id === 'set_elektro2' && l.depth === 1), 'Elektro-Set 2 (2 Elektro-Items)');
 });
 

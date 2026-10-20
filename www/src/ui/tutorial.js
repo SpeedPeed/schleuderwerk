@@ -43,8 +43,8 @@ export const TUTORIAL_STEPS = {
   },
   items: {
     icon: 'kiste', title: 'Fundstücke & Tags', mode: 'card', place: 'bottom', target: '#runui .ch-cards',
-    text: `Pack ein Fundstück ein. Die bunten Plaketten sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei. Im ${I('rucksack')} Rucksack siehst du deine Sets.`,
-    textKbd: 'Pack eins ein mit <b>1/2/3</b> (<b>S</b> = liegen lassen). Die bunten Plaketten sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei.',
+    text: `Such dir eins aus. Die bunten Plaketten sind <b>Tags</b>: Jedes Item eines Tags macht den Tag stärker, 2, 3 oder 5 gleiche schalten <b>Set-Boni</b> frei. Im ${I('rucksack')} Rucksack siehst du Sets und Rezepte.`,
+    textKbd: 'Such dir eins aus mit <b>1/2/3</b>. Die bunten Plaketten sind <b>Tags</b>: Jedes Item eines Tags macht den Tag stärker, 2, 3 oder 5 gleiche schalten <b>Set-Boni</b> frei.',
   },
   lab: {
     icon: 'labor', title: 'Erfinder-Labor', mode: 'card', place: 'bottom', target: '#garage [data-tab=lab]',

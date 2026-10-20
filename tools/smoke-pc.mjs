@@ -117,6 +117,17 @@ async function main() {
     await press('Enter', 600);
     check(await until(() => window.__game.state === 'map'), 'Enter → RUN STARTEN → Karte');
 
+    // ---------- Paket C: Bauplan-Auswahl am Run-Start (Hinweis „Fundstücke & Tags“, 1 = nehmen) ----------
+    check(await until(() => window.__game.runScreens.kind === 'choice', null, 5000), 'Bauplan-Auswahl erscheint');
+    if (await until(() => window.__game.tutorial.current === 'items', null, 3000)) {
+      const it = await g(() => document.querySelector('#tutorial .tut-text').textContent);
+      check(/1\/2\/3/.test(it), 'Item-Hinweis nennt 1/2/3');
+      await press('Enter', 400);
+    }
+    await shot('02b-bauplan');
+    await press('Digit1', 600);
+    check(await g(() => window.__game.run.inventory.length === 1 && !!window.__game.run.blueprintTag), 'Bauplan: 1 nimmt das erste Item');
+
     // ---------- Karte: Pfeiltasten wählen, Enter betritt ----------
     if (await until(() => window.__game.tutorial.current === 'map', null, 4000)) {
       const mt = await g(() => document.querySelector('#tutorial .tut-text').textContent);
@@ -259,16 +270,13 @@ async function main() {
     // ---------- Item-Auswahl: 1 = nehmen ----------
     if (cleared) {
       check(await until(() => window.__game.runScreens.open && !!document.querySelector('#runui [data-pick]'), null, 5000), 'Item-Auswahl erscheint (auf dem Ergebnis-Bildschirm)');
-      if (await until(() => window.__game.tutorial.current === 'items', null, 3000)) {
-        const it = await g(() => document.querySelector('#tutorial .tut-text').textContent);
-        check(/1\/2\/3/.test(it), 'Item-Hinweis nennt 1/2/3');
-        await press('Enter', 400);
-      }
       await shot('10-item-auswahl');
-      const inv0 = await g(() => window.__game.run.inventory.length);
+      // Paket C: ein schon besessenes Item wird ★+1 statt einen Platz zu belegen – gezählt wird die Summe der Stufen
+      const stars = () => g(() => window.__game.run.inventory.reduce((s, e) => s + (e.tier || 1), 0));
+      const inv0 = await stars();
       await press('Digit1', 600);
-      const inv1 = await g(() => window.__game.run.inventory.length);
-      check(inv1 === inv0 + 1, `1 nimmt das erste Item (Rucksack ${inv0} → ${inv1})`);
+      const inv1 = await stars();
+      check(inv1 === inv0 + 1, `1 nimmt das erste Item (★-Summe im Rucksack ${inv0} → ${inv1})`);
       for (let i = 0; i < 5 && ['choice', 'result'].includes(await runKind()); i++) await press('KeyS', 600);   // weitere Kisten: S = überspringen
     }
     check(await until(() => window.__game.state === 'map' && !window.__game.runScreens.open, null, 8000), 'zurück auf der Karte');

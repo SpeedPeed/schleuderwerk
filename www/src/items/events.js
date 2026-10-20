@@ -26,6 +26,8 @@ export const STAGE_EVENTS = [
   'damage',         // {amount, source}                    Haltbarkeit verloren
   'heal',           // {amount}                            Haltbarkeit erhalten
   'stageEnd',       // {medal, dist}                       Etappe vorbei (vor der Auswertung)
+  'chain',          // {links}                             Paket C: Kettenreaktion erreicht SYNERGY.chain.minLinks Glieder
+                    //                                     (neue Kette, Tiefe 0; nur vom Spiel ausgelöst – emit verboten)
 ];
 
 // Ereignisse im Run außerhalb der Etappe (ctx ohne Fahrzeug)

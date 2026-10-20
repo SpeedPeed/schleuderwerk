@@ -1,6 +1,6 @@
-// Items: Inhaltsdaten (Validator), Inventar (Tags, Sets 2/4/6, Hybride, Badewanne, Beschreibungen), Item-Auswahl
-// (Gewichte je Kontext, Pool), Run-Integration (Start-Item, Auswahl nach der Etappe, voller Rucksack, Kodex) und der
-// Belastungstest: alle 88 Items ★3 gleichzeitig in einer simulierten Etappe von 60 s.
+// Items: Inhaltsdaten (Validator), Inventar (Tags, Sets 2/3/5, Tag-Stärke, Hybride, Badewanne, Beschreibungen),
+// Item-Auswahl (Gewichte je Kontext, Pool), Run-Integration (Start-Item, Auswahl nach der Etappe, voller Rucksack, Kodex)
+// und der Belastungstest: alle 110 Items ★3 gleichzeitig in einer simulierten Etappe von 60 s.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { ITEMS, itemById, itemPools } from '../www/src/data/items.js';
 import { TAGS, TAG_IDS } from '../www/src/data/tags.js';
-import { ITEMS as BAL, BASE_STATS, REWARDS } from '../www/src/data/balance.js';
+import { ITEMS as BAL, BASE_STATS, REWARDS, SYNERGY } from '../www/src/data/balance.js';
 import { CHASSIS, partById } from '../www/src/data/index.js';
 import {
   tagCounts, activeSets, applyInventory, describeItem, fuseSame, makeHybrid, addEntry, tierMult, entryTags, setProgressFor, upgradeRandom,
@@ -29,18 +29,20 @@ import { mockInput } from './helpers.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const near = (a, b, eps, msg = '') => assert.ok(Math.abs(a - b) <= eps, `${msg} ${a} ≉ ${b}`);
 
-test('Inhaltsdaten: Validator (tools/validateContent.mjs) ohne Fehler, 88 Items, 10 Tags', () => {
+test('Inhaltsdaten: Validator (tools/validateContent.mjs) ohne Fehler, 110 Items, 10 Tags, 20 Rezepte', () => {
   const out = execFileSync(process.execPath, [path.join(ROOT, 'tools', 'validateContent.mjs'), '--json'], { encoding: 'utf8' });
   const res = JSON.parse(out);
   assert.deepEqual(res.errors, [], res.errors.map((e) => `${e.where}: ${e.msg}`).join('\n'));
-  assert.equal(res.stats.items, 88);
-  assert.equal(ITEMS.length, 88);
-  assert.equal(new Set(ITEMS.map((i) => i.id)).size, 88);
+  assert.equal(res.stats.items, 110);
+  assert.equal(res.stats.legendaer, 22);
+  assert.equal(res.stats.rezepte, 20);
+  assert.equal(ITEMS.length, 110);
+  assert.equal(new Set(ITEMS.map((i) => i.id)).size, 110);
   assert.deepEqual(Object.keys(TAGS), TAG_IDS);
-  for (const t of TAG_IDS) assert.deepEqual(Object.keys(TAGS[t].sets), ['2', '4', '6']);
+  for (const t of TAG_IDS) assert.deepEqual(Object.keys(TAGS[t].sets), ['2', '3', '5']);
 });
 
-test('Inventar: Tag-Zählung (Zwei-Tag-Items und Hybride zählen doppelt, Tag-Teile 1), Sets 2/4/6', () => {
+test('Inventar: Tag-Zählung (Zwei-Tag-Items und Hybride zählen doppelt, Tag-Teile 1), Sets 2/3/5', () => {
   const inv = [
     { itemId: 'elektro_blitzableiter', tier: 1 },
     { itemId: 'gyro_fahrraddynamo', tier: 1 },           // gyro + elektro
@@ -51,8 +53,8 @@ test('Inventar: Tag-Zählung (Zwei-Tag-Items und Hybride zählen doppelt, Tag-Te
   assert.equal(c.gyro, 1);
   assert.equal(c.feuer, 1);
   const sets = activeSets(c).map((s) => s.id);
-  assert.deepEqual(sets, ['elektro2', 'elektro4']);
-  assert.deepEqual(activeSets({ ...c, elektro: 6 }).filter((s) => s.tag === 'elektro').map((s) => s.level), [2, 4, 6]);
+  assert.deepEqual(sets, ['elektro2', 'elektro3']);
+  assert.deepEqual(activeSets({ ...c, elektro: 5 }).filter((s) => s.tag === 'elektro').map((s) => s.level), [2, 3, 5]);
   assert.deepEqual(entryTags(inv[2]).sort(), ['elektro', 'feuer']);
   // Set-Fortschritt für die Auswahl-Karte
   const pr = setProgressFor('elektro_peltier_kuehlbox', [inv[0]]);
@@ -63,10 +65,11 @@ test('Inventar: Stat-Beiträge mit ★-Faktor, Hybrid ×0,75, Fluch-Teil unskali
   const lo = buildLoadout(defaultSave());
   const s0 = lo.stats;
   const st = (inv) => computeStats(applyInventory(lo, inv).statInput);
-  // Bügeleisen: boostThrust mul 0,1 je Stufe (Phase 6: 0,08 → 0,1)
-  near(st([{ itemId: 'feuer_buegeleisen', tier: 1 }]).boostThrust, s0.boostThrust * 1.1, 1e-9);
-  near(st([{ itemId: 'feuer_buegeleisen', tier: 3 }]).boostThrust, s0.boostThrust * (1 + 0.1 * BAL.tierMult[2]), 1e-9);
-  near(st([{ itemId: 'gyro_wasserwaage', tier: 1, hybrid: 'feuer_buegeleisen', hybridTier: 1 }]).boostThrust, s0.boostThrust * (1 + 0.1 * 0.75), 1e-9, 'Hybrid');
+  // Bügeleisen: boostThrust mul 0,1 je Stufe (Phase 6: 0,08 → 0,1); Paket C: × Tag-Stärke (1 Feuer-Item = +10 %)
+  const ts = 1 + SYNERGY.tagStrength.perItem;
+  near(st([{ itemId: 'feuer_buegeleisen', tier: 1 }]).boostThrust, s0.boostThrust * (1 + 0.1 * ts), 1e-9);
+  near(st([{ itemId: 'feuer_buegeleisen', tier: 3 }]).boostThrust, s0.boostThrust * (1 + 0.1 * BAL.tierMult[2] * ts), 1e-9);
+  near(st([{ itemId: 'gyro_wasserwaage', tier: 1, hybrid: 'feuer_buegeleisen', hybridTier: 1 }]).boostThrust, s0.boostThrust * (1 + 0.1 * 0.75 * ts), 1e-9, 'Hybrid');
   // Verfluchter Turbolader: Fluch-Stats (xmul) wirken unskaliert
   const tl = itemById('rakete_verfluchter_turbolader');
   assert.ok(tl.curse && tl.curse.stats);
@@ -97,7 +100,7 @@ test('Inventar: Badewanne 5 Plätze, voller Rucksack → ersetzen; Fusion und Hy
   assert.equal(makeHybrid({ itemId: 'feuer_buegeleisen', tier: 1 }, { itemId: 'feuer_grillanzuender', tier: 1 }).reason, 'sameTags');
   const setup = applyInventory(buildLoadout(defaultSave()), [h.entry]);
   const srcs = setup.sources.filter((s) => s.kind === 'item');
-  near(srcs.find((s) => s.id === 'feuer_buegeleisen').scale, BAL.tierMult[1] * 0.75, 1e-9);
+  near(srcs.find((s) => s.id === 'feuer_buegeleisen').scale, BAL.tierMult[1] * 0.75 * (1 + SYNERGY.tagStrength.perItem), 1e-9);
   // upgradeItem
   const inv = [{ itemId: 'feuer_buegeleisen', tier: 3 }, { itemId: 'eis_bohnerwachs', tier: 1 }];
   assert.equal(upgradeRandom(inv, makeRng(1)), 1);
@@ -126,9 +129,10 @@ test('Item-Auswahl: Gewichte je Kontext, Pool nur base + erforschte Pools, nie v
   assert.ok(rarityWeights('stage', 3).epic > rarityWeights('stage', 1).epic, 'spätere Akte: seltener häufiger');
   const base = itemPool([]);
   assert.ok(base.every((i) => i.pool === 'base' && i.rarity !== 'cursed'));
-  assert.equal(base.length, 20);
+  assert.equal(base.length, 53, 'Paket C: 50 Grund-Items (5 je Tag) + 3 Start-Legendäre');
+  for (const t of TAG_IDS) assert.equal(base.filter((i) => i.tags[0] === t && i.rarity !== 'legendary').length, 5, t);
   const all = itemPool([], true);
-  assert.equal(all.length, 80, 'alle außer den 8 Verfluchten');
+  assert.equal(all.length, 102, 'alle außer den 8 Verfluchten');
   // Häufigkeiten (alle Pools offen): Etappe überwiegend gewöhnlich, Elite nie gewöhnlich, Boss nur Episch/Legendär
   const counts = (context) => {
     const c = { common: 0, rare: 0, epic: 0, legendary: 0, cursed: 0 };
@@ -143,15 +147,17 @@ test('Item-Auswahl: Gewichte je Kontext, Pool nur base + erforschte Pools, nie v
   assert.equal(bo.common + bo.rare, 0);
   near(bo.legendary / 1500, BAL.rarityWeights.boss.legendary, 0.05, 'Boss legendär');
   for (const c of [st, el, bo]) assert.equal(c.cursed, 0);
-  // nur base-Pool: Boss fällt auf vorhandene Seltenheiten zurück (keine Episch/Legendär im base-Pool)
+  // nur base-Pool: Boss bekommt Episch/Legendär aus dem Grundpool
   const b = rollItemChoices({ rng: makeRng(5), context: 'boss', count: 3 });
   assert.equal(b.length, 3);
-  assert.ok(b.every((id) => itemById(id).pool === 'base'));
-  // keine Doppelten, besessene Items erscheinen nicht
+  assert.ok(b.every((id) => itemById(id).pool === 'base' && ['epic', 'legendary'].includes(itemById(id).rarity)));
+  // keine Doppelten; mit ownedWeight 0 erscheinen besessene Items nicht, exclude nie
   for (let k = 0; k < 50; k++) {
-    const ch = rollItemChoices({ rng: makeRng(k), count: 4, research: itemPools(), owned: ['feuer_buegeleisen'] });
+    const ch = rollItemChoices({ rng: makeRng(k), count: 4, research: itemPools(), owned: ['feuer_buegeleisen'], ownedWeight: 0 });
     assert.equal(new Set(ch).size, ch.length);
     assert.ok(!ch.includes('feuer_buegeleisen'));
+    const ex = rollItemChoices({ rng: makeRng(k), count: 4, research: itemPools(), exclude: ['feuer_buegeleisen'] });
+    assert.ok(!ex.includes('feuer_buegeleisen'));
   }
 });
 
@@ -219,14 +225,15 @@ test('Run: Elite-Auswahl mind. Selten, Boss Episch/Legendär (Pools offen), Run-
   const max0 = R.durabilityMax(r2);
   const b0 = r2.bolts;
   const log = R.emitRunEvent(r2, save, 'stageClear', { medal: 'gold', kind: 'stage' });
-  near(R.durabilityMax(r2), max0 + 1, 1e-9, 'maxHp');
-  assert.equal(r2.bolts - b0, 5);
+  const ts = 1 + SYNERGY.tagStrength.perItem;   // Paket C: je 1 Item des Tags → +10 %
+  near(R.durabilityMax(r2), max0 + 1 * ts, 1e-9, 'maxHp');
+  near(r2.bolts - b0, 5 * ts, 1e-9);
   assert.ok(log.triggered.some((t) => t.id === 'schrott_schrottwuerfel'));
   // Rabattmarkenheft: +1 Item zur Wahl
   assert.equal(R.queueChoice(r2, save, 'stage').items.length, BASE_STATS.itemChoices + 1);
 });
 
-test('Belastung: alle 88 Items ★3 in einer simulierten Etappe (60 s) – keine Ausnahme, Ereignisse begrenzt, Werte endlich', () => {
+test('Belastung: alle 110 Items ★3 in einer simulierten Etappe (60 s) – keine Ausnahme, Ereignisse begrenzt, Werte endlich', () => {
   const inv = ITEMS.map((it) => ({ itemId: it.id, tier: 3 }));
   for (const biome of BIOMES) {
     const spec = generateStageSpec({ biome, kind: 'boss', floor: 6, rng: makeRng(`last:${biome.id}`), bossId: biome.bosses[0].id });

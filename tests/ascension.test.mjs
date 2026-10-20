@@ -99,11 +99,11 @@ test('Stufe 1 eliteWeightAdd: mehr Elite-Etappen auf der Karte', () => {
   assert.ok(b > a, `Run-Karten: ${a} → ${b}`);
 });
 
-test('Stufe 2 targetMul: alle Zielmarken × 1,12', () => {
+test('Stufe 2 targetMul: alle Zielmarken × 1,08', () => {
   const r0 = runAt(1).run, r2 = runAt(2).run;
   const n = r0.map.floors[0][0];
   const s0 = R.stageSpecFor(r0, n), s2 = R.stageSpecFor(r2, r2.map.floors[0][0]);
-  assert.equal(s2.target, Math.round((biomeForAct(1).targets.stage[0] * 1.12) / 5) * 5);
+  assert.equal(s2.target, Math.round((biomeForAct(1).targets.stage[0] * 1.08) / 5) * 5);
   assert.ok(s2.target > s0.target);
 });
 
@@ -156,12 +156,12 @@ test('Stufe 6 startCurse: jeder Run startet mit einem verfluchten Item', () => {
   assert.equal(runAt(5).run.inventory.filter((e) => itemById(e.itemId).rarity === 'cursed').length, 0);
 });
 
-test('Stufe 7 bossTargetMul: Boss-Zielmarken zusätzlich × 1,22', () => {
+test('Stufe 7 bossTargetMul: Boss-Zielmarken zusätzlich × 1,12', () => {
   const b = biomeForAct(1);
   const { run } = runAt(7);
   const spec = R.stageSpecFor(run, run.map.boss);
-  assert.equal(spec.target, Math.round((b.targets.boss * 1.22 * 1.12) / 5) * 5);
-  assert.equal(stageTarget(b, 'stage', 0, ascensionMods(7)), Math.round((b.targets.stage[0] * 1.12) / 5) * 5, 'normale Etappen nur × targetMul');
+  assert.equal(spec.target, Math.round((b.targets.boss * 1.12 * 1.08) / 5) * 5);
+  assert.equal(stageTarget(b, 'stage', 0, ascensionMods(7)), Math.round((b.targets.stage[0] * 1.08) / 5) * 5, 'normale Etappen nur × targetMul');
 });
 
 test('Stufe 8 damageMul: erlittener Schaden × 1,15 (Etappe und Ereignisse)', () => {

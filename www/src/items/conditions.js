@@ -3,7 +3,7 @@
 //                   source, nodeType, medal
 //   Zustand:        airborne, grounded, heatAbove, heatBelow (Hitze-Einheiten), fuelBelow, hpBelow (Anteile 0…1),
 //                   minSpeed (m/s), chassis
-// minCount prüft je Ereignis: flip.count, landing.flips / perfectLanding.flips, airSecond.seconds.
+// minCount prüft je Ereignis: flip.count, landing.flips / perfectLanding.flips, airSecond.seconds, chain.links.
 // Im Run-Kontext (ctx ohne Fahrzeug) gelten nur hpBelow (über ctx.hpFrac()) und chassis; Fahrzeug-Bedingungen sind
 // dort nie erfüllt. Reine Logik ohne three.js und DOM.
 
@@ -20,6 +20,7 @@ export function countOf(event, data) {
   if (event === 'flip') return num(data.count);
   if (event === 'landing' || event === 'perfectLanding') return num(data.flips);
   if (event === 'airSecond') return num(data.seconds);
+  if (event === 'chain') return num(data.links);
   return num(data.count ?? data.flips ?? data.seconds);
 }
 

@@ -1,11 +1,14 @@
-// Oberfläche der Items: Karten (Item-Auswahl, Inventar, Kompendium), Set-Übersicht 2/4/6 je Tag und das Item-Blatt
+// Oberfläche der Items: Karten (Item-Auswahl, Inventar, Kompendium), Set-Übersicht 2/3/5 je Tag und das Item-Blatt
 // (Inventar im Run bzw. Kompendium in der Garage). Nur Anzeige – Spiellogik in items/inventory.js und run/runState.js.
+// Paket C: Tag-Stärke („Feuer Stufe 4 · +40 %“), Rezept-Hinweise und -Seiten (items/recipes.js), ★+1 für Doppelte.
 // Paket B: Items sind Karteikarten mit Kreppband (Schräglage deterministisch aus der Item-ID, ui/dom.js → tiltOf),
 // die Seltenheit wird gestempelt, Tags sind Schablonen-Plaketten mit Sprite-Icon, das Item-Emoji klebt auf einem Etikett.
 import { el, show, icon, tiltOf, inkOn } from './dom.js';
 import { ITEMS, RARITIES, RARITY_ORDER } from '../data/items.js';
 import { TAGS, TAG_IDS, SET_LEVELS, setId } from '../data/tags.js';
 import { TXT } from '../data/texts.js';
+import { SYNERGY } from '../data/balance.js';
+import { RECIPES, recipeHints, activeRecipes, ownedItemIds } from '../items/recipes.js';
 import { describeItem, describeEntry, entryParts, entryRarity, entryName, isHybrid, setOverview, setProgressFor, MAX_TIER } from '../items/inventory.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -24,14 +27,49 @@ export const stars = (tier) => `<span class="stars">${'★'.repeat(Math.max(1, t
 
 const rarityOf = (r) => RARITIES[r] || RARITIES.common;
 
-// Fortschritt der Set-Boni, den ein Item bringt (Auswahl-Karte)
+const SY = TXT.synergy;
+// Tag-Stärke in Prozent bei n Items eines Tags (balance.SYNERGY.tagStrength)
+export const strengthPct = (n) => Math.round(SYNERGY.tagStrength.perItem * Math.min(SYNERGY.tagStrength.maxItems, n) * 100);
+
+// Fortschritt der Set-Boni und der Tag-Stärke, den ein Item bringt (Auswahl-Karte)
 function progressHtml(progress) {
   if (!progress || !progress.length) return '';
   return `<div class="ic-sets">${progress.map((p) => {
     const t = TAGS[p.tag];
-    const txt = p.reaches ? `<b>Set ${p.reaches} aktiv!</b>` : p.next ? `${p.to}/${p.next} bis Set ${p.next}` : `${p.to} (alle Sets aktiv)`;
-    return `<span class="ic-set ${p.reaches ? 'reach' : ''}" style="--c:${t.color}">${icon(t.iconId)} ${esc(t.name)}: ${txt}</span>`;
+    const set = p.reaches ? ` · <b>Set ${p.reaches} aktiv!</b>` : p.next ? ` · ${p.to}/${p.next} bis Set ${p.next}` : '';
+    return `<span class="ic-set ${p.reaches ? 'reach' : ''}" style="--c:${t.color}">${icon(t.iconId)} ${esc(SY.tagLevel(t.name, p.to, strengthPct(p.to)))}${set}</span>`;
   }).join('')}</div>`;
+}
+
+// Rezept-Hinweise eines angebotenen Items: vervollständigt ein Rezept (Partner im Rucksack) oder nennt den Partner
+function recipeHintHtml(itemId, inventory) {
+  const hints = recipeHints(itemId, inventory).filter((h) => !ownedItemIds(inventory).has(itemId) || h.completes);
+  if (!hints.length) return '';
+  return `<div class="ic-recipes">${hints.map((h) => {
+    const other = ITEMS.find((it) => it.id === h.other);
+    const txt = h.completes ? SY.recipeComplete(h.recipe.name) : SY.recipeHint(h.recipe.name, other ? other.name : '?');
+    return `<span class="ic-recipe ${h.completes ? 'done' : ''}">${icon('werkbank')} ${esc(txt)}</span>`;
+  }).join('')}</div>`;
+}
+
+// Rezept-Karte (Rucksack, Kompendium). opts: { active, known, missing: [Item-Name] }
+export function recipeCardHtml(r, opts = {}) {
+  const known = opts.known !== false;
+  const names = r.items.map((id) => { const it = ITEMS.find((x) => x.id === id); return it ? it.name : id; });
+  return `<div class="rcp ${opts.active ? 'on' : ''} ${known ? '' : 'unknown'}" style="--tilt:${tiltOf(r.id, 1)}deg">
+    ${opts.active ? `<span class="stamp st-active">${SY.recipeActive}</span>` : ''}
+    <div class="ic-top"><span class="ic-icon">${known ? r.icon : '?'}</span>
+      <div class="ic-head"><div class="ic-name">${known ? esc(r.name) : '???'}</div>
+        <div class="rcp-items">${(opts.itemNames || names).map(esc).join(' + ')}</div></div></div>
+    ${known ? `<div class="ic-desc">${esc(r.desc)}</div>${r.flavor ? `<div class="rcp-flavor">${esc(r.flavor)}</div>` : ''}` : `<div class="ic-desc">${SY.recipeUnknown}</div>`}
+    ${opts.missing && opts.missing.length ? `<div class="rcp-miss">${opts.missing.map((m) => esc(SY.recipeMissing(m))).join(' · ')}</div>` : ''}
+  </div>`;
+}
+
+// Tag-Stärke als Plaketten (nur Tags mit Items)
+export function strengthChipsHtml(counts) {
+  return TAG_IDS.filter((t) => (counts[t] || 0) > 0).sort((a, b) => counts[b] - counts[a])
+    .map((t) => tagChip(t, ` ${counts[t]} · +${strengthPct(counts[t])} %`)).join('');
 }
 
 // Item-Karte. opts: { tier, progress, scale (tagBoost/Hybrid), owned, extra (HTML unten), cls }
@@ -75,7 +113,7 @@ export function entryRowHtml(entry, slot, opts = {}) {
   </div>`;
 }
 
-// Set-Übersicht: je Tag Zähler und die Stufen 2/4/6 (aktiv hervorgehoben). onlyActive: nur Tags mit Zähler > 0
+// Set-Übersicht: je Tag Zähler und die Stufen 2/3/5 (aktiv hervorgehoben). onlyActive: nur Tags mit Zähler > 0
 export function setOverviewHtml(counts, { onlyActive = false, codex = null } = {}) {
   return setOverview(counts).filter((o) => !onlyActive || o.count > 0).map((o) => {
     const t = o.def;
@@ -85,7 +123,7 @@ export function setOverviewHtml(counts, { onlyActive = false, codex = null } = {
     }).join('');
     const pct = Math.min(1, o.count / SET_LEVELS[SET_LEVELS.length - 1]);
     return `<div class="so-tag" style="--c:${t.color}">
-      <div class="so-head"><span>${icon(t.iconId)} ${esc(t.name)}</span><b>${o.count}${o.next ? ` / ${o.next}` : ` ${icon('haken')}`}</b></div>
+      <div class="so-head"><span>${icon(t.iconId)} ${esc(t.name)}${o.count ? ` <small>+${strengthPct(o.count)} %</small>` : ''}</span><b>${o.count}${o.next ? ` / ${o.next}` : ` ${icon('haken')}`}</b></div>
       <div class="so-bar"><div style="width:${pct * 100}%"></div></div>
       ${lv}
     </div>`;
@@ -162,17 +200,29 @@ export class ItemSheet {
     const d = this.data;
     if (this.kind === 'inventory') {
       this.q.title.innerHTML = `${icon('rucksack')} Rucksack ${d.inventory.length}/${d.slots}`;
-      this.tabs([['items', 'Items'], ['sets', 'Set-Boni']]);
+      this.tabs([['items', 'Items'], ['sets', 'Set-Boni'], ['recipes', SY.recipesTab]]);
       if (this.tab === 'items') {
         const rows = d.inventory.map((e, i) => entryRowHtml(e, i, { napped: i === d.napped })).join('');
         const free = Math.max(0, d.slots - d.inventory.length);
         this.q.body.innerHTML = (rows || '<p class="small">Noch keine Items – nach jeder geschafften Etappe gibt es eine Auswahl.</p>')
           + (free ? `<p class="small">${free} ${free > 1 ? 'Plätze' : 'Platz'} frei</p>` : '<p class="small">Rucksack voll – neue Items ersetzen ein altes.</p>');
-      } else {
+      } else if (this.tab === 'sets') {
         const boost = Object.entries(d.tagBoost || {}).filter(([, v]) => v > 0).map(([t, v]) => tagChip(t, ` +${Math.round(v * 100)} %`)).join('');
-        this.q.body.innerHTML = (boost ? `<div class="is-boost"><small>Verstärkt hier:</small> ${boost}</div>` : '')
-          + '<p class="small">Items und Garage-Teile mit Tag zählen; Hybride für beide Tags. Stufen ab 2, 4 und 6.</p>'
+        const strength = strengthChipsHtml(d.counts || {});
+        this.q.body.innerHTML = (strength ? `<div class="is-boost"><small>${SY.strengthHead}:</small> ${strength}</div>` : '')
+          + (boost ? `<div class="is-boost"><small>Verstärkt hier:</small> ${boost}</div>` : '')
+          + `<p class="small">${esc(SY.setLevels(SET_LEVELS.join(', '), strengthPct(1)))}</p>`
           + setOverviewHtml(d.counts);
+      } else {
+        // Rezepte: aktive zuerst, dann solche, von denen ein Item im Rucksack ist
+        const own = ownedItemIds(d.inventory);
+        const active = new Set(activeRecipes(d.inventory).map((r) => r.id));
+        const near = RECIPES.filter((r) => !active.has(r.id) && r.items.some((id) => own.has(id)));
+        const name = (id) => { const it = ITEMS.find((x) => x.id === id); return it ? it.name : id; };
+        this.q.body.innerHTML = `<p class="small">${SY.recipesIntro}</p>`
+          + (active.size ? '' : `<p class="small">${SY.recipesNone}</p>`)
+          + `<div class="is-grid">${RECIPES.filter((r) => active.has(r.id)).map((r) => recipeCardHtml(r, { active: true })).join('')}`
+          + near.map((r) => recipeCardHtml(r, { missing: r.items.filter((id) => !own.has(id)).map(name) })).join('') + '</div>';
       }
       return;
     }
@@ -180,7 +230,7 @@ export class ItemSheet {
     const codex = d.codex || { items: {}, sets: {} };
     const known = ITEMS.filter((it) => (codex.items[it.id] || 0) > 0).length;
     this.q.title.innerHTML = `${icon('buch')} Kompendium ${known}/${ITEMS.length}`;
-    this.tabs([['items', 'Items'], ['sets', 'Set-Boni']]);
+    this.tabs([['items', 'Items'], ['sets', 'Set-Boni'], ['recipes', SY.recipesTab]]);
     if (this.tab === 'items') {
       let h = '<p class="small">Entdeckt wird ein Item, sobald es dir zur Auswahl angeboten wird.</p>';
       for (const tag of TAG_IDS) {
@@ -195,21 +245,34 @@ export class ItemSheet {
         h += '</div>';
       }
       this.q.body.innerHTML = h;
-    } else {
+    } else if (this.tab === 'sets') {
       const full = {};
       for (const t of TAG_IDS) full[t] = 0;
-      this.q.body.innerHTML = '<p class="small">Set-Boni bei 2, 4 und 6 Items eines Tags. Unentdeckte Stufen zeigen „???“, bis du sie einmal aktiviert hast.</p>'
+      this.q.body.innerHTML = `<p class="small">Set-Boni bei ${SET_LEVELS.join(', ')} Items eines Tags. Unentdeckte Stufen zeigen „???“, bis du sie einmal aktiviert hast.</p>`
         + setOverviewHtml(full, { codex: codex.sets });
+    } else {
+      // Rezepte: gebaute voll, unbekannte als Silhouette (Zutaten nur, wenn das Item schon entdeckt ist)
+      const built = codex.recipes || {};
+      const name = (id) => { const it = ITEMS.find((x) => x.id === id); return it && (codex.items[id] || 0) > 0 ? it.name : SY.recipeUnknownItem; };
+      const n = RECIPES.filter((r) => built[r.id]).length;
+      this.q.body.innerHTML = `<p class="small">${SY.recipesIntro} ${n}/${RECIPES.length} gebaut.</p><div class="is-grid">`
+        + RECIPES.map((r) => (built[r.id] ? recipeCardHtml(r) : recipeCardHtml(r, { known: false, itemNames: r.items.map(name) }))).join('') + '</div>';
     }
   }
 }
 
-// Auswahl-Karten für die Item-Auswahl nach einer Etappe
+// Auswahl-Karten für die Item-Auswahl nach einer Etappe. Paket C: schon besessene Items (unter ★3, kein Hybrid) werden
+// beim Nehmen ★+1 statt einen Platz zu belegen (run/runState.js → pickItem) – die Karte zeigt die neue Stufe.
 export function choiceCardsHtml(choice, { inventory, parts }) {
-  return choice.items.map((id, i) => itemCardHtml(id, {
-    progress: setProgressFor(id, inventory, parts),
-    cls: 'pickable',
-    extra: `<button class="btn btn-primary ic-pick" data-pick="${i}">${TXT.result.take} <kbd class="kbd-only">${i + 1}</kbd></button>`,
-  })).join('');
+  return choice.items.map((id, i) => {
+    const dup = inventory.find((e) => e.itemId === id && !e.hybrid && (e.tier || 1) < MAX_TIER);
+    return itemCardHtml(id, {
+      tier: dup ? (dup.tier || 1) + 1 : 1,
+      progress: dup ? null : setProgressFor(id, inventory, parts),
+      cls: `pickable ${dup ? 'dup' : ''}`,
+      extra: (dup ? `<div class="ic-up">${icon('plus')} ${SY.ownedUpgrade}</div>` : '') + recipeHintHtml(id, inventory)
+        + `<button class="btn btn-primary ic-pick" data-pick="${i}">${TXT.result.take} <kbd class="kbd-only">${i + 1}</kbd></button>`,
+    });
+  }).join('');
 }
 

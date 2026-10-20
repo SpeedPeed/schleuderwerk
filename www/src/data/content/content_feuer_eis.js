@@ -9,17 +9,24 @@ export const TAGS = {
     desc: 'Hitze ist Kraft: Wer heiß fährt, schiebt stärker, zündet Explosionen und macht aus Überhitzung einen Vorteil.',
     sets: {
       2: {
-        desc: '+18 % Boost-Schub. Wer heizt, der schiebt.',
-        stats: { boostThrust: { mul: 0.18 } },
-      },
-      4: {
-        desc: 'Ab 55 Hitze zündet eine Boost-Sekunde eine Explosion (7 m/s, alle 1,2 s).',
+        desc: '+12 % Boost-Schub. Abschuss heizt 40 vor. Boost-Start über 30 Hitze: Explosion 5 m/s (alle 3 s).',
+        stats: { boostThrust: { mul: 0.12 } },
         triggers: [
-          { on: 'boostSecond', if: { heatAbove: 55 }, limit: { cooldown: 1.2 }, do: [{ fx: 'explosion', amount: 7 }] },
+          { on: 'launch', do: [{ fx: 'heat', amount: 40 }] },
+          { on: 'boost', if: { heatAbove: 30 }, limit: { cooldown: 3 }, do: [{ fx: 'explosion', amount: 5 }] },
         ],
       },
-      6: {
-        desc: 'Nachbrenner: Überhitzen sperrt und schadet nicht – 2,5 s Gratis-Boost (+80 % Schub), Knall, +15 Treibstoff (alle 5 s).',
+      3: {
+        desc: 'Hitzegrenze +25. Boosten zündet Explosionen (5 m/s alle 2 s, ab 35 Hitze 7 m/s jede s), die 0,7 s Gratis-Boost geben.',
+        stats: { heatMax: { add: 25 } },
+        triggers: [
+          { on: 'boostSecond', limit: { cooldown: 2 }, do: [{ fx: 'explosion', amount: 5 }] },
+          { on: 'boostSecond', if: { heatAbove: 35 }, limit: { cooldown: 1 }, do: [{ fx: 'explosion', amount: 7 }] },
+          { on: 'explosion', limit: { cooldown: 2 }, do: [{ fx: 'boost', dur: 0.7 }] },
+        ],
+      },
+      5: {
+        desc: 'Nachbrenner: Überhitzen sperrt und schadet nicht – 2,5 s Gratis-Boost (+80 % Schub). Explosion: +4 % Schub (max. 40 %).',
         rules: { overheatAfterburner: true },
         ruleSpec: {
           overheatAfterburner:
@@ -27,6 +34,7 @@ export const TAGS = {
         },
         triggers: [
           { on: 'overheat', limit: { cooldown: 5 }, do: [{ fx: 'explosion', amount: 12 }, { fx: 'fuel', amount: 15 }] },
+          { on: 'explosion', limit: { cooldown: 0.5 }, do: [{ fx: 'stack', stat: 'boostThrust', mul: 0.04, max: 0.4 }] },
         ],
       },
     },
@@ -39,31 +47,28 @@ export const TAGS = {
     desc: 'Kühl bleiben, Hitze wegdrücken, eiskalt belohnt werden – und am Boden rutschen wie ein Puck übers Eis.',
     sets: {
       2: {
-        desc: '+20 % Kühlung und −8 % Rollreibung. Cool bleiben, weiterrutschen.',
+        desc: '+20 % Kühlung, −8 % Rollreibung. Kalt gelandet (unter 30 Hitze): +3 m/s (alle 2 s).',
         stats: { coolRate: { mul: 0.2 }, rollFriction: { mul: -0.08 } },
-      },
-      4: {
-        desc: 'Gratis-Boosts kühlen: −15 Hitze und 2 s +15 % Boost-Schub (alle 2 s).',
         triggers: [
-          {
-            on: 'boost',
-            if: { free: true },
-            limit: { cooldown: 2 },
-            do: [
-              { fx: 'cool', amount: 15 },
-              { fx: 'buff', stat: 'boostThrust', mul: 0.15, dur: 2 },
-            ],
-          },
+          { on: 'landing', if: { heatBelow: 30 }, limit: { cooldown: 2 }, do: [{ fx: 'thrust', amount: 3 }] },
         ],
       },
-      6: {
-        desc: 'Eiszeit: Unter 40 Hitze −75 % Rollreibung, Schlamm/Sand bremsen nicht. Kalt perfekt gelandet = Gratis-Boost.',
+      3: {
+        desc: 'Unter 40 Hitze perfekt gelandet: Gratis-Boost 0,8 s (alle 3 s). Gratis-Boosts kühlen 15 und zünden Eissplitter (4 m/s).',
+        triggers: [
+          { on: 'perfectLanding', if: { heatBelow: 40 }, limit: { cooldown: 3 }, do: [{ fx: 'boost', dur: 0.8 }] },
+          { on: 'boost', if: { free: true }, limit: { cooldown: 2 }, do: [{ fx: 'cool', amount: 15 }, { fx: 'explosion', amount: 4 }] },
+        ],
+      },
+      5: {
+        desc: 'Eiszeit: Unter 40 Hitze −75 % Rollreibung, kein Schlamm/Sand. Kalte Flugsekunde: +5 % Boost-Schub (max. 40 %).',
         rules: { coldGlide: true },
         ruleSpec: {
           coldGlide:
             'Solange die Kiste am Boden ist und die Hitze unter 40 liegt: effektive Rollreibung = rollFriction × 0,25, und die Oberflächen-Faktoren (Schlamm ×4, Sand ×1,6) werden ignoriert (Faktor 1). Hangabtrieb, Luftwiderstand und Antrieb wirken unverändert. Ab 40 Hitze gilt sofort wieder die normale Reibung. Auswertung: physics/vehicle.js im Boden-Schritt bei der Rollreibungs-Berechnung.',
         },
         triggers: [
+          { on: 'airSecond', if: { heatBelow: 40 }, do: [{ fx: 'stack', stat: 'boostThrust', mul: 0.05, max: 0.4 }] },
           { on: 'perfectLanding', if: { heatBelow: 40 }, limit: { cooldown: 3 }, do: [{ fx: 'boost', dur: 1 }] },
         ],
       },
@@ -109,7 +114,7 @@ export const ITEMS = [
     icon: '🍖',
     rarity: 'common',
     tags: ['feuer'],
-    pool: 'r_feuer_1',
+    pool: 'base',
     desc: 'Überhitzung zündet den Grill: Explosion mit {amount} m/s nach vorn.',
     flavor: 'Riecht nach Sommer, Bratwurst und Feuerwehreinsatz.',
     triggers: [
@@ -136,7 +141,7 @@ export const ITEMS = [
     icon: '🧨',
     rarity: 'rare',
     tags: ['feuer'],
-    pool: 'r_feuer_2',
+    pool: 'base',
     desc: 'Ab 30 Hitze zündet jeder Boost mit 45 % Chance einen Böller: Explosion {amount} m/s.',
     flavor: 'Seit 2009 im Keller. „Die gehen noch“, sagt Opa.',
     triggers: [
@@ -154,7 +159,7 @@ export const ITEMS = [
     icon: '✨',
     rarity: 'epic',
     tags: ['feuer', 'elektro'],
-    pool: 'r_feuer_2',
+    pool: 'r_feuer_1',
     desc: 'Jede Explosion schlägt Funken: Stromschlag! Jeder Stromschlag gibt {dur} s +30 % Boost-Schub.',
     flavor: 'Die Schweißbrille liegt irgendwo im Keller. Vermutlich.',
     triggers: [
@@ -176,7 +181,7 @@ export const ITEMS = [
     icon: '🧱',
     rarity: 'epic',
     tags: ['feuer'],
-    pool: 'r_feuer_3',
+    pool: 'base',
     desc: 'Boost-Sekunde über 50 Hitze: +6 % Boost-Schub (bis Etappenende, max. +40 %). Überhitzung heilt {amount} Haltbarkeit.',
     flavor: 'Speichert Wärme stundenlang. Und Omas Groll jahrelang.',
     triggers: [
@@ -233,7 +238,7 @@ export const ITEMS = [
     icon: '🏝️',
     rarity: 'common',
     tags: ['eis', 'magnet'],
-    pool: 'r_eis_1',
+    pool: 'base',
     desc: '+0,5 m Magnet. Unter 30 Hitze bringt ein Pickup Schrauben (+{amount}). Im Kühlschrank-Chassis: +1 m Magnet.',
     flavor: 'Souvenirs aus 14 Urlauben, alle von Tante Gerda.',
     stats: { magnet: { add: 0.5 } },
@@ -248,7 +253,7 @@ export const ITEMS = [
     icon: '🌡️',
     rarity: 'rare',
     tags: ['eis'],
-    pool: 'r_eis_1',
+    pool: 'base',
     desc: 'Boostest du über 50 Hitze, pumpt sie {amount} Hitze ab und macht daraus +4 m/s Schub (alle 2 s).',
     flavor: 'Opa nennt es Energiewende. Oma nennt es Lärm.',
     triggers: [
@@ -269,7 +274,7 @@ export const ITEMS = [
     icon: '🥌',
     rarity: 'rare',
     tags: ['eis'],
-    pool: 'r_eis_2',
+    pool: 'r_eis_1',
     desc: 'Perfekte Landung 1° großzügiger. Perfekt und kalt (unter 30 Hitze) gelandet: +{amount} m/s und 2 Schrauben.',
     flavor: 'Gleitet seit 1974 schnurgerade. Der Vereinswirt eher nicht.',
     stats: { perfectLandDeg: { add: 1 } },
@@ -290,7 +295,7 @@ export const ITEMS = [
     icon: '🥶',
     rarity: 'epic',
     tags: ['eis'],
-    pool: 'r_eis_2',
+    pool: 'base',
     desc: '+25 % Kühlung. Je 4 Flugsekunden unter 25 Hitze: Gratis-Boost {dur} s.',
     flavor: 'Darin: Erbsen von 1998 und ein Familiengeheimnis.',
     stats: { coolRate: { mul: 0.25 } },
@@ -308,7 +313,7 @@ export const ITEMS = [
     icon: '💨',
     rarity: 'epic',
     tags: ['eis'],
-    pool: 'r_eis_3',
+    pool: 'r_eis_1',
     desc: '+20 % Kühlung. Boostest du über 60 Hitze, zischt es: −{amount} Hitze und eine Explosion (alle 4 s).',
     flavor: 'Der Eismann wollte es zurück. Zu spät.',
     stats: { coolRate: { mul: 0.2 } },

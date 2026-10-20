@@ -1,4 +1,4 @@
-// Spielstand v4: Standard-Schema, Migration v2 → v3 → v4 (Paket A: Teile-Stufen → Slot-Stufen), Export/Import-Rundlauf,
+// Spielstand v5: Standard-Schema, Migration v2 → v3 → v4 → v5 (Paket A: Teile-Stufen → Slot-Stufen; Paket C: Kodex-Sets 2/3/5), Export/Import-Rundlauf,
 // alte SW3-/SW2-Texte, laufender Run.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,10 +28,10 @@ const V2 = () => ({
   savedAt: 1700000500000,
 });
 
-test('Standard-Spielstand hat das Schema v4', () => {
+test('Standard-Spielstand hat das Schema v5', () => {
   const s = defaultSave();
-  assert.equal(SAVE_VERSION, 4);
-  assert.equal(s.version, 4);
+  assert.equal(SAVE_VERSION, 5);
+  assert.equal(s.version, 5);
   for (const k of ['meta', 'garage', 'research', 'ascension', 'codex', 'cosmetics', 'settings', 'stats', 'run', 'tutorial']) assert.ok(k in s, k);
   assert.deepEqual(Object.keys(s.meta).sort(), ['blueprints', 'cores', 'milestones', 'scrap', 'totalPlaytime']);
   assert.deepEqual(Object.keys(s.garage).sort(), ['abilities', 'chassis', 'ownedChassis', 'ownedParts', 'parts', 'slotLevels']);
@@ -44,12 +44,12 @@ test('Standard-Spielstand hat das Schema v4', () => {
   const m = migrate(JSON.parse(JSON.stringify(s)));
   assert.deepEqual(m.garage, { ...s.garage, slotLevels: Object.fromEntries(SLOTS.map((k) => [k, 0])) });
   assert.deepEqual(m.meta, s.meta);
-  assert.ok(!('migrationNote' in m), 'kein Umbau-Hinweis bei v4');
+  assert.ok(!('migrationNote' in m), 'kein Umbau-Hinweis bei v5');
 });
 
 test('Migration v2 → v3 → v4: Geld / 40 als Schrott, Einstellungen und Rekorde bleiben (Welten entfallen seit Phase 3)', () => {
   const s = migrate(V2());
-  assert.equal(s.version, 4);
+  assert.equal(s.version, 5);
   assert.equal(s.meta.scrap, 250);
   assert.equal(s.meta.cores, 0);
   assert.ok(!('money' in s) && !('upgrades' in s) && !('unlocked' in s));
@@ -72,14 +72,14 @@ test('Migration: Startschrott höchstens 400, kaputtes Geld = 0, uralte Stände 
   assert.equal(migrate({ ...V2(), money: 'viel' }).meta.scrap, 0);
   assert.equal(migrate({ ...V2(), money: -50 }).meta.scrap, 0);
   const v1 = migrate({ money: 800, upgrades: {}, stats: { runs: 2, bestDist: 300, bestHeight: 20 }, settings: { sound: true } });
-  assert.equal(v1.version, 4);
+  assert.equal(v1.version, 5);
   assert.equal(v1.meta.scrap, 20);
   assert.equal(v1.stats.bestDist, 300);
   assert.throws(() => migrate({ version: 99 }), /neueren/);
   assert.throws(() => migrate(null), /gültig/);
 });
 
-test('Export/Import-Rundlauf mit Präfix SW4:', () => {
+test('Export/Import-Rundlauf mit Präfix SW5:', () => {
   const s = defaultSave();
   s.meta.scrap = 1234;
   s.meta.cores = 2;
@@ -91,7 +91,7 @@ test('Export/Import-Rundlauf mit Präfix SW4:', () => {
   s.meta.milestones.firstTestDrive = 42;
   s.settings.sound = false;
   const text = exportSave(s);
-  assert.match(text, /^SW4:[A-Za-z0-9+/=]+$/);
+  assert.match(text, /^SW5:[A-Za-z0-9+/=]+$/);
   const back = importSave(`  ${text.slice(0, 20)}\n${text.slice(20)}  `);
   delete back.savedAt; delete s.savedAt;
   assert.deepEqual(back, { ...s, garage: { ...s.garage, slotLevels: { ...Object.fromEntries(SLOTS.map((k) => [k, 0])), tank: 7 } } });
@@ -121,7 +121,7 @@ test('Migration v3 → v4: Teile-Stufen → Slot-Stufen (mindestens gleich stark
   const old = V3();
   const c = convertPartLevels(old.garage.partLevels);
   const m = migrate(JSON.parse(JSON.stringify(old)));
-  assert.equal(m.version, 4);
+  assert.equal(m.version, 5);
   assert.ok(!('partLevels' in m.garage));
   // je Slot die beste Stufe aller Teile, umgerechnet: Tank 12 → 6, Antrieb 20 → 10, Aero 1 → 1
   assert.equal(m.garage.slotLevels.tank, v3LevelToSlot(12));
@@ -183,22 +183,22 @@ test('Import alter SW3-Texte (v1.0) über die Migration; laufender Run behält A
   old.run.parts.tank.level = 12;
   delete old.run.earned.paid;   // v1.0 kannte die bezahlt-Zähler noch nicht
   const m = importSave(`SW3:${b64(old)}`);
-  assert.equal(m.version, 4);
+  assert.equal(m.version, 5);
   assert.equal(m.garage.slotLevels.drive, GARAGE.maxPartLevel);
   assert.equal(m.meta.scrap, 100 + convertPartLevels(old.garage.partLevels).refund);
   assert.ok(m.run, 'Run bleibt');
   assert.equal(m.run.parts.drive.level, GARAGE.maxPartLevel);
   assert.equal(m.run.parts.tank.level, 6);
   assert.deepEqual(m.run.earned.paid, { scrap: 0, blueprints: 0, cores: 0 }, 'alter Run: Auszahlung komplett am Run-Ende');
-  assert.ok(exportSave(m).startsWith('SW4:'));
+  assert.ok(exportSave(m).startsWith('SW5:'));
 });
 
 test('Import alter SW2-Texte über die Migration', () => {
   const s = importSave(`SW2:${b64(V2())}`);
-  assert.equal(s.version, 4);
+  assert.equal(s.version, 5);
   assert.equal(s.meta.scrap, 250);
   assert.equal(s.settings.sound, false);
-  assert.ok(exportSave(s).startsWith('SW4:'));
+  assert.ok(exportSave(s).startsWith('SW5:'));
   // auch ohne version-Feld im JSON zählt die Zahl im Präfix
   const noVer = V2();
   delete noVer.version;
@@ -236,7 +236,7 @@ test('Migration repariert falsch typisierte Felder statt abzustürzen (beschädi
   for (const b of broken) {
     let s;
     assert.doesNotThrow(() => { s = migrate(JSON.parse(JSON.stringify(b))); }, JSON.stringify(b));
-    assert.equal(s.version, 4);
+    assert.equal(s.version, 5);
     assert.equal(typeof s.meta.scrap, 'number');
     for (const k of SLOTS) assert.ok(Number.isInteger(s.garage.slotLevels[k]), `slotLevels.${k}`);
     assert.ok(Array.isArray(s.garage.ownedChassis) && s.garage.ownedChassis.includes(GARAGE.starterChassis));
@@ -257,14 +257,14 @@ test('Migration repariert falsch typisierte Felder statt abzustürzen (beschädi
 test('Migration: unlesbare Versionsnummer gilt als alter Stand (Geld wird zu Schrott); neuere Version → SaveError', () => {
   assert.equal(migrate({ version: 'abc', money: 4000 }).meta.scrap, 100);
   try {
-    migrate({ version: 5, meta: { scrap: 5000 } });
+    migrate({ version: 6, meta: { scrap: 5000 } });
     assert.fail('kein Fehler');
   } catch (e) {
     assert.ok(e instanceof SaveError);
     assert.equal(e.code, 'newer');
   }
   // Import: technische Fehler erscheinen nie roh
-  assert.throws(() => importSave(`SW4:${b64({ version: 5 })}`), /neueren/);
+  assert.throws(() => importSave(`SW5:${b64({ version: 6 })}`), /neueren/);
 });
 
 test('Laufender Run übersteht Speichern/Laden (JSON, Export/Import); fremdes Run-Format wird verworfen', () => {
@@ -281,4 +281,21 @@ test('Laufender Run übersteht Speichern/Laden (JSON, Export/Import); fremdes Ru
   assert.deepEqual(imp.run, s.run);
   assert.equal(migrate({ version: 3, run: { v: 0, act: 1 } }).run, null);
   assert.equal(migrate({ version: 3, run: { ...s.run, map: 'x' } }).run, null);
+});
+
+test('Migration v4 → v5 (Paket C): Kodex-Sets 2/4/6 → 2/3/5, Rezepte-Kodex neu, Forschung bleibt', () => {
+  const s = defaultSave();
+  s.version = 4;
+  s.codex = { items: { feuer_buegeleisen: 2 }, sets: { feuer2: 1, feuer4: 1, elektro6: 1, quatsch: 1 } };
+  s.research.done = ['r_feuer_1', 'r_legend_1'];
+  delete s.codex.recipes;
+  const m = migrate(JSON.parse(JSON.stringify(s)));
+  assert.equal(m.version, 5);
+  assert.deepEqual(m.codex.sets, { feuer2: 1, feuer3: 1, elektro5: 1 });
+  assert.deepEqual(m.codex.recipes, {});
+  assert.deepEqual(m.codex.items, { feuer_buegeleisen: 2 });
+  assert.deepEqual(m.research.done, ['r_feuer_1', 'r_legend_1']);
+  // v5 bleibt unverändert (keine zweite Umrechnung)
+  const again = migrate(JSON.parse(JSON.stringify(m)));
+  assert.deepEqual(again.codex.sets, m.codex.sets);
 });

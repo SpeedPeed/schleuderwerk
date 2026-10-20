@@ -1,5 +1,6 @@
 // Inventar eines Runs (ARCHITEKTUR.md §8 inventory: [{ itemId, tier, hybrid?, hybridTier? }]) und alles, was daraus
-// für Etappe und Anzeige entsteht: Item-Slots, Stufen ★1–3, Tag-Zählung, aktive Set-Boni 2/4/6, Stat-Beiträge für die
+// für Etappe und Anzeige entsteht: Item-Slots, Stufen ★1–3, Tag-Zählung, aktive Set-Boni 2/3/5 (Paket C), Tag-Stärke
+// und Rezepte (items/recipes.js), Stat-Beiträge für die
 // Stat-Pipeline (items/statMods.js), Trigger-Quellen für die Trigger-Engine, Beschreibungen mit Platzhaltern,
 // Fusion und Hybride (reine Funktionen; Werkbank-Regeln je Besuch: shops/workbench.js).
 // Eintrag: { itemId, tier, hybrid?, hybridTier?, name? (Hybrid-Name, gespeichert), cleansed? (Fluch entfernt) }
@@ -11,12 +12,13 @@
 //                                auf passive Stats (add/mul) und skalierte Effekt-Parameter; Chassis- und Biom-Werte
 //                                desselben Tags addieren sich, bei mehreren verstärkten Tags eines Items gilt der größte.
 // Reine Logik ohne three.js und DOM.
-import { ITEMS as BAL, RULES, WORKBENCH } from '../data/balance.js';
+import { ITEMS as BAL, RULES, WORKBENCH, SYNERGY } from '../data/balance.js';
 import { itemById, RARITIES } from '../data/items.js';
 import { TAGS, TAG_IDS, SET_LEVELS, setBonus, setId } from '../data/tags.js';
 import { partById } from '../data/index.js';
 import { SCALE_KEYS } from './effects.js';
 import { mergeRules, resolveParts } from './statMods.js';
+import { tagStrength, strengthFactor, activeRecipes, buildRecipeParts } from './recipes.js';
 
 export const MAX_TIER = BAL.tierMult.length;
 
@@ -95,7 +97,7 @@ export function tagCounts(inventory = [], parts = null) {
   return c;
 }
 
-// Aktive Set-Boni: [{ tag, level, id: 'feuer4', bonus }] – Stufe 2 ab 2, 4 ab 4, 6 ab 6 (kumulativ)
+// Aktive Set-Boni: [{ tag, level, id: 'feuer3', bonus }] – Stufe 2 ab 2, 3 ab 3, 5 ab 5 (kumulativ, SET_LEVELS)
 export function activeSets(counts) {
   const out = [];
   for (const tag of TAG_IDS) {
@@ -171,10 +173,11 @@ export function boostFactor(tags, boost) {
 
 // ---------- Aufbau für Etappe und Stat-Pipeline ----------
 
-// Item-Quellen + Stat-Beiträge. opts: { tagBoost: {tag: wert}, exclude: Set(slot) }
-// Ergebnis: { sources: [...], statItems: [{ item, scale }], rules }
+// Item-Quellen + Stat-Beiträge. opts: { tagBoost: {tag: wert}, strength: {tag: zuschlag} (Paket C, Tag-Stärke),
+// exclude: Set(slot) }. Ergebnis: { sources: [...], statItems: [{ item, scale }], rules }
 export function buildItemParts(inventory = [], opts = {}) {
   const boost = opts.tagBoost || {};
+  const strength = opts.strength || {};
   const exclude = opts.exclude || new Set();
   const sources = [];
   const statItems = [];
@@ -184,7 +187,7 @@ export function buildItemParts(inventory = [], opts = {}) {
     const parts = entryParts(entry);
     if (!parts.length) return;
     const hyb = parts.length > 1 ? hybridMul() : 1;
-    const f = boostFactor(entryTags(entry), boost) * hyb;
+    const f = boostFactor(entryTags(entry), boost) * hyb * strengthFactor(entryTags(entry), strength);
     for (const { def, tier } of parts) {
       const scale = tierMult(tier) * f;
       // Fluch entfernt (Schwarzmarkt/Ereignis): Fluch-Stats, -Regeln und -Auslöser entfallen
@@ -203,8 +206,9 @@ export function buildItemParts(inventory = [], opts = {}) {
   return { sources, statItems, rules };
 }
 
-// Set-Quellen + Stat-Beiträge der aktiven Set-Boni. double: Regel setBonusDouble
-export function buildSetParts(sets, double = false) {
+// Set-Quellen + Stat-Beiträge der aktiven Set-Boni. double: Regel setBonusDouble; strength: Tag-Stärke (Paket C) – davon wirkt SYNERGY.tagStrength.onSets –
+// der Set-Bonus eines Tags wirkt × (1 + Zuschlag dieses Tags × onSets)
+export function buildSetParts(sets, double = false, strength = {}) {
   const sources = [];
   const statSets = [];
   const rules = {};
@@ -212,12 +216,13 @@ export function buildSetParts(sets, double = false) {
     const b = s.bonus;
     const tag = TAGS[s.tag];
     const sid = `set_${s.id}`;
-    statSets.push({ id: sid, stats: b.stats || null, scale: double ? 2 : 1 });
+    const scale = (double ? 2 : 1) * (1 + (strength[s.tag] || 0) * SYNERGY.tagStrength.onSets);
+    statSets.push({ id: sid, stats: b.stats || null, scale });
     mergeRules(rules, b.rules);
     if (!b.triggers || !b.triggers.length) continue;
     sources.push({
       uid: `set:${s.id}`, id: sid, kind: 'set', tag: s.tag, level: s.level, name: `${tag.name}-Set ${s.level}`, icon: tag.icon,
-      tier: 1, scale: double ? 2 : 1, triggers: double ? doubledTriggers(b.triggers) : b.triggers, rules: b.rules || {},
+      tier: 1, scale, triggers: double ? doubledTriggers(b.triggers) : b.triggers, rules: b.rules || {},
     });
   }
   return { sources, statSets, rules };
@@ -225,16 +230,19 @@ export function buildSetParts(sets, double = false) {
 
 // Inventar auf eine Ausrüstung (garage/loadout.js → buildLoadout) anwenden.
 // opts: { biome, exclude: Set(slot) – z. B. Fluch blackCatNap }
-// Ergebnis: { statInput, rules, sources, items: [{ slot, entry, napped }], sets, counts, tagBoost }
+// Ergebnis: { statInput, rules, sources, items: [{ slot, entry, napped }], sets, counts, tagBoost, strength, recipes }
 export function applyInventory(loadout, inventory = [], opts = {}) {
   const baseRules = mergeRules({}, loadout.rules || {});
   const counts = tagCounts(inventory, loadout.parts || (loadout.statInput && loadout.statInput.parts));
   const sets = activeSets(counts);
   const tagBoost = mergedTagBoost(baseRules, opts.biome);
-  const ip = buildItemParts(inventory, { tagBoost, exclude: opts.exclude });
-  const sp = buildSetParts(sets, !!baseRules.setBonusDouble);
-  const rules = mergeRules(mergeRules(mergeRules({}, baseRules), ip.rules), sp.rules);
-  const statInput = { ...(loadout.statInput || {}), items: ip.statItems, sets: sp.statSets };
+  const strength = tagStrength(counts);
+  const recipes = activeRecipes(inventory, opts.exclude);
+  const ip = buildItemParts(inventory, { tagBoost, strength, exclude: opts.exclude });
+  const sp = buildSetParts(sets, !!baseRules.setBonusDouble, strength);
+  const rp = buildRecipeParts(recipes, strength);
+  const rules = mergeRules(mergeRules(mergeRules(mergeRules({}, baseRules), ip.rules), sp.rules), rp.rules);
+  const statInput = { ...(loadout.statInput || {}), items: ip.statItems, sets: [...sp.statSets, ...rp.statRecipes] };
   // Quellen: Chassis (immer – für Regeln wie healOnCleanLanding und die Anzeige), Teile, Sets, Items
   const c = loadout.chassis;
   const chassisSrc = c ? [{ uid: `chassis:${c.id}`, id: c.id, kind: 'chassis', name: c.name, icon: c.icon, tier: 1, scale: 1, triggers: c.triggers || [], rules: c.rules || {} }] : [];
@@ -243,7 +251,7 @@ export function applyInventory(loadout, inventory = [], opts = {}) {
     return { ...s, uid: `part:${s.id}`, name: p ? p.name : s.id, icon: p ? p.icon : '🔧', scale: 1, rules: (p && p.rules) || {} };
   });
   const items = inventory.map((entry, slot) => ({ slot, entry, napped: !!(opts.exclude && opts.exclude.has(slot)) }));
-  return { statInput, rules, sources: [...chassisSrc, ...partSrc, ...sp.sources, ...ip.sources], items, sets, counts, tagBoost };
+  return { statInput, rules, sources: [...chassisSrc, ...partSrc, ...sp.sources, ...rp.sources, ...ip.sources], items, sets, counts, tagBoost, strength, recipes };
 }
 
 // ---------- Beschreibung ----------

@@ -15,7 +15,7 @@ export const ITEMS = [
     icon: '♾️',
     rarity: 'legendary',
     tags: ['feuer'],
-    pool: 'r_legend_1',
+    pool: 'base',
     desc: 'Der Boost erzeugt Hitze, statt Treibstoff zu verbrauchen. Überhitzung knallt und tankt {amount} – Notreserve.',
     flavor: 'Läuft ewig. Bisher jedenfalls drei Minuten.',
     rules: { heatIsFuel: true },
@@ -40,7 +40,7 @@ export const ITEMS = [
     icon: '🧭',
     rarity: 'legendary',
     tags: ['gyro', 'gummi'],
-    pool: 'r_legend_1',
+    pool: 'base',
     desc: 'Nach einem Salto wird aus einer Bruchlandung nur eine holprige. Holprige Landung: {amount} m/s hoch + Abpraller.',
     flavor: 'Zeigt nicht nach Norden, aber immer nach oben.',
     rules: { flipsNeverCrash: true },
@@ -66,7 +66,7 @@ export const ITEMS = [
     icon: '🏰',
     rarity: 'legendary',
     tags: ['gummi'],
-    pool: 'r_legend_1',
+    pool: 'base',
     desc: 'Hindernisse tun nicht mehr weh: Du hüpfst drüber, +4 m/s obendrauf. Jeder Abpraller bringt {amount} Schrauben.',
     flavor: 'Schuhe aus! Gilt auch für Badewannen.',
     rules: { obstacleBounce: true },
@@ -135,7 +135,7 @@ export const ITEMS = [
     rarity: 'legendary',
     tags: ['schrott', 'magnet'],
     pool: 'r_legend_2',
-    desc: 'Magnet +1 m. Jede Schraube tankt {amount}, leerer Tank frisst Schrauben. Je 5 im Beutel: +1 % Boost-Schub (max. 30 %).',
+    desc: 'Magnet +1 m. Jede Schraube tankt {amount}, leerer Tank frisst Schrauben. Je 10 im Beutel: +1 % Boost-Schub (max. 15 %).',
     flavor: 'Läuft mit M6. Notfalls auch mit M8.',
     stats: { magnet: { add: 1 } },
     rules: { boltsAreFuel: true, boltHoardThrust: true },
@@ -143,9 +143,9 @@ export const ITEMS = [
       boltsAreFuel:
         'Schrauben sind Treibstoff: Ist der Treibstoff 0 und Antrieb, Boost oder eine Fähigkeit bräuchte Treibstoff, wird stattdessen mit Run-Schrauben bezahlt – 1 Schraube je angefangenen Treibstoff-Block von RULES.boltsAreFuel.fuelPerBolt (Phase 6: 1; abgebucht über ctx.addBolts(-1), sobald der nächste Block angebrochen wird; in der laufenden Etappe gewonnene Schrauben zählen mit). fuelEmpty wird erst ausgelöst, wenn Treibstoff UND Schrauben 0 sind; danach gilt das normale Verhalten. Schrauben gehen dabei nie unter 0. Auswertung: stage/stage.js beim Treibstoffverbrauch (Schrauben sind Run-Zustand, Zugriff über ctx).',
       boltHoardThrust:
-        'Schraubenhort: Je volle 5 Run-Schrauben, die der Spieler gerade besitzt (Run-Stand inklusive der in der laufenden Etappe gewonnenen Schrauben), erhält die Kiste boostThrust mul +0,01, höchstens +0,30 (ab 150 Schrauben). Der Bonus wird bei jeder Änderung des Schraubenstands neu berechnet (wie ein Stapel ohne eigenes Ereignis) und sinkt daher auch, wenn boltsAreFuel Schrauben verbrennt oder im Laden bezahlt wird. Wird nicht mit ★ skaliert; mehrere Quellen addieren sich nicht. Auswertung: stage/stage.js beim Neuberechnen der Fahrzeug-Stats (Schraubenstand über ctx).',
+        'Schraubenhort: Je volle RULES.boltHoardThrust.per (Paket C: 10) Run-Schrauben, die der Spieler gerade besitzt (Run-Stand inklusive der in der laufenden Etappe gewonnenen Schrauben), erhält die Kiste boostThrust mul +0,01, höchstens RULES.boltHoardThrust.max (Paket C: +0,15, ab 150 Schrauben). Der Bonus wird bei jeder Änderung des Schraubenstands neu berechnet (wie ein Stapel ohne eigenes Ereignis) und sinkt daher auch, wenn boltsAreFuel Schrauben verbrennt oder im Laden bezahlt wird. Wird nicht mit ★ skaliert; mehrere Quellen addieren sich nicht. Auswertung: stage/stage.js beim Neuberechnen der Fahrzeug-Stats (Schraubenstand über ctx).',
     },
-    triggers: [{ on: 'pickup', if: { kind: 'bolt' }, do: [{ fx: 'fuel', amount: 0.5 }] }],
+    triggers: [{ on: 'pickup', if: { kind: 'bolt' }, do: [{ fx: 'fuel', amount: 0.25 }] }],
   },
 
   // ── r_legend_3 ──

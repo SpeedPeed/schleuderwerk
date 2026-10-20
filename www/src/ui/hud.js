@@ -134,16 +134,18 @@ export class Hud {
     this.q.feed.innerHTML = this.feed.map((e) => `<div style="--d:${Math.min(4, e.depth)}">${e.depth > 0 ? '↳ '.repeat(Math.min(2, e.depth)) : ''}${esc(e.label)}${e.n > 1 ? ` ×${e.n}` : ''}</div>`).join('');
   }
 
-  // Kettenreaktion ab ITEMS.chainPopupDepth: „KETTENREAKTION ×n!“ (n = Kettenglieder), nicht öfter als chainPopupGap
+  // Kettenreaktion (Paket C: jede gezählte Kette ≥ SYNERGY.chain.minLinks): „KETTENREAKTION ×n!“, nicht öfter als chainPopupGap
   // → true, wenn die Einblendung (neu) gezeigt wurde
-  chain(n) {
+  // Paket C: info { bolts, count, total } – die Kette zahlt Schrauben (Glieder²), der Zähler zeigt die Nachzahlung
+  chain(n, info = null) {
     const now = performance.now() / 1000;
     const c = this.chainShown;
     if (now - c.t < ITEMS.chainPopupGap && n <= c.n) return false;
     c.n = n;
     c.t = now;
     const e = this.q.chain;
-    e.textContent = TXT.hud.chain(n);
+    const bolts = info && info.bolts > 0 ? ` <small>${TXT.synergy.chainBolts(info.bolts)} ${icon('schraube')}</small>` : '';
+    e.innerHTML = `${TXT.hud.chain(n)}${bolts}`;
     e.style.setProperty('--n', String(Math.min(8, n)));
     show(e, true);
     e.classList.remove('go');

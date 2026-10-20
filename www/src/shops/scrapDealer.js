@@ -10,7 +10,7 @@
 import { SHOP } from '../data/balance.js';
 import { ABILITIES, abilityById, isSlotAbility } from '../data/index.js';
 import { rollItemChoices } from '../run/rewards.js';
-import { runStats, giveItem, itemSlots } from '../run/runState.js';
+import { runStats, giveItem, itemSlots, runChoiceBias } from '../run/runState.js';
 import { itemPrice, abilityPrice, shopRng, ownedIds, shopState, priceMul } from './common.js';
 
 const actKey = (act) => Math.max(1, Math.min(3, act | 0));
@@ -21,6 +21,7 @@ function rollStock(run, rerolls) {
   const ids = rollItemChoices({
     rng, count: SHOP.items, act: run.act, research: run.research || [], all: !!run.poolAll,
     weights: SHOP.rarityWeights[actKey(run.act)], owned: ownedIds(run), ownedWeight: SHOP.ownedWeight,
+    bias: runChoiceBias(run),   // Paket C: Tag-Bias auch beim Händler (mind. 1 Angebot der stärksten Tags)
   });
   const offers = ids.map((itemId) => ({ itemId, price: itemPrice(run, itemId), sold: false }));
   const abil = ABILITIES.filter((a) => isSlotAbility(a) && !run.abilities.includes(a.id));

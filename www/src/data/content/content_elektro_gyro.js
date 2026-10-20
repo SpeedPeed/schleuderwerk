@@ -19,18 +19,18 @@ export const TAGS = {
           { on: 'shock', limit: { cooldown: 1 }, do: [{ fx: 'thrust', amount: 3 }] },
         ],
       },
-      4: {
-        desc: 'Perfekte Landungen erzeugen Stromschläge. Jeder 4. Stromschlag: Gratis-Boost 1,2 s und 4 Schrauben.',
+      3: {
+        desc: 'Perfekte Landungen erzeugen Stromschläge (alle 2 s). Jeder 5. Stromschlag: Gratis-Boost 0,7 s und 3 Schrauben.',
         triggers: [
           { on: 'perfectLanding', limit: { cooldown: 2 }, do: [{ fx: 'emit', event: 'shock', data: { source: 'set_elektro' } }] },
           {
             on: 'shock',
-            do: [{ fx: 'charge', key: 'set_elektro_kondensator', n: 1, at: 4, then: [{ fx: 'boost', dur: 1.2 }, { fx: 'bolts', amount: 4 }] }],
+            do: [{ fx: 'charge', key: 'set_elektro_kondensator', n: 1, at: 5, then: [{ fx: 'boost', dur: 0.7 }, { fx: 'bolts', amount: 3 }] }],
           },
         ],
       },
-      6: {
-        desc: 'Lichtbogen: Stromschlag zerstört das nächste Hindernis und holt Pickups (je bis 8 m). Gratis-Boost löst Stromschlag aus.',
+      5: {
+        desc: 'Lichtbogen: Stromschlag zerstört das nächste Hindernis und holt Pickups (bis 8 m). Gratis-Boost: Stromschlag.',
         rules: { shockArc: true },
         ruleSpec: {
           shockArc: 'Bei jedem shock-Ereignis (jede Quelle, auch Blitz) schlägt ein Lichtbogen nach vorn: (1) das nächste Hindernis (Schrottberg, Presse, Kiste) in Fahrtrichtung mit Abstand ≤ 8 m wird zerstört – kein collision-Ereignis, kein Schaden; (2) alle Pickups im Umkreis von 8 m werden sofort eingesammelt (je Pickup ein normales pickup-Ereignis). Höchstens ein Lichtbogen je 0,5 s (weitere shocks in dieser Zeit wirken normal, nur ohne Lichtbogen). Mit setBonusDouble: Reichweite 12 m. Darstellung: Blitz-Partikel von der Kiste zum Ziel. Auswertung: stage/stage.js beim shock-Ereignis (Hindernis- und Pickup-Suche über physics/objects.js).',
@@ -49,24 +49,29 @@ export const TAGS = {
     desc: 'Rotation ist Rendite: schnellere Saltos, Lohn für jede Drehung und Landungen wie mit der Wasserwaage.',
     sets: {
       2: {
-        desc: 'Saltos drehen 12 % schneller, Luftsteuerung +8 %.',
+        desc: 'Saltos drehen 12 % schneller, Luftsteuerung +8 %. Jeder Salto: +2 m/s (max. 1× pro s).',
         stats: { flipSpeed: { mul: 0.12 }, airControl: { mul: 0.08 } },
-      },
-      4: {
-        desc: 'Nach jedem Salto 2,5 s lang Landetoleranz +5°. Ab dem 2. Salto im Sprung je +4 m/s Schub.',
         triggers: [
-          { on: 'flip', do: [{ fx: 'buff', stat: 'landTolDeg', add: 5, dur: 2.5 }] },
-          { on: 'flip', if: { minCount: 2 }, limit: { cooldown: 1 }, do: [{ fx: 'thrust', amount: 4 }] },
+          { on: 'flip', limit: { cooldown: 1 }, do: [{ fx: 'thrust', amount: 2 }] },
         ],
       },
-      6: {
-        desc: 'Drehimpuls: Perfekte Landung = +4 m/s je Salto des Sprungs (saubere: +2 m/s, max. 5 Saltos). Max. Drehtempo +25 %.',
+      3: {
+        desc: 'Nach jedem Salto 2,5 s Landetoleranz +5° und Gratis-Boost 0,8 s (alle 2 s); der zündet einen Fliehkraft-Stoß (4 m/s).',
+        triggers: [
+          { on: 'flip', do: [{ fx: 'buff', stat: 'landTolDeg', add: 5, dur: 2.5 }] },
+          { on: 'flip', limit: { cooldown: 2 }, do: [{ fx: 'boost', dur: 0.8 }] },
+          { on: 'boost', if: { free: true, airborne: true }, limit: { cooldown: 2.5 }, do: [{ fx: 'explosion', amount: 4 }] },
+        ],
+      },
+      5: {
+        desc: 'Drehimpuls: Perfekte Landung = +4 m/s je Salto (sauber: +2). Jeder Salto: Tempogrenze +3 % (max. 24 %).',
         stats: { maxSpin: { mul: 0.25 } },
         rules: { spinToSpeed: true },
         ruleSpec: {
           spinToSpeed: 'Nach jeder Landung (Ereignis landing) mit quality "perfect" oder "clean": Sofort-Schub in Fahrtrichtung wie fx thrust (unterliegt Soft-Cap) in Höhe von 4 m/s × landing.flips, gezählt höchstens 5 Saltos (max. 20 m/s); bei "clean" nur die Hälfte (2 m/s je Salto). Bei "bumpy"/"crash" nichts. Mit setBonusDouble: 8 bzw. 4 m/s je Salto. Einmal pro Landung, nach Abarbeitung der landing-Trigger; löst kein eigenes Ereignis aus. Auswertung: items/triggerEngine.js nach den landing-Triggern der Set-Quelle.',
         },
         triggers: [
+          { on: 'flip', do: [{ fx: 'stack', stat: 'speedSoftCap', mul: 0.03, max: 0.24 }] },
           { on: 'flip', if: { minCount: 3 }, limit: { cooldown: 3 }, do: [{ fx: 'slowmo', dur: 0.5 }] },
         ],
       },
@@ -111,7 +116,7 @@ export const ITEMS = [
     icon: '🐓',
     rarity: 'common',
     tags: ['elektro'],
-    pool: 'r_elektro_1',
+    pool: 'base',
     desc: 'An Wegmarken ein Stromschlag (alle 8 s). Echte Blitze bringen +{amount} Schrauben und 4 m/s Schub.',
     flavor: 'Kräht nur bei Gewitter. Dann aber richtig.',
     triggers: [
@@ -125,7 +130,7 @@ export const ITEMS = [
     icon: '🔳',
     rarity: 'rare',
     tags: ['elektro', 'eis'],
-    pool: 'r_elektro_1',
+    pool: 'base',
     desc: 'Jeder Stromschlag senkt die Hitze um {amount} und gibt {dur} s lang +12 % Boost-Schub (alle 2 s).',
     flavor: 'Strom rein, Kälte raus. Opa hat nie gefragt, warum.',
     triggers: [
@@ -138,7 +143,7 @@ export const ITEMS = [
     icon: '🏗️',
     rarity: 'rare',
     tags: ['elektro', 'magnet'],
-    pool: 'r_elektro_2',
+    pool: 'r_elektro_1',
     desc: 'Magnet +0,5 m. Jeder Stromschlag: {dur} s Magnetfeld ({radius} m). Jede 10. Schraube: Stromschlag.',
     flavor: 'Hob früher Autos. Heute Schrauben und Omas Löffel.',
     stats: { magnet: { add: 0.5 } },
@@ -157,7 +162,7 @@ export const ITEMS = [
     icon: '🔮',
     rarity: 'epic',
     tags: ['elektro'],
-    pool: 'r_elektro_2',
+    pool: 'base',
     desc: 'Jeder Stromschlag: +4 % Boost-Schub bis Etappenende (max. +24 %). Jeder 3. entlädt sich als Explosion.',
     flavor: 'Zwei Euro. Funktioniert. Die Haare stehen bis heute.',
     triggers: [
@@ -177,7 +182,7 @@ export const ITEMS = [
     icon: '🐍',
     rarity: 'epic',
     tags: ['elektro'],
-    pool: 'r_elektro_3',
+    pool: 'r_elektro_1',
     desc: 'Abschuss = Stromschlag. Jeder Stromschlag gibt {amount} m/s Schub, mit 30 % Chance folgt ein Nachschlag.',
     flavor: 'Opa sagt, das sei eine Gurke. Die Gurke sieht das anders.',
     triggers: [
@@ -229,7 +234,7 @@ export const ITEMS = [
     icon: '🪀',
     rarity: 'common',
     tags: ['gyro'],
-    pool: 'r_gyro_1',
+    pool: 'base',
     desc: 'Vorwärtssalto: +{amount} m/s Schub. Rückwärtssalto: Hüpfer nach oben (5 m/s). Je max. 1× pro s.',
     flavor: 'Runter geht’s von allein. Rauf jetzt auch.',
     triggers: [
@@ -257,7 +262,7 @@ export const ITEMS = [
     icon: '🎠',
     rarity: 'rare',
     tags: ['gyro'],
-    pool: 'r_gyro_2',
+    pool: 'base',
     desc: 'Luftsteuerung +12 %. Ab dem 2. Salto im Sprung je +{amount} Schrauben; danach perfekt gelandet: Gratis-Boost {dur} s.',
     flavor: 'Hat noch drei Beine und eine Mission.',
     stats: { airControl: { mul: 0.12 } },
@@ -272,7 +277,7 @@ export const ITEMS = [
     icon: '🌀',
     rarity: 'epic',
     tags: ['gyro'],
-    pool: 'r_gyro_2',
+    pool: 'base',
     desc: 'Saltos gehen 30 % schneller. Jeder Salto senkt die Hitze um {amount}.',
     flavor: 'Lag 40 Jahre neben dem Gebiss. Dreht wie am ersten Tag.',
     stats: { flipSpeed: { mul: 0.3 } },
@@ -286,7 +291,7 @@ export const ITEMS = [
     icon: '💿',
     rarity: 'epic',
     tags: ['gyro'],
-    pool: 'r_gyro_3',
+    pool: 'r_gyro_1',
     desc: 'Jeder Salto: +{amount} m/s und +5 % Drehtempo bis Etappenende (max. +30 %). Perfekt nach 3+ Saltos: Explosion!',
     flavor: 'Läuft auf 33, 45 und – seit dem Umbau – 3000 Touren.',
     triggers: [

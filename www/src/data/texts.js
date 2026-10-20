@@ -81,13 +81,15 @@ export const TXT = {
       stage: 'FUNDSTÜCK! Eins darfst du einpacken.',
       elite: 'ELITE-BEUTE – mindestens selten.',
       boss: 'BOSS-BEUTE – episch oder legendär.',
+      blueprint: 'BAUPLAN WÄHLEN – womit fängst du an?',
       crate: 'KISTE GEKNACKT – such dir was aus.',
       event: 'FUNDSTÜCK',
       treasure: 'SCHATZ',
     },
     lootSub: {
       elite: 'Mindestens selten.',
-      boss: 'Episch oder legendär.',
+      boss: 'Episch oder legendär – mindestens ein Legendäres.',
+      blueprint: 'Womit fängt die Kiste an? Der Tag deines Bauplans kommt danach öfter.',
       crate: 'Aus der Kiste in der Strecke.',
       event: 'Rucksack voll – ersetzen oder ablehnen.',
       treasure: 'Rucksack voll – ersetzen oder liegen lassen.',
@@ -225,5 +227,24 @@ export const TXT = {
   hints: {
     choice: 'Pack eins ein – oder lass es liegen.',
     shop: 'Erst entscheiden, dann weiter.',
+  },
+
+  // Paket C: Synergien – Tag-Stärke, Rezepte, Bauplan-Start, Ketten
+  synergy: {
+    tagLevel: (tag, n, pct) => `${tag} Stufe ${n} · +${pct} %`,
+    setLevels: (levels, pct) => `Items und Garage-Teile mit Tag zählen, Hybride für beide Tags. Set-Boni ab ${levels} Items. Jedes Item eines Tags macht alle Effekte dieses Tags +${pct} % stärker.`,
+    strengthHead: 'Tag-Stärke',
+    recipesTab: 'Rezepte',
+    recipesIntro: 'Zwei bestimmte Items ergeben zusammen einen Bonus – ★1 reicht, Hybride zählen mit.',
+    recipesNone: 'Noch kein Rezept aktiv. Opa sagt: Augen auf bei Pärchen!',
+    recipeActive: 'AKTIV',
+    recipeHint: (name, other) => `Rezept „${name}“ mit ${other}`,
+    recipeComplete: (name) => `Vervollständigt „${name}“!`,
+    recipeMissing: (item) => `fehlt: ${item}`,
+    recipeUnknown: '??? – noch nie gebaut',
+    recipeUnknownItem: 'ein unbekanntes Item',
+    ownedUpgrade: '★+1 – hast du schon, kein neuer Platz',
+    upgraded: (name, tier) => `${name} ★${tier}`,
+    chainBolts: (bolts) => `+${bolts}`,
   },
 };

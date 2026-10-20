@@ -51,6 +51,7 @@ import { setChainLog } from './items/triggerEngine.js';
 import { Tutorial, TutorialView, tutorialProgress, resetTutorial, TUTORIAL_ORDER } from './ui/tutorial.js';
 import { backAction } from './ui/backButton.js';
 import { TXT } from './data/texts.js';
+import { activeRecipes } from './items/recipes.js';
 import { FxOverlay } from './ui/fxOverlay.js';
 import { applyInputMode, inputMode } from './ui/inputMode.js';
 import { KeyNav } from './ui/keyNav.js';
@@ -528,7 +529,7 @@ const hooks = {
   // Trigger-Engine: Item-Symbol hüpft, Feed-Zeile; ab Kettentiefe 3 „KETTENREAKTION ×n!“
   triggered: (src, depth, info) => { hud.itemTriggered(src, depth, info); if (!info || !info.recharge) itemJuice(src, depth); },
   // hud.chain() meldet false, wenn dieselbe Kette gerade schon gezeigt wurde (ITEMS.chainPopupGap)
-  chain: (n) => { if (hud.chain(n)) { sfx.chain(n); chainJuice(n); platform.haptic('light'); } },
+  chain: (n, info) => { if (hud.chain(n, info)) { sfx.chain(n); chainJuice(n); platform.haptic('light'); } },
   // Paket A: Abschuss → Run-Knoten wird erst jetzt betreten (vorher: zurück zur Karte ohne Kosten)
   launched: () => onLaunched(),
   knapp: () => { sfx.denied(); platform.haptic('medium'); },
@@ -840,7 +841,13 @@ function gotItem(res) {
   sfx.tapeTear();   // Karteikarte vom Klemmbrett gerissen
   sfx.buy();
   platform.haptic('success');
-  if (d) popups.show(`${d.icon} ${d.name}${res.replaced ? ' (ersetzt)' : ''}`, 'big');
+  const run = save.run;
+  if (d && res.upgraded) popups.show(`${d.icon} ${TXT.synergy.upgraded(d.name, run.inventory[res.slot].tier)}`, 'big');
+  else if (d) popups.show(`${d.icon} ${d.name}${res.replaced ? ' (ersetzt)' : ''}`, 'big');
+  // Paket C: Rezept vervollständigt (das neue Item gehört zu einem jetzt aktiven Rezept)
+  if (d && !res.upgraded && run) {
+    for (const r of activeRecipes(run.inventory)) if (r.items.includes(d.id)) { popups.show(`${r.icon} Rezept: ${r.name}!`, 'big'); sfx.fusion(); }
+  }
   reportRunEvents(res.events);
 }
 
@@ -848,7 +855,7 @@ function openInventory() {
   const run = save.run;
   if (!run) return;
   const v = runLogic.inventoryView(run);
-  itemSheet.openInventory({ inventory: run.inventory, slots: v.slots, counts: v.counts, tagBoost: v.tagBoost, napped: -1 });
+  itemSheet.openInventory({ inventory: run.inventory, slots: v.slots, counts: v.counts, tagBoost: v.tagBoost, recipes: v.recipes, napped: -1 });
 }
 
 // mul: Faktor auf FX.resultDelay (Sofort-Ende: fast keine Pause – das Ergebnis steht ja schon fest)
@@ -860,7 +867,7 @@ function later(fn, mul = 1) {
 function startRun() {
   const lo = buildLoadout(save);
   if (!save.garage.ownedChassis.includes(lo.chassis.id)) return;
-  save.run = runLogic.newRun(save);
+  save.run = runLogic.newRun(save, { blueprint: true });   // Paket C: Bauplan-Start (erste Auswahl beim Öffnen der Karte)
   markMilestone(save, 'firstRunStart');
   writeSave(save);
   openMap();
@@ -903,7 +910,7 @@ function openMap({ auto = false } = {}) {
   // offene Item-Auswahl (z. B. nach einem Neustart der App), danach ein noch offener Sonderknoten (Fortsetzen im Shop)
   const shopOpen = () => run.current && !isStageType(run.current.type);
   if (run.current && run.current.missed) { showMissDecision(); return; }
-  if (runLogic.pendingChoice(run)) { showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); else { autoAdvance(auto); focusMap(); } }); return; }
+  if (runLogic.pendingChoice(run)) { showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); else { if (!autoAdvance(auto)) tutorial.trigger('map'); focusMap(); } }); return; }
   if (shopOpen()) { openShop(); return; }
   if (!autoAdvance(auto)) tutorial.trigger('map');
 }

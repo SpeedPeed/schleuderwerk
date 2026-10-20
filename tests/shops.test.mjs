@@ -13,7 +13,7 @@ import * as G from '../www/src/shops/gasStation.js';
 import * as E from '../www/src/shops/textEvent.js';
 import * as T from '../www/src/shops/treasure.js';
 import { basePrice, actMul } from '../www/src/shops/common.js';
-import { SHOP, WORKBENCH, BLACKMARKET, STATION, TREASURE, REWARDS, ITEMS as BAL_ITEMS } from '../www/src/data/balance.js';
+import { SHOP, WORKBENCH, BLACKMARKET, STATION, TREASURE, REWARDS, ITEMS as BAL_ITEMS, SYNERGY } from '../www/src/data/balance.js';
 import { NODE_TYPES } from '../www/src/data/nodes.js';
 import { TEXT_EVENTS } from '../www/src/data/textEvents.js';
 import { itemById } from '../www/src/data/items.js';
@@ -138,14 +138,15 @@ test('Schrotthändler: Kaufen, voller Rucksack → ersetzen, Fähigkeit ersetzt 
   R.giveItem(run, save, 'gluck_gluckspfennig', { force: true });   // shopEnter: +4 Schrauben
   const b0 = run.bolts;
   const e = enterAs(run, 'dealer');
-  assert.ok(e.events.some((l) => l.bolts === 4), 'shopEnter löst Items aus');
-  assert.equal(run.bolts, b0 + 4);
+  const pf = 4 * (1 + SYNERGY.tagStrength.perItem);   // Paket C: 1 Glück-Item → +10 %
+  assert.ok(e.events.some((l) => Math.abs(l.bolts - pf) < 1e-9), 'shopEnter löst Items aus');
+  near(run.bolts, b0 + pf, 1e-9);
   const v = D.dealerView(run);
   const before = run.inventory.length;
   const r = D.buyOffer(run, save, 0);
   assert.ok(r.ok);
   assert.equal(run.inventory.length, before + 1);
-  assert.equal(run.bolts, b0 + 4 - v.offers[0].price);
+  near(run.bolts, b0 + pf - v.offers[0].price, 1e-9);
   assert.equal(D.buyOffer(run, save, 0).reason, 'sold');
   // Rucksack voll
   while (run.inventory.length < R.itemSlots(run)) R.giveItem(run, save, 'feuer_buegeleisen', { force: true });
@@ -261,10 +262,12 @@ test('Werkbank: Hybrid – beide Tags, beide Effekte × 0,75, ein Slot frei, Set
   const setupI = applyInventory(lo, run.inventory);
   const src = setupI.sources.filter((s) => s.kind === 'item' && s.slot === 0);
   assert.deepEqual(src.map((s) => s.id).sort(), ['feuer_zuendkerzen_kette', 'gyro_omas_kreisel'].sort());
-  for (const s of src) near(s.scale, WORKBENCH.hybridMul, 1e-9);
+  // Paket C: × Tag-Stärke des stärkeren Tags (2 Feuer-Items = +20 %)
+  const hs = WORKBENCH.hybridMul * (1 + 2 * SYNERGY.tagStrength.perItem);
+  for (const s of src) near(s.scale, hs, 1e-9);
   const statItems = setupI.statInput.items.filter((i) => i.slot === 0);
   assert.equal(statItems.length, 2);
-  for (const si of statItems) near(si.scale, WORKBENCH.hybridMul, 1e-9);
+  for (const si of statItems) near(si.scale, hs, 1e-9);
   // gleiche Tags → kein Hybrid; Hybrid aus Hybrid → nein
   assert.equal(W.fusionPreview(run, 0, 1).reason, 'hybrid');
   // speichern + laden: Name und Hybrid bleiben
@@ -612,5 +615,5 @@ test('Karte: keine Platzhalter mehr – jeder Sonderknoten hat seinen Shop', () 
     if (e.kind === 'station') G.chooseStation(run, 'repair'); else R.leaveNode(run);
   }
   assert.ok(kinds.size >= 4, [...kinds].join());
-  assert.equal(BAL_ITEMS.ownedWeight, 0);
+  assert.equal(BAL_ITEMS.ownedWeight, 0.35, 'Paket C: besessene Items erscheinen (Nehmen = ★+1)');
 });

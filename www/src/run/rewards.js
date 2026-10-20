@@ -6,8 +6,11 @@
 //    Feinschliff I auf allen Schrott, Blaupausen, Kerne). Paket A: Schrott/Blaupausen/Kerne werden schon während des
 //    Runs gutgeschrieben (run/runState.js → settleRun); runPayout liefert die Summe (das Run-Ende zeigt sie nur noch)
 //  - itemPool / rarityWeights / rollItemChoices: Item-Auswahl nach einer Etappe (Etappe/Elite/Boss/Item-Kiste)
-import { REWARDS, KOMBO, RUN, ITEMS as BAL } from '../data/balance.js';
+//  - Paket C: choiceBias (Tag-Bias in Angeboten) und Garantien (Boss: mind. 1 Legendär; mind. 1 Angebot der stärksten
+//    Tags) – einzige Stelle der Regeln: rollItemChoices
+import { REWARDS, KOMBO, RUN, ITEMS as BAL, SYNERGY } from '../data/balance.js';
 import { ITEMS } from '../data/items.js';
+import { TAG_IDS } from '../data/tags.js';
 import { ascensionScrapBonus } from '../garage/progression.js';
 import { gradeFor } from '../physics/trackGen.js';
 
@@ -124,33 +127,91 @@ export function rarityWeights(context = 'stage', act = 1) {
   return out;
 }
 
-// Auswahl würfeln: count verschiedene Items aus dem Pool. owned: Item-IDs im Inventar (Gewicht ownedWeight,
-// Standard ITEMS.ownedWeight = 0 → erscheinen nicht). Je Platz wird zuerst die Seltenheit nach Gewicht gezogen (nur
-// Seltenheiten mit noch verfügbaren Items), danach ein Item dieser Seltenheit gleichverteilt.
+// ---------- Paket C: Tag-Bias ----------
+// Bias aus der Tag-Zählung des Rucksacks (items/inventory.js → tagCounts, inkl. Garage-Teilen mit Tag):
+// { counts, top: [bis zu SYNERGY.bias.topTags Tags mit Zähler ≥ 1, stärkste zuerst], blueprintTag }
+export function choiceBias(counts = {}, blueprintTag = null) {
+  const top = TAG_IDS.filter((t) => (counts[t] || 0) > 0).sort((a, b) => (counts[b] || 0) - (counts[a] || 0) || TAG_IDS.indexOf(a) - TAG_IDS.indexOf(b))
+    .slice(0, SYNERGY.bias.topTags);
+  return { counts: { ...counts }, top, blueprintTag: blueprintTag || null };
+}
+
+// Gewicht eines Items durch den Bias: min(max, 1 + perItem × Zähler seines stärksten Tags) × blueprintMul (Bauplan-Tag)
+export function biasWeight(item, bias) {
+  if (!bias || !item) return 1;
+  const B = SYNERGY.bias;
+  let n = 0;
+  for (const t of item.tags) n = Math.max(n, bias.counts[t] || 0);
+  let w = Math.min(B.max, 1 + B.perItem * n);
+  if (bias.blueprintTag && item.tags.includes(bias.blueprintTag)) w *= B.blueprintMul;
+  return w;
+}
+
+// Ein Item aus cand ziehen (Gewicht: ownedWeight bei besessenen × Bias)
+function pickWeighted(rng, cand, ownedSet, ownedWeight, bias) {
+  const wts = cand.map((it) => (ownedSet.has(it.id) ? ownedWeight : 1) * biasWeight(it, bias));
+  const sum = wts.reduce((a, b) => a + b, 0);
+  let u = rng.next() * sum;
+  let pick = cand[cand.length - 1];
+  for (let i = 0; i < cand.length; i++) { u -= wts[i]; if (u <= 0) { pick = cand[i]; break; } }
+  return pick;
+}
+
+// Seltenheit nach Gewicht (nur Seltenheiten mit Items in list) und Kandidaten dieser Seltenheit; Rückfall: ganze Liste
+function rollCandidates(rng, list, w) {
+  const avail = {};
+  for (const [r, wr] of Object.entries(w)) if (wr > 0 && list.some((it) => it.rarity === r)) avail[r] = wr;
+  if (!Object.keys(avail).length) return list;
+  const r = rng.weighted(avail);
+  return list.filter((it) => it.rarity === r);
+}
+
+// Auswahl würfeln: count verschiedene Items aus dem Pool. owned: Item-IDs im Inventar (Gewicht ownedWeight; Paket C:
+// ITEMS.ownedWeight 0,35 – Nehmen macht das Item ★+1), exclude: Item-IDs, die nie erscheinen (★3, Hybrid-Teile).
+// Je Platz wird zuerst die Seltenheit nach Gewicht gezogen (nur Seltenheiten mit noch verfügbaren Items), danach ein
+// Item dieser Seltenheit (gleichverteilt × Bias). Paket C:
+//   bias (choiceBias): Gewichte nach Tag-Zähler, und mind. SYNERGY.bias.guarantee Angebot(e) mit einem der top-Tags
+//     (ersetzt notfalls das letzte freie Angebot; Seltenheit wie gewürfelt, sonst die nächste mit Items dieser Tags)
+//   guarantee ({ legendary: 1 }): so viele Plätze werden zuerst mit dieser Seltenheit gefüllt (falls im Pool)
 // Phase 5 (Händler, Ereignisse, Schatz): weights ersetzt die Seltenheits-Gewichte des Kontexts, filter(item) grenzt den
 // Pool ein (z. B. Tag), pool ersetzt den Pool ganz. Ergebnis: Liste von Item-IDs (kürzer, wenn der Pool leer ist).
-export function rollItemChoices({ rng, context = 'stage', act = 1, count = 3, research = [], all = false, owned = [], weights = null, ownedWeight = BAL.ownedWeight, filter = null, pool = null }) {
+export function rollItemChoices({ rng, context = 'stage', act = 1, count = 3, research = [], all = false, owned = [], exclude = [], weights = null, ownedWeight = BAL.ownedWeight, filter = null, pool = null, bias = null, guarantee = null, tagGuarantee = true }) {
   const ownedSet = new Set(owned);
-  let list = (pool || itemPool(research, all)).filter((it) => (!ownedSet.has(it.id) || ownedWeight > 0) && (!filter || filter(it)));
+  const excl = new Set(exclude);
+  let list = (pool || itemPool(research, all)).filter((it) => !excl.has(it.id) && (!ownedSet.has(it.id) || ownedWeight > 0) && (!filter || filter(it)));
   const w = weights || rarityWeights(context, act);
   const out = [];
-  for (let k = 0; k < count && list.length; k++) {
-    // Seltenheiten des Kontexts mit verfügbaren Items; sonst alle verbleibenden Items (Rückfall)
-    const avail = {};
-    for (const [r, wr] of Object.entries(w)) if (wr > 0 && list.some((it) => it.rarity === r)) avail[r] = wr;
-    let cand;
-    if (Object.keys(avail).length) {
-      const r = rng.weighted(avail);
-      cand = list.filter((it) => it.rarity === r);
-    } else cand = list;
-    // gleichverteilt, bereits besessene mit ownedWeight
-    const wts = cand.map((it) => (ownedSet.has(it.id) ? ownedWeight : 1));
-    const sum = wts.reduce((a, b) => a + b, 0);
-    let u = rng.next() * sum;
-    let pick = cand[cand.length - 1];
-    for (let i = 0; i < cand.length; i++) { u -= wts[i]; if (u <= 0) { pick = cand[i]; break; } }
-    out.push(pick.id);
-    list = list.filter((it) => it !== pick);
+  const fixed = new Set();   // Plätze aus Garantien (werden vom Tag-Garant nicht ersetzt)
+  const take = (pick, keep = false) => { if (keep) fixed.add(out.length); out.push(pick.id); list = list.filter((it) => it !== pick); };
+  // Garantierte Seltenheiten zuerst (Boss: Legendär)
+  for (const [r, n] of Object.entries(guarantee || {})) {
+    for (let k = 0; k < n && out.length < count; k++) {
+      const cand = list.filter((it) => it.rarity === r);
+      if (!cand.length) break;
+      take(pickWeighted(rng, cand, ownedSet, ownedWeight, bias), true);
+    }
+  }
+  while (out.length < count && list.length) take(pickWeighted(rng, rollCandidates(rng, list, w), ownedSet, ownedWeight, bias));
+  // Tag-Garantie: mindestens `guarantee` Angebote mit einem der stärksten Tags
+  const top = bias && tagGuarantee ? bias.top : [];
+  if (top.length && out.length) {
+    const hasTop = (id) => { const it = ITEMS.find((x) => x.id === id); return !!it && it.tags.some((t) => top.includes(t)); };
+    let have = out.filter(hasTop).length;
+    for (let slot = out.length - 1; slot >= 0 && have < SYNERGY.bias.guarantee; slot--) {
+      if (fixed.has(slot) || hasTop(out[slot])) continue;
+      // nur Seltenheiten, die der Kontext erlaubt (Elite nie Gewöhnlich, Boss nur Episch/Legendär)
+      const topList = list.filter((it) => (w[it.rarity] || 0) > 0 && it.tags.some((t) => top.includes(t)));
+      if (!topList.length) break;
+      // Seltenheit des ersetzten Angebots, sonst nach Gewicht unter den vorhandenen
+      const old = ITEMS.find((x) => x.id === out[slot]);
+      let cand = topList.filter((it) => old && it.rarity === old.rarity);
+      if (!cand.length) cand = rollCandidates(rng, topList, w);
+      const pick = pickWeighted(rng, cand, ownedSet, ownedWeight, bias);
+      list = list.filter((it) => it !== pick);
+      if (old) list.push(old);
+      out[slot] = pick.id;
+      have++;
+    }
   }
   return out;
 }

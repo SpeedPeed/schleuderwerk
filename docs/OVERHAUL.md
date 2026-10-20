@@ -584,6 +584,62 @@ einer Beute-Auswahl, Rauchtest/Foto-Rundgang robust gegen „Rucksack voll“ un
 - Ketten ≥ 3 Glieder: ≥ 1,0 pro Etappe bei Builds mit ≥ 4 Items eines Tags (heute 0,0–0,1).
 - „Schlechter Run mit voller Meta“ gewinnt weiterhin < 30 % (BALANCE.md-Regel bleibt).
 
+### Umsetzungsstand Paket C
+
+> Stand 20.10.2026. Zahlen in `www/src/data/balance.js → SYNERGY`, Rezepte `data/recipes.js`, Logik `items/recipes.js`,
+> `run/rewards.js → rollItemChoices`, `run/runState.js → newRun/pickItem`, `stage/stage.js → chainStep`.
+
+**Umgesetzt**
+1. **Grundpool 53** (5 je Tag: 3 Gewöhnlich, 1 Selten, 1 Episch-„Motor“, dazu 3 Legendäre), Forschung `r_<tag>_1` kostet 1 📘
+   und bringt 2 Items; Legendär-Forschung 4–6 📘. Spielstand **v5** (Kodex: Set-Stufen 4/6 → 3/5, gebaute Rezepte).
+2. **Tag-Bias**: Gewicht × min(3,5; 1 + 0,6 × Tag-Zähler), Bauplan-Tag × 1,5, ab dem ersten Item mind. 1 Angebot der 2
+   stärksten Tags; Doppelte erscheinen (Gewicht 0,35) und werden beim Nehmen **★+1** statt einen Platz zu belegen.
+3. **Tag-Stärke** +10 % je Item auf alle Item-Effekte des Tags (sichtbar als „Feuer Stufe 3 · +30 %“ auf Karten, im
+   Rucksack und in der Set-Übersicht). Set-Stufen **2 / 3 / 5**. Entscheidung: Die Tag-Stärke wirkt *nicht* zusätzlich auf
+   Set-Boni (`SYNERGY.tagStrength.onSets = 0`) – sonst erreichten Magnet/Schrott/Hydraulik schon mit 3 Items die Kappung.
+4. **Tag-Balance** (neu: `tools/playtest/item-solo.mjs` misst jedes Item einzeln): entschärft Magnet-Set 3, Schrott-Set 3,
+   Hydraulik-Set 3, Elektro-Set 3 sowie Schraubenvergaser (Schraubenhort 10/+15 %), Schrottplatz-Kran (jeder 8. Pickup),
+   Saturn-Mülltonne; angehoben Feuer-Set 2/3 (Abschuss heizt 40 vor, Hitzegrenze +25), Rakete-Set 3, Gyro-Set 3,
+   Glück-Set 3/5 (Echo 30 %, +15 % Boost-Schub).
+5. **20 Rezepte** (2 Items → Bonus mit Regelbruch, ★1 reicht): Hinweis auf der Angebotskarte („Vervollständigt …!“ bzw.
+   „Rezept … mit …“), Einblendung beim Bauen, Reiter **Rezepte** im Rucksack (aktiv + was noch fehlt) und im Kompendium
+   (unbekannte als Silhouette).
+6. **22 Legendäre**, Boss-Beute mit **garantiert 1 Legendär**.
+7. **Bauplan-Start**: Jeder Run beginnt mit „BAUPLAN WÄHLEN“ – 1 aus 3 Episch-Motor-Items (Lieblings-Tag des Chassis
+   immer dabei), kein Überspringen; der Tag wird danach bevorzugt angeboten.
+8. **Ketten sichtbar & belohnt**: ab 3 Gliedern „KETTENREAKTION ×n!“ mit Schrauben-Nachzahlung (round((0,75·n)²), max. 45
+   je Etappe) und Kombo-Multiplikator.
+9. **Überweite**: `STAGE.farMul` bleibt 2 (Entscheidung): Paket A zahlt Überweite schon über Meter-Schrott, Platin und
+   Schrottkönig; ×3 hätte Etappen verlängert (Paket F will 12–16 s).
+
+**Neu kalibriert** (Items tragen nach Paket C rund 2–3× so weit wie vorher – zufällige 6 Items +0,33…0,46 statt +0,13 log-Weite,
+Set 5 +0,74…0,81): Zielmarken Akt 1/2/3 × 1,25/1,45/1,55 (+10 % bis Etage 5), Bosse × 1,6/1,55/1,55 (Akt 1: 910 m,
+Akt 2: 1.025 m, Akt 3: 1.285 m); Schrottstufe 2 +12 % → +8 %, Stufe 7 Boss +22 % → +12 % (sonst wird Stufe 7 bei der größeren
+Item-Streuung zur Mauer). Simulator-Modell neu gemessen (`progression.mjs --fit`, Set-Stufen 2/3/5, Bauplan-Start).
+
+**Messwerte**
+
+| Kriterium | Ziel | Stand |
+|---|---|---|
+| Konzentration, Median aller Tags (`synergy.mjs`, vor der Ziel-Anhebung gemessen): 2 → 4 Items | ≥ ×1,25 | ×1,20 → ×1,58 = **×1,32** ✔ |
+| … 4 → 6 Items | ≥ ×1,7 | ×1,58 → ×2,55 = **×1,61** ≈ |
+| Kein Tag mit 4 Items über ×3 | ✔ | Elektro ×2,97, Schrott ×2,52, Magnet ×2,43 ✔ |
+| Kein Tag mit Set 5 unter ×1,6 | ✔ | Glück ×1,41, Gummi ×1,80, Feuer ×2,08 – **Glück verfehlt** (Glück wirkt viel außerhalb der Etappe: Händler, Seltenheit) |
+| Echte Runs, neuer Spielstand: Set 3 / Set 5 / Angebot mit Haupt-Tag | ≥ 80 % / ≥ 30 % / ≥ 50 % | 63 % / **53 %** / **62 %** (Set 3 fehlt in Runs, die in Akt 1 enden) |
+| Synergie-Auswahl gegen zufällige Auswahl (neuer Spielstand) | spürbar | Sieg 13 % gegen 0 %, Weite ÷ Ziel 0,94 gegen 0,72 |
+| Ketten ≥ 3 Glieder je Etappe mit ≥ 4 Items eines Tags | ≥ 1,0 (vorher 0,0–0,1) | **4,8** (alles erforscht 6,6) ✔ |
+| „Schlechter Run mit voller Meta“ gewinnt | < 30 % | **0 %** ✔ |
+| Korridore (`progression.mjs`, 8 Karrieren): Akt-1-Boss / erster Sieg / alle Chassis / Schrottstufe 15 | 0,5–1 h / 3–5 h / 15–25 h / 30–50 h | **0,70 h / 2,6 h / 17,8 h / 47,9 h** (Sieg ±25 % ✔) |
+
+**Offen / Hinweise für D–F**
+- Der erste Sieg streut stark (0,9–3,4 h je Karriere): Item-Glück zählt mehr als vorher. `tests/progression.test.mjs`
+  nutzt deshalb 8 statt 5 Karrieren.
+- Mit den höheren Zielmarken schaffen mittlere Etappen in Akt 2/3 ohne Set 5 nur 20–45 % (Konzentrationstest mit gutem
+  Loadout). Die Notlandung fängt das ab, aber es fühlt sich hart an → in **Paket F** (Etappen-Gefühl & Kalibrierung)
+  nachstellen, z. B. über Etappen-Arten mit eigenen Zielen und mehr Meta-Fortschritt aus Paket E.
+- Ein Test-Browser mit Software-Grafik zeigt die ersten ≈ 2 s nach dem Laden keine Bilder (Animationen stehen) – das
+  betrifft nur Fotos/Rauchtests, nicht das Spiel.
+
 ---
 
 ### Paket D – Abwechslung: Etappen-Arten, Ereignisse, Karte, Biome, Bosse
@@ -753,4 +809,6 @@ node tools/playtest/anatomy.mjs --n 40                    # Etappen-Anatomie (mi
 node tools/playtest/synergy.mjs --n 12 --runs 30          # Tag-Konzentration + echte Runs (≈ 40 s)
 node tools/playtest/economy.mjs --careers 8 --hours 10    # Schrott/h, Blaupausen je Run, erster Boss, Wiederholungen (≈ 20 s)
 node tools/sim/levelGains.mjs --n 24                      # Paket A: Meter je Slot-Stufe → data/levelGains.js (≈ 30 s)
+node tools/playtest/item-solo.mjs --n 8                   # Paket C: jedes Item einzeln (Ausreißer finden, ≈ 25 s)
+node tools/playtest/shots-synergy.mjs                     # Paket C: Fotos Bauplan, Rezepte, Tag-Stärke (Handy + PC)
 ```

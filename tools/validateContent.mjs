@@ -38,13 +38,14 @@ const STAGE_EVENTS = {
   boostSecond: [], overheat: [], collision: ['kind', 'damage'], bounce: ['source'], pickup: ['kind'],
   fuelEmpty: [], abilityUse: ['ability'], milestone: ['m'], shock: ['source'], explosion: ['amount'],
   damage: ['amount', 'source'], heal: ['amount'], stageEnd: ['medal', 'dist'],
+  chain: ['links'],   // Paket C: Kettenreaktion gezählt (nur vom Spiel ausgelöst)
 };
 const RUN_EVENTS = {
   runStart: [], nodeEnter: ['type'], stageClear: ['medal', 'kind'], itemGained: ['itemId'], shopEnter: [],
 };
 const ALL_EVENTS = { ...STAGE_EVENTS, ...RUN_EVENTS };
 // Ereignisse, die nur das Spiel selbst auslöst (emit verboten)
-const NOT_EMITTABLE = new Set(['stageStart', 'stageEnd', 'launch', 'perfectLaunch', 'runStart', 'nodeEnter', 'stageClear', 'shopEnter', 'itemGained']);
+const NOT_EMITTABLE = new Set(['stageStart', 'stageEnd', 'launch', 'perfectLaunch', 'runStart', 'nodeEnter', 'stageClear', 'shopEnter', 'itemGained', 'chain']);
 
 const PICKUP_KINDS = new Set(['bolt', 'fuel', 'cool', 'repair', 'scrap', 'crate', 'blueprint']);
 const LANDING_QUALITIES = new Set(['perfect', 'clean', 'bumpy', 'crash']);
@@ -102,6 +103,7 @@ const EVENT_CONDS = {
   groundTouch: ['minImpact', 'maxImpact'],
   flip: ['dir', 'minCount'],
   airSecond: ['minCount'],
+  chain: ['minCount'],
   boost: ['free', 'source'],
   collision: ['kind'],
   bounce: ['source'],
@@ -131,9 +133,11 @@ const BASE_RULES = new Set([
 const TAG_IDS = ['feuer', 'eis', 'elektro', 'gyro', 'magnet', 'schrott', 'hydraulik', 'gummi', 'rakete', 'gluck'];
 const TAG_SET = new Set(TAG_IDS);
 const RARITIES = new Set(['common', 'rare', 'epic', 'legendary', 'cursed']);
-const SET_LEVELS = ['2', '4', '6'];
-const ITEMS_PER_TAG = 7;
-const LEGENDARY_COUNT = 10;
+const SET_LEVELS = ['2', '3', '5'];   // Paket C: Set-Stufen 2/3/5 (bis v1.0: 2/4/6)
+const ITEMS_PER_TAG = 8;              // Paket C: 7 + 1 Verstärker je Primär-Tag (ohne Legendär/Fluch)
+const BASE_PER_TAG = 5;               // Paket C: Grundpool 5 Items je Primär-Tag (ohne Legendär/Fluch)
+const LEGENDARY_COUNT = 22;           // Paket C: 10 → 22
+const RECIPE_COUNT = 20;              // Paket C: Rezepte (data/recipes.js)
 const CURSED_COUNT = 8;
 const PART_SLOTS = ['drive', 'wheels', 'aero', 'armor', 'tank', 'cooling', 'gadget'];
 const PERK_KEYS = new Set(['startBolts', 'itemSlots', 'abilitySlots', 'rerollDiscount', 'reserveSlots', 'startDurability', 'scrapGain']);
@@ -166,9 +170,11 @@ const ASCENSION_KEYS = new Set(['level', 'name', 'desc', 'mods']);
 // Design-Werte (V2-DESIGN.md §4) – Schrottstufen: Stufe → einziger mods-Schlüssel und Wert
 const ASCENSION_DESIGN = {
   // Paket A (docs/OVERHAUL.md „Umsetzungsstand Paket A“): Stufe 2 1,08 → 1,12, Stufe 7 1,15 → 1,22 – Notlandung und
-  // Neuversuche mit neuer Strecke/müdem Boss machen Runs leichter; so bleibt Schrottstufe 15 bei 30–50 h (Simulator)
-  1: ['eliteWeightAdd', null], 2: ['targetMul', 1.12], 3: ['towPenaltyAdd', 0.05], 4: ['priceMul', 1.1],
-  5: ['repairMul', 0.75], 6: ['startCurse', 1], 7: ['bossTargetMul', 1.22], 8: ['damageMul', 1.15],
+  // Neuversuche mit neuer Strecke/müdem Boss machen Runs leichter; so bleibt Schrottstufe 15 bei 30–50 h (Simulator).
+  // Paket C: zurück auf 1,08 / 1,12 – Items tragen weiter, die Grund-Zielmarken sind deutlich höher, und mit der
+  // größeren Item-Streuung würde Stufe 7 sonst zur Mauer (docs/OVERHAUL.md „Umsetzungsstand Paket C“)
+  1: ['eliteWeightAdd', null], 2: ['targetMul', 1.08], 3: ['towPenaltyAdd', 0.05], 4: ['priceMul', 1.1],
+  5: ['repairMul', 0.75], 6: ['startCurse', 1], 7: ['bossTargetMul', 1.12], 8: ['damageMul', 1.15],
   9: ['itemChoicesAdd', -1], 10: ['startDurabilityMul', 0.9], 11: ['heatGainMul', 1.15], 12: ['eliteHazards', true],
   13: ['boltMul', 0.85], 14: ['fuelMaxMul', 0.9], 15: ['doubleBossAct3', true],
 };
@@ -276,10 +282,11 @@ function getPath(obj, path) {
 
 // ═══════════════════════════════════ Laden ═══════════════════════════════════
 
-const KNOWN_EXPORTS = new Set(['TAGS', 'ITEMS', 'CHASSIS', 'PARTS', 'ABILITIES', 'RESEARCH', 'BRANCHES', 'NODE_TYPES', 'TEXT_EVENTS', 'ASCENSION', 'ASCENSION_REWARDS', 'PAINTS']);
+const KNOWN_EXPORTS = new Set(['TAGS', 'ITEMS', 'CHASSIS', 'PARTS', 'ABILITIES', 'RESEARCH', 'BRANCHES', 'NODE_TYPES', 'TEXT_EVENTS', 'ASCENSION', 'ASCENSION_REWARDS', 'PAINTS', 'RECIPES']);
 const REQUIRED_FILES = {
   'chassis.js': ['CHASSIS'], 'parts.js': ['PARTS'], 'abilities.js': ['ABILITIES'], 'ascension.js': ['ASCENSION', 'ASCENSION_REWARDS'],
   'cosmetics.js': ['PAINTS'], 'nodes.js': ['NODE_TYPES'], 'textEvents.js': ['TEXT_EVENTS'], 'research.js': ['RESEARCH', 'BRANCHES'],
+  'recipes.js': ['RECIPES'],
 };
 
 // Inhaltsdateien: die festen Dateien aus REQUIRED_FILES in DIR, alle content_*.js in DIR/content (bzw. DIR)
@@ -669,7 +676,7 @@ for (const [t, { def, file }] of Object.entries(TAGS)) {
   if (!HEX.test(def.color || '')) err(w, `color muss #rrggbb sein (${fmt(def.color)})`);
   if (!isObj(def.sets)) { err(w, 'sets fehlt'); continue; }
   const lv = Object.keys(def.sets).sort();
-  if (lv.join(',') !== SET_LEVELS.join(',')) err(w, `sets muss genau die Stufen 2/4/6 haben (hat: ${lv.join('/') || '—'})`);
+  if (lv.join(',') !== SET_LEVELS.join(',')) err(w, `sets muss genau die Stufen ${SET_LEVELS.join('/')} haben (hat: ${lv.join('/') || '—'})`);
   for (const L of lv) {
     const s = def.sets[L];
     const ws = `${w} › sets.${L}`;
@@ -724,7 +731,9 @@ for (const { item, file } of ITEMS) {
     if (!itemsByPool.has(item.pool)) itemsByPool.set(item.pool, []);
     itemsByPool.get(item.pool).push(item.id);
   }
-  if (item.rarity === 'legendary' && !String(item.pool).startsWith('r_legend')) err(w, `legendäres Item sollte in einem r_legend_*-Pool liegen (pool ${fmt(item.pool)})`);
+  // Paket C: Legendäre liegen im Grundpool (Boss-Garantie), in r_legend_* oder in der Forschung ihres Primär-Tags (r_<tag>_*)
+  if (item.rarity === 'legendary' && !(item.pool === 'base' || String(item.pool).startsWith('r_legend') || (primary && String(item.pool).startsWith(`r_${primary}_`))))
+    err(w, `legendäres Item sollte im Grundpool, in einem r_legend_*-Pool oder in r_${primary}_* liegen (pool ${fmt(item.pool)})`);
   if (item.rarity === 'cursed' && !String(item.pool).startsWith('r_curse')) err(w, `verfluchtes Item sollte in einem r_curse_*-Pool liegen (pool ${fmt(item.pool)})`);
   if (!['legendary', 'cursed'].includes(item.rarity) && /^r_(legend|curse)/.test(String(item.pool))) err(w, `${item.rarity}-Item in Legendär/Fluch-Pool ${item.pool}`);
 
@@ -769,6 +778,8 @@ for (const { item, file } of ITEMS) {
 for (const t of TAG_IDS) {
   if (countByTag[t] !== ITEMS_PER_TAG) err(`Items › Tag ${t}`, `${countByTag[t]} Items mit Primär-Tag ${t} (ohne Legendär/Fluch), erwartet ${ITEMS_PER_TAG}`);
   if (!baseByTag[t]) err(`Items › Tag ${t}`, `kein Item mit pool 'base' – Chassis-starterTag und Start-Pool brauchen mindestens eins`);
+  else if (baseByTag[t] !== BASE_PER_TAG) err(`Items › Tag ${t}`, `${baseByTag[t]} Grundpool-Items mit Primär-Tag ${t}, erwartet ${BASE_PER_TAG} (Paket C)`);
+  if (!ITEMS.some(({ item }) => isObj(item) && item.pool === 'base' && item.rarity === 'epic' && item.tags?.[0] === t)) err(`Items › Tag ${t}`, `kein Episch-Item im Grundpool – der Bauplan-Start (SYNERGY.blueprint) braucht eins je Tag`);
 }
 if (nLegend !== LEGENDARY_COUNT) err('Items', `${nLegend} legendäre Items, erwartet ${LEGENDARY_COUNT}`);
 if (nCursed !== CURSED_COUNT) err('Items', `${nCursed} verfluchte Items, erwartet ${CURSED_COUNT}`);
@@ -1360,6 +1371,47 @@ for (const a of [1, 2, 3]) if (eventsPerAct[a] < 5) warn('textEvents.js', `nur $
   if (kinds.asc !== 4) err('cosmetics.js', `${kinds.asc} Schrottstufen-Lackierungen, Kopfkommentar sagt 4`);
 }
 
+// ═══════════════════════════════════ Rezepte (Paket C) ═══════════════════════════════════
+
+const RECIPES = asArray('recipes.js', 'RECIPES');
+const RECIPE_KEYS = new Set(['id', 'name', 'icon', 'items', 'desc', 'flavor', 'stats', 'rules', 'ruleSpec', 'triggers']);
+{
+  const ids = new Set();
+  const pairs = new Map();
+  let baseRecipes = 0;
+  if (RECIPES.length !== RECIPE_COUNT) err('recipes.js', `${RECIPES.length} Rezepte, erwartet ${RECIPE_COUNT}`);
+  for (const r of RECIPES) {
+    if (!isObj(r) || !isStr(r.id)) { err('recipes.js', 'Rezept ohne id'); continue; }
+    const w = `recipes.js › ${r.id}`;
+    checkKeys(w, r, RECIPE_KEYS, 'Rezept');
+    if (!/^[a-z0-9_]+$/.test(r.id)) err(w, 'id nur aus a–z, 0–9, _ erlaubt');
+    if (ids.has(r.id)) err(w, 'Rezept-id doppelt');
+    ids.add(r.id);
+    checkText(w, r, 'name', MAX.name);
+    checkText(w, r, 'desc', MAX.desc);
+    checkText(w, r, 'flavor', MAX.flavor);
+    noPlaceholders(w, r.desc);
+    checkIcon(w, r.icon);
+    if (!Array.isArray(r.items) || r.items.length !== 2 || r.items[0] === r.items[1]) err(w, 'items muss genau zwei verschiedene Item-IDs enthalten');
+    else {
+      for (const id of r.items) {
+        const it = itemById.get(id);
+        if (!it) err(w, `Item ${fmt(id)} existiert nicht`);
+        else if (it.rarity === 'cursed' || it.rarity === 'legendary') err(w, `Rezept-Item ${id} ist ${it.rarity} (nur Gewöhnlich/Selten/Episch)`);
+      }
+      const key = [...r.items].sort().join('+');
+      if (pairs.has(key)) err(w, `gleiches Item-Paar wie ${pairs.get(key)}`);
+      pairs.set(key, r.id);
+      if (r.items.every((id) => itemById.get(id)?.pool === 'base')) baseRecipes++;
+    }
+    if (!r.stats && !r.triggers && !r.rules) err(w, 'Rezept ohne Wirkung (stats/triggers/rules)');
+    checkStats(w, r.stats, { xmulWarn: true });
+    checkTriggers(`${w} › triggers`, r.triggers, `recipe:${r.id}`, { sourceId: `recipe:${r.id}`, scaleVals: {} });
+    checkRules(w, r);
+  }
+  if (RECIPES.length && baseRecipes < RECIPE_COUNT / 2) warn('recipes.js', `nur ${baseRecipes} Rezepte gehen mit dem Grundpool (Kopfkommentar: 15)`);
+}
+
 // ═══════════════════════════════════ Querprüfungen ═══════════════════════════════════
 
 // Chassis-starterTag braucht Base-Items (oben gezählt)
@@ -1444,6 +1496,7 @@ for (const [rule, specs] of ruleSpecRegistry) {
   for (const p of PARTS) if (isObj(p)) add(p.name, `parts.js › ${p.id}`);
   for (const a of ABILITIES) if (isObj(a)) add(a.name, `abilities.js › ${a.id}`);
   for (const [t, { def, file }] of Object.entries(TAGS)) if (isObj(def)) add(def.name, `${file} › TAGS.${t}`);
+  for (const r of RECIPES) if (isObj(r)) add(r.name, `recipes.js › ${r.id}`);
   for (const [, ws] of names) if (ws.length > 1) err(ws[0], `Name doppelt vergeben (auch: ${ws.slice(1).join(', ')})`);
   const rnames = new Map();
   for (const r of RESEARCH) if (isObj(r) && isStr(r.name)) {
@@ -1479,8 +1532,8 @@ for (const [rule, specs] of ruleSpecRegistry) {
   }
 }
 
-// Jeder Tag braucht ein Tag-Teil (sonst ist Set 6 mit der Badewanne, 5 Item-Slots, unerreichbar)
-for (const t of TAG_IDS) if (!PARTS.some((p) => isObj(p) && p.tag === t)) warn(`parts.js`, `kein Garage-Teil mit tag ${fmt(t)} – Set 6 braucht dann 6 Item-Slots (Badewanne hat 5)`);
+// Jeder Tag braucht ein Tag-Teil (Badewanne: 5 Item-Slots – mit Tag-Teil bleibt Set 5 plus ein freier Platz)
+for (const t of TAG_IDS) if (!PARTS.some((p) => isObj(p) && p.tag === t)) warn(`parts.js`, `kein Garage-Teil mit tag ${fmt(t)} – Set 5 belegt dann alle 5 Item-Slots der Badewanne`);
 
 // Mehrdeutige Platzhalter: eine Sammelwarnung (Regel oben bei checkPlaceholders)
 if (ambiguousPlaceholders.length) {
@@ -1500,6 +1553,7 @@ const stats = {
   teile: PARTS.length,
   faehigkeiten: ABILITIES.length,
   forschung: RESEARCH.length,
+  rezepte: RECIPES.length,
   ereignisse: TEXT_EVENTS.length,
   lackierungen: PAINTS.length,
 };
@@ -1509,7 +1563,7 @@ if (JSON_OUT) {
 } else {
   const line = (x) => `  ${x.where}: ${x.msg}`;
   console.log(`Schleuderwerk 2 – Inhaltsprüfung (${DIR})`);
-  console.log(`  ${stats.dateien} Dateien · ${stats.items} Items (${stats.legendaer} Legendär, ${stats.verflucht} Fluch) · ${stats.tags} Tags · ${stats.chassis} Chassis · ${stats.teile} Teile · ${stats.faehigkeiten} Fähigkeiten · ${stats.forschung} Forschung · ${stats.ereignisse} Ereignisse · ${stats.lackierungen} Lackierungen`);
+  console.log(`  ${stats.dateien} Dateien · ${stats.items} Items (${stats.legendaer} Legendär, ${stats.verflucht} Fluch) · ${stats.tags} Tags · ${stats.chassis} Chassis · ${stats.teile} Teile · ${stats.faehigkeiten} Fähigkeiten · ${stats.forschung} Forschung · ${stats.rezepte} Rezepte · ${stats.ereignisse} Ereignisse · ${stats.lackierungen} Lackierungen`);
   console.log(`  Items je Primär-Tag: ${TAG_IDS.map((t) => `${t} ${countByTag[t]}`).join(', ')}`);
   if (!QUIET && warnings.length) {
     console.log(`\nWARNUNGEN (${warnings.length}):`);

@@ -10,7 +10,7 @@ import * as R from '../www/src/run/runState.js';
 import { makeRng } from '../www/src/core/rng.js';
 
 const model = loadModel();
-const CAREERS = 5;
+const CAREERS = 8;   // Paket C: Items streuen stärker (erster Sieg 0,9–3,4 h je Karriere) – 8 Karrieren für einen stabilen Median
 let careers = null;
 const getCareers = () => (careers ||= Array.from({ length: CAREERS }, (_, i) => simulateCareer(model, { seed: i + 1 })));
 
@@ -27,8 +27,8 @@ test('Simulator-Modell: alle Akte, Slot-Stufen 0–10, Zellen mit Messwerten; It
     const top = model.levels[model.levels.length - 1];
     assert.ok(model.base[act][top].s0.mu > model.base[act][0].s0.mu);
     assert.ok(model.base[act][top].b.mu > model.base[act][0].b.mu);
-    // Set 6 wirkt stärker als 6 zufällige Items
-    assert.ok(model.items[act].set[6] > model.items[act].random[6] - 0.05);
+    // Set 5 (Paket C: Stufen 2/3/5) wirkt stärker als 6 zufällige Items
+    assert.ok(model.items[act].set[5] > model.items[act].random[6] - 0.05);
   }
   assert.equal(itemLog(model, 2, []), 0);
   assert.ok(itemLog(model, 2, Array.from({ length: 6 }, () => ({ itemId: 'rakete_colaflaschen_rakete', tier: 1 }))) > 0);
@@ -41,18 +41,19 @@ test('Simulator: Etappen-Ergebnis hat die Form von stage.finish und berücksicht
   const spec = R.stageSpecFor(run, run.map.floors[0][0]);
   const r = simStageResult(model, run, spec, save, makeRng('x'));
   for (const k of ['reason', 'cleared', 'medal', 'dist', 'target', 'medals', 'kind', 'bolts', 'scrap', 'crates', 'damageTaken', 'durability']) assert.ok(k in r, k);
-  // gleiche Würfel, höhere Zielmarke (Schrottstufe 2: Ziele × 1,12) → seltener geschafft (Etage 4, Akt 1)
+  // gleiche Würfel, höhere Zielmarke (Schrottstufe 2: Ziele × 1,08) → seltener geschafft (Etage 0, Akt 1 – ohne Items;
+  // Paket C: spätere Etagen schafft man ohne Items kaum noch)
   let a = 0, b = 0;
   const s2 = defaultSave();
   s2.run = R.newRun(s2, { seed: 4, ascension: 2 });
-  const node = (r) => { const n = r.map.floors[4][0]; n.type = 'stage'; return n; };
+  const node = (r) => { const n = r.map.floors[0][0]; n.type = 'stage'; return n; };
   const sp0 = R.stageSpecFor(run, node(run)), sp2 = R.stageSpecFor(s2.run, node(s2.run));
   assert.ok(sp2.target > sp0.target);
   for (let i = 0; i < 300; i++) {
     if (simStageResult(model, run, sp0, save, makeRng(`r${i}`), { skill: false }).cleared) a++;
     if (simStageResult(model, s2.run, sp2, s2, makeRng(`r${i}`), { skill: false }).cleared) b++;
   }
-  assert.ok(b < a && a > 0, `Etage 4 Akt 1: Stufe 0 ${a}/300, Stufe 2 ${b}/300`);
+  assert.ok(b < a && a > 0, `Etage 0 Akt 1: Stufe 0 ${a}/300, Stufe 2 ${b}/300`);
 });
 
 test('Simulator: deterministisch (gleicher Seed → gleiche Karriere)', () => {

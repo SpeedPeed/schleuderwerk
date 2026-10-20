@@ -25,7 +25,7 @@ export function defaultSave() {
     // Schrottstufen (garage/progression.js): unlocked = höchste wählbare (0 = gesperrt), best = höchste gewonnene,
     // selected = Wahl für den nächsten Run, records = Bestwerte je Stufe { runs, wins, bestAct, bestStages, fastestWin }
     ascension: { unlocked: 0, best: 0, selected: 0, records: {} },
-    codex: { items: {}, sets: {} },
+    codex: { items: {}, sets: {}, recipes: {} },   // Paket C (v5): recipes = schon gebaute Rezepte { id: 1 }
     cosmetics: { owned: [], paint: null },
     // Phase 7: slowmo (Zeitlupe), sfxVol/musicVol (0…1), quality ('low' | 'mid' | 'high' → RENDER.pixelRatio)
     settings: { sound: true, vibration: true, shake: true, shadows: true, slowmo: true, sfxVol: AUDIO.defaultSfx, musicVol: AUDIO.defaultMusic, quality: RENDER.defaultQuality },
@@ -152,6 +152,24 @@ function migrateV3toV4(data) {
   return data;
 }
 
+// v4 → v5 (Paket C): Set-Stufen 2/4/6 → 2/3/5. Der Kodex merkt sich Set-Boni als „feuer4“ – aktivierte Stufen 4/6
+// gelten als die neuen Stufen 3/5 (die Bauweise ist dieselbe, nur früher erreichbar). Forschung und Items bleiben gültig
+// (gleiche IDs; die Pool-Forschung schaltet jetzt andere Items frei, bezahlte Blaupausen bleiben bezahlt).
+// Laufender Run: neue Felder (blueprintTag) ergänzt normalizeRun.
+function migrateV4toV5(data) {
+  const c = isObj(data.codex) ? data.codex : null;
+  if (!c || !isObj(c.sets)) return data;
+  const out = {};
+  for (const [id, v] of Object.entries(c.sets)) {
+    const m = /^([a-z]+)([246])$/.exec(id);
+    if (!m) continue;
+    const lv = { 2: 2, 4: 3, 6: 5 }[m[2]];
+    out[`${m[1]}${lv}`] = v;
+  }
+  c.sets = out;
+  return data;
+}
+
 export function migrate(data) {
   if (!isObj(data)) throw new SaveError('Kein gültiger Spielstand', 'invalid');
   // Versionsnummer als Zahl lesen; Unlesbares gilt als uralter Stand (läuft durch die ganze Migration)
@@ -170,6 +188,7 @@ export function migrate(data) {
   const hadTutorial = isObj(data.tutorial) && isObj(data.tutorial.seen);
   if (v < 3) data = migrateV2toV3(data);
   if (v < 4) migrateV3toV4(data);
+  if (v < 5) migrateV4toV5(data);
   fill(data, defaultSave());
   if (!hadTutorial && (n0(data.stats.runs) > 0 || n0(data.stats.testDrives) > 0 || isObj(data.run))) data.tutorial.off = true;
   data.version = SAVE_VERSION;
@@ -200,7 +219,7 @@ export function migrate(data) {
   if (!isValidRun(data.run)) data.run = null;
   else normalizeRun(data.run);
   // Kodex: nur Zahlen (Items: 1 = gesehen, 2 = besessen; Sets: 1 = schon einmal aktiv)
-  for (const k of ['items', 'sets']) {
+  for (const k of ['items', 'sets', 'recipes']) {
     for (const [id, v] of Object.entries(data.codex[k])) if (typeof v !== 'number' || !isFinite(v) || v < 0) delete data.codex[k][id];
   }
   // Welten-Rekorde gab es bis Phase 2 (seit Phase 3: Biome als Akte eines Runs)
@@ -263,14 +282,14 @@ export function writeSave(data) {
   }
 }
 
-// Export als Text (zum Sichern, z. B. in einer Notiz-App): „SW4:“ + Base64(JSON)
+// Export als Text (zum Sichern, z. B. in einer Notiz-App): „SW5:“ + Base64(JSON)
 export function exportSave(data) {
   const json = JSON.stringify(data);
   const b64 = btoa(unescape(encodeURIComponent(json)));
   return `SW${SAVE_VERSION}:${b64}`;
 }
 
-// Import: akzeptiert SW4:… und ältere Texte (SW3:…, SW2:…), die über die Migration auf v4 gebracht werden
+// Import: akzeptiert SW5:… und ältere Texte (SW4:…, SW3:…, SW2:…), die über die Migration auf v5 gebracht werden
 export function importSave(text) {
   const s = String(text || '').trim();
   const m = s.match(/^SW(\d+):(.+)$/s);

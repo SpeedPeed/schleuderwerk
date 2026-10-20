@@ -253,11 +253,11 @@ export class RunScreens {
     const cards = choice.items.length ? choiceCardsHtml(choice, d) : `<p class="ri-desc">${T.poolEmpty}</p>`;
     const head = title.split(/[!–.]/)[0].trim();
     this.present('choice', `
-      <h2>${icon(choice.context === 'boss' ? 'krone' : choice.context === 'elite' ? 'elite' : choice.context === 'crate' ? 'kiste' : 'stern', 'ic-lg')} ${esc(head)}!</h2>
+      <h2>${icon({ boss: 'krone', elite: 'elite', crate: 'kiste', blueprint: 'blaupause' }[choice.context] || 'stern', 'ic-lg')} ${esc(head)}!</h2>
       <div class="ri-sub">${esc(sub)}${d.remaining > 1 ? ` · ${T.more(d.remaining - 1)}` : ''}</div>
       <button class="ch-inv" data-a="inv">${icon('rucksack')} ${d.inventory.length}/${d.slots} ${d.inventory.length >= d.slots ? `· ${T.full}` : ''}</button>
       <div class="ch-cards">${cards}</div>
-      <div class="btn-row"><button class="btn btn-secondary" data-a="skip">${T.skip(choice.skipBolts ? fmt(choice.skipBolts) : 0)}${choice.skipBolts ? ` ${icon('schraube')}` : ''} <kbd class="kbd-only">S</kbd></button></div>`);
+      ${choice.context === 'blueprint' ? '' : `<div class="btn-row"><button class="btn btn-secondary" data-a="skip">${T.skip(choice.skipBolts ? fmt(choice.skipBolts) : 0)}${choice.skipBolts ? ` ${icon('schraube')}` : ''} <kbd class="kbd-only">S</kbd></button></div>`}`);
     this.card.querySelectorAll('[data-pick]').forEach((b) => { b.onclick = () => onPick(Number(b.dataset.pick)); });
     this.bind('[data-a=skip]', onSkip);
     this.bind('[data-a=inv]', onInventory);

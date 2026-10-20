@@ -32,8 +32,8 @@ export const ASCENSION = [
   {
     level: 2,
     name: 'Neu geeichter Zollstock',
-    desc: 'Alle Zielmarken +12 %. Opa hat den Zollstock nachgemessen – zu deinen Ungunsten.',
-    mods: { targetMul: 1.12 },   // Paket A: 1,08 → 1,12 (Notlandung/neue Strecken machen Runs leichter)
+    desc: 'Alle Zielmarken +8 %. Opa hat den Zollstock nachgemessen – zu deinen Ungunsten.',
+    mods: { targetMul: 1.08 },   // Paket A: 1,08 → 1,12; Paket C: zurück auf 1,08 (Items tragen mehr, die Ziele sind ohnehin höher)
   },
   {
     level: 3,
@@ -62,8 +62,8 @@ export const ASCENSION = [
   {
     level: 7,
     name: 'Bosse mit Muckis',
-    desc: 'Boss-Zielmarken +22 %. Die Endgegner waren den ganzen Winter im Fitnessstudio.',
-    mods: { bossTargetMul: 1.22 },   // Paket A: 1,15 → 1,22 (Boss-Neuversuche mit neuer Variante und „müdem“ Boss)
+    desc: 'Boss-Zielmarken +12 %. Die Endgegner waren den ganzen Winter im Fitnessstudio.',
+    mods: { bossTargetMul: 1.12 },   // Paket A: 1,15 → 1,22; Paket C: 1,12 (sonst wird Stufe 7 bei stärkerer Item-Streuung zur Mauer)
   },
   {
     level: 8,

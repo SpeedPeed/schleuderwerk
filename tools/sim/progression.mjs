@@ -25,6 +25,7 @@ import { BIOMES, biomeForAct } from '../../www/src/data/biomes.js';
 import { ITEMS, itemById } from '../../www/src/data/items.js';
 import { GARAGE, RUN, PROGRESSION, ITEMS as BAL_ITEMS, CONTROLS } from '../../www/src/data/balance.js';
 import { CHASSIS, SLOTS, partById } from '../../www/src/data/index.js';
+import { SET_LEVELS } from '../../www/src/data/tags.js';
 import { generateStageSpec, stageTarget, medalFor } from '../../www/src/physics/trackGen.js';
 import { makeRng, hashSeed } from '../../www/src/core/rng.js';
 import { defaultSave } from '../../www/src/save/save.js';
@@ -160,7 +161,7 @@ export async function fitModel({ n = 12, nItems = 10, log = console.log } = {}) 
     const m = { random: {}, rarity: {}, set: {} };
     for (const k of [2, 4, 6]) m.random[k] = meas(`zufall${k}`, pickN(pool, k));
     for (const r of ['common', 'rare', 'epic', 'legendary']) m.rarity[r] = meas(`selten-${r}`, pickN(pool.filter((i) => i.rarity === r), 4));
-    for (const s of [2, 4, 6]) {
+    for (const s of SET_LEVELS) {   // Paket C: Set-Stufen 2/3/5
       m.set[s] = meas(`set${s}`, (rng) => {
         const tag = rng.pick(tags.filter((t) => pool.filter((i) => i.tags.includes(t)).length >= s));
         return pickN(pool.filter((i) => i.tags.includes(tag)), s)(rng);
@@ -259,8 +260,10 @@ export function itemLog(model, act, inventory) {
   }
   const randomPts = [[0, 0], [2, m.random[2]], [4, m.random[4]], [6, m.random[6]]];
   const s = Math.max(0, ...Object.values(tags));
-  const synPts = [[0, 0], [1, 0], [2, m.set[2] - m.random[2]], [4, m.set[4] - m.random[4]], [6, m.set[6] - m.random[6]]];
-  return interp(randomPts, k) + Math.max(0, interp(synPts, Math.min(6, s)));
+  // Set-Vorteil gegenüber gleich vielen zufälligen Items (Set-Stufen aus dem Modell, Paket C: 2/3/5; ältere Modelle 2/4/6)
+  const lv = Object.keys(m.set).map(Number).sort((a, b) => a - b);
+  const synPts = [[0, 0], [1, 0], ...lv.map((n) => [n, m.set[n] - interp(randomPts, n)])];
+  return interp(randomPts, k) + Math.max(0, interp(synPts, Math.min(lv[lv.length - 1], s)));
 }
 
 // Einarbeitung (log-Weite) bei Spielzeit t (s)
@@ -515,7 +518,7 @@ export function simulateCareer(model, { seed = 1, maxHours = SIM.maxHours, log =
   while (save.meta.totalPlaytime < maxHours * 3600 && save.meta.milestones.ascension15 === undefined) {
     garageShopping(save, ctx);
     selectAscension(save, ascensionState(save).unlocked);   // immer die höchste freigeschaltete Stufe
-    save.run = RS.newRun(save, { seed: rng.int(1, 2 ** 30) });
+    save.run = RS.newRun(save, { seed: rng.int(1, 2 ** 30), blueprint: true });   // Paket C: Bauplan-Start wie im Spiel
     markMilestone(save, 'firstRunStart');
     const res = playRun(ctx);
     ctx.stats.runs++;

@@ -1,4 +1,4 @@
-import { PHYSICS as P, LAUNCH, KOMBO, FX, STAGE, CONTROLS, SPAWN, RESOURCES as R, RULES, ITEMS, FEATURES, PICKUPS, TESTDRIVE } from '../data/balance.js';
+import { PHYSICS as P, LAUNCH, KOMBO, FX, STAGE, CONTROLS, SPAWN, RESOURCES as R, RULES, ITEMS, FEATURES, PICKUPS, TESTDRIVE, SYNERGY } from '../data/balance.js';
 import { Vehicle } from '../physics/vehicle.js';
 import { Objects } from '../physics/objects.js';
 import { Track, PLATEAU_H } from '../physics/track.js';
@@ -58,12 +58,12 @@ export const neutralFrame = (dt) => ({ dt, hold: false, tilt: 0, aimKey: 0, drag
 // meldet sein boost-Ereignis im nächsten Physik-Schritt mit der Tiefe des auslösenden Effekts + 1.
 // Items: `inventory` (Run-Inventar) wird über items/inventory.js → applyInventory auf die Ausrüstung angewendet
 // (Stats, Regeln, Set-Boni, Trigger-Quellen). Jede Auslösung geht an hooks.triggered(source, depth, info) (HUD),
-// ab Kettentiefe ITEMS.chainPopupDepth an hooks.chain(n).
+// Paket C: jede gezählte Kette (≥ SYNERGY.chain.minLinks Glieder) an hooks.chain(n, { bolts, count, total }).
 //
 // Regeln, die HIER ausgewertet werden (ARCHITEKTUR.md Anhang A): collectScrapMass (Kollision, Pickups),
 // heatToThrust (Fähigkeit Schleudergang), shockArc (Elektro-Set 6, beim shock-Ereignis), boltsAreFuel (Schrauben als
 // Treibstoff über vehicle.fuelBackup), boltHoardThrust (Schraubenhort beim Neuberechnen der Stats), blackCatNap
-// (Fluch: ein Item ruht, beim Zusammenstellen der Quellen).
+// (Fluch: ein Item ruht, beim Zusammenstellen der Quellen), Paket C: chainLetter (Kettenbrief, chainStep).
 //
 // Phase 3: Die Strecke kommt aus einer StageSpec (physics/trackGen.js) mit Zielmarke und Medaillen
 // (spec.medals: bronze = Ziel, silver, gold). Endgründe: 'stop' (steht), 'wreck' (Haltbarkeit 0), 'fall'
@@ -184,6 +184,10 @@ export class Stage {
     this.engine = new TriggerEngine({ sources: setup.sources, ctx: this.ctx, rules: this.rules, queue: this.queue, mods: this.mods, runCounters: runInfo ? runInfo.counters : null });
     this.triggerCount = 0;
     this.maxChain = 0;             // längste Kette (Glieder = Tiefe + 1)
+    this.chains = 0;               // Paket C: gezählte Ketten (≥ SYNERGY.chain.minLinks Glieder) dieser Etappe
+    this.chainBolts = 0;           // … und ihre Schrauben
+    this.chainCur = null;          // laufende Kette { links, paid, counted, last }
+    this.maxCountedChain = 0;
     this.arcReadyAt = -Infinity;   // shockArc
 
     this.phase = 'aim';
@@ -256,7 +260,7 @@ export class Stage {
   // Schrauben, über die die Etappe verfügen kann (Run-Stand + in der Etappe gesammelte − verbrannte)
   availableBolts() { return this.runBolts + this.bolts - this.boltsSpent; }
 
-  // Regel boltHoardThrust (Schraubenhort): boostThrust +1 % je 5 Schrauben (max. +30 %), nicht mit ★ skaliert
+  // Regel boltHoardThrust (Schraubenhort): boostThrust +1 % je RULES.boltHoardThrust.per Schrauben (max. RULES.boltHoardThrust.max), nicht mit ★ skaliert
   updateBoltHoard(recompute = true) {
     if (!this.rules.boltHoardThrust) return;
     const B = RULES.boltHoardThrust;
@@ -314,7 +318,42 @@ export class Stage {
     eng.endFlush(n);
     const links = eng.maxDepth + 1;
     if (links > this.maxChain) this.maxChain = links;
-    if (eng.maxDepth >= ITEMS.chainPopupDepth) this.hooks.chain(links);
+    this.chainStep(links);
+  }
+
+  // Paket C – Ketten sichtbar & belohnt (Zahlen: SYNERGY.chain; einzige Stelle der Regel). Abarbeitungen mit Tiefe ≥ 1,
+  // die innerhalb von joinTime aufeinander folgen, bilden eine Kette (ein Gratis-Boost meldet sich einen Schritt später).
+  // Ab minLinks Gliedern zählt sie: Zähler stage.chains, Ereignis chain {links} (neue Wurzel, Tiefe 0), Schrauben
+  // round((boltsPerLink · Glieder)²) abzüglich schon gezahlter (wächst die Kette, wird nachgezahlt; je Etappe höchstens
+  // maxBoltsPerStage) und Kombo (komboPts je neues Glied, +komboMult je Glied ab minLinks). HUD: hooks.chain(n, info).
+  chainStep(links) {
+    const C = SYNERGY.chain;
+    if (links < 2) return;
+    let c = this.chainCur;
+    if (!c || this.time - c.last > C.joinTime + 1e-9) c = this.chainCur = { links: 1, paid: 0, counted: false, last: this.time };
+    c.last = this.time;
+    if (links <= c.links) return;
+    const prev = c.links;
+    c.links = links;
+    if (links < C.minLinks) return;
+    if (!c.counted) {
+      c.counted = true;
+      this.chains++;
+      this.emit('chain', { links }, 0);
+    }
+    // Regel chainLetter (Kettenbrief): doppelte Schrauben und doppelter Deckel
+    const mul = this.rules.chainLetter ? 2 : 1;
+    const want = Math.round((C.boltsPerLink * links) ** 2) * mul;
+    const pay = Math.max(0, Math.min(want - c.paid, C.maxBoltsPerStage * mul - this.chainBolts));
+    c.paid = Math.max(c.paid, want);
+    if (pay > 0) { this.chainBolts += pay; this.addBolts(pay); }
+    // Kombo: Trickpunkte je neues Glied, Multiplikator je Glied ab minLinks (ohne eigene Einblendung – das HUD zeigt die Kette)
+    const k = this.chain;
+    k.pts += C.komboPts * (links - (prev < C.minLinks ? 0 : prev));
+    k.mult = Math.min(KOMBO.maxMult, k.mult + C.komboMult * (links - Math.max(prev, C.minLinks - 1)));
+    k.timer = 0;
+    if (links > this.maxCountedChain) this.maxCountedChain = links;
+    this.hooks.chain(links, { bolts: pay, count: this.chains, total: this.chainBolts });
   }
 
   // Rohereignisse, die beim Abarbeiten entstanden sind, als Teil der Kette verarbeiten
@@ -1108,6 +1147,8 @@ export class Stage {
       boltsSpent: Math.ceil(this.boltsSpent),
       itemTriggers: this.triggerCount,
       maxChain: this.maxChain,
+      chains: this.chains,
+      chainBolts: this.chainBolts,
       napped: this.nappedSlot,
       scrap: Math.round(this.scrap + this.scrapBonus),
       blueprints: this.blueprints,

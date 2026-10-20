@@ -32,7 +32,9 @@ export function countFlips(rotAccum) {
 //   gapTrampoline (Gummi-Set 6), heatIsFuel (Perpetuum Mobile), flipsNeverCrash (Schiffskompass),
 //   boostHorizontal (Wasserwaagen-Rakete), perfectLaunchLowGrav (Levitron), allLandingsPerfect + doubleDamage
 //   (Hubstützen), iceLanding (Schlittschuhkufen), noPerfectLanding (Gummihuhn), obstacleMagnet (Geisterbahn-Magnet),
-//   endlessSpin (Spieluhr), mutualAttraction (Magnet-Set 6), boostOvercap (Raketen-Set 6).
+//   endlessSpin (Spieluhr), mutualAttraction (Magnet-Set 6), boostOvercap (Raketen-Set 6),
+//   Paket C: crashBounce (Gummibärchen-Reifen, land), lowGravHigh (Gravitations-Gartenzwerg, Luft-Schritt),
+//   airDrive (Zweitakt-Herz, updateResources + Luft-Schritt).
 //   setBonusDouble wählt bei Set-Regeln die „…Double“-Parameter.
 // Schrauben als Treibstoff (boltsAreFuel) entscheidet die Etappe: sie setzt `fuelBackup` ({ available(), pay() }).
 // Streckenbausteine (Phase 3): Oberflächen-Reibung (track.frictionAt: Schlamm/Sand), Looping (geskriptet, stepLoop),
@@ -332,12 +334,14 @@ export class Vehicle {
     const stalled = this.stall > 0 && !rules.heatIsFuel;
     // heatIsFuel mit RULES.heatIsFuel.drive = false (Phase 6): nur der Boost läuft über Hitze, der Antrieb zahlt Treibstoff
     const heatDrive = heatFuel && !!RULES.heatIsFuel.drive;
-    this.driving = (this.onGround || !!this.loop) && st.driveAccel > 0 && !stalled && this.drivePause <= 0 && this.brake <= 0
+    // Regel airDrive (Zweitakt-Herz): der Antrieb läuft auch in der Luft (Verbrauch/Hitze × RULES.airDrive)
+    const airDrive = !!rules.airDrive && !this.onGround && !this.loop;
+    this.driving = (this.onGround || !!this.loop || airDrive) && st.driveAccel > 0 && !stalled && this.drivePause <= 0 && this.brake <= 0
       && (this.fuel > 0 || st.driveFuel <= 0 || heatDrive || this.backupFuel > 0);
     let driveFuel = 0;
     if (this.driving) {
-      driveFuel = st.driveFuel * dt;
-      heatGain += st.driveHeat * dt;
+      driveFuel = st.driveFuel * dt * (airDrive ? RULES.airDrive.fuelMul : 1);
+      heatGain += st.driveHeat * dt * (airDrive ? RULES.airDrive.heatMul : 1);
     }
 
     // Treibstoff (heatIsFuel: Verbrauch als Hitze, 1 Treibstoff = RULES.heatIsFuel.heatPerFuel Hitze)
@@ -415,7 +419,10 @@ export class Vehicle {
     const rvx = this.vx - env.wind;
     const rsp = Math.hypot(rvx, this.vy);
     let ax = -k * rsp * rvx;
-    let ay = -k * rsp * this.vy - this.gravity + env.lift(this.x, this.y - P.rideHeight - track.heightAt(this.x)) + (env.ay || 0);
+    const alt = this.y - P.rideHeight - track.heightAt(this.x);
+    // Regel lowGravHigh (Gravitations-Gartenzwerg): über RULES.lowGravHigh.above m Höhe weniger Schwerkraft
+    const grav = this.rules.lowGravHigh && alt > RULES.lowGravHigh.above ? this.gravity * RULES.lowGravHigh.gravityMul : this.gravity;
+    let ay = -k * rsp * this.vy - grav + env.lift(this.x, alt) + (env.ay || 0);
     ax += (env.ax || 0) + this.ruleAx + this.ruleAirOnlyAx;
     ay += this.ruleAy + this.ruleAirOnlyAy;
     if (Math.abs(aoa) < Math.PI / 2) {
@@ -423,6 +430,8 @@ export class Vehicle {
       ax += L * (-this.vy / sp);
       ay += L * (this.vx / sp);
     }
+    // Regel airDrive (Zweitakt-Herz): Antrieb in der Luft waagrecht nach vorn (× accelMul, weiche Tempo-Grenze)
+    if (this.driving && this.rules.airDrive) ax += this.driveAccelNet() * RULES.airDrive.accelMul * thrustFactor(Math.max(0, this.vx), this.softCap);
     if (this.boosting) {
       const T = this.boostAccel(sp);
       // Regel boostHorizontal (Wasserwaagen-Rakete): Schub in der Luft immer waagrecht nach vorn
@@ -498,8 +507,11 @@ export class Vehicle {
     if (noPerfect && quality === 'perfect') quality = 'clean';
     // flipsNeverCrash (Schiffskompass): mit mindestens einem Salto wird aus einer Bruchlandung eine holprige
     if (rules.flipsNeverCrash && quality === 'crash' && flips >= 1) quality = 'bumpy';
+    // crashBounce (Gummibärchen-Reifen): Bruchlandung wird ein Abpraller – holprig, aber mit RULES.crashBounce.speedKeep
+    const crashBounce = !!rules.crashBounce && real && quality === 'crash';
+    if (crashBounce) quality = 'bumpy';
 
-    const keep = quality === 'bumpy' ? P.bumpySpeedKeep : quality === 'crash' ? P.crashSpeedKeep : P.cleanSpeedKeep;
+    const keep = crashBounce ? RULES.crashBounce.speedKeep : quality === 'bumpy' ? P.bumpySpeedKeep : quality === 'crash' ? P.crashSpeedKeep : P.cleanSpeedKeep;
     this.s = vt * keep;
     // iceLanding (Schlittschuhkufen): unter 50 Hitze kein Tempoverlust durch den Aufprall
     const I = RULES.iceLanding;
@@ -557,6 +569,7 @@ export class Vehicle {
       ev.push({ type: 'takeoff', ramp: false, bounce: true });
     }
     if (impactThrust > 0) this.thrust(impactThrust);
+    if (crashBounce) ev.push({ type: 'bounce', source: 'crashBounce' });
   }
 
   stepGround(dt, track, ev, env) {

@@ -33,7 +33,7 @@
 // eingesammelter Item-Kiste eine weitere; Überspringen gibt Schrauben, voller Rucksack → ersetzen oder ablehnen.
 // Run-Ereignisse (runStart, nodeEnter, stageClear, itemGained, shopEnter) laufen über die Trigger-Engine mit einem
 // ctx ohne Fahrzeug (emitRunEvent). Der Kodex im Spielstand (save.codex) merkt sich gesehene/besessene Items und Set-Boni.
-import { RUN, REWARDS, ITEMS as BAL_ITEMS } from '../data/balance.js';
+import { RUN, REWARDS, ITEMS as BAL_ITEMS, SYNERGY } from '../data/balance.js';
 import { biomeForAct } from '../data/biomes.js';
 import { SLOTS, cursedItemPool } from '../data/index.js';
 import { ITEMS, itemById } from '../data/items.js';
@@ -43,10 +43,11 @@ import { generateStageSpec } from '../physics/trackGen.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { markMilestone, ascensionMods, ascensionState, ascensionCoreReward, recordRunEnd } from '../garage/progression.js';
 import { computeStats } from '../items/statMods.js';
-import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts } from '../items/inventory.js';
+import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts, MAX_TIER } from '../items/inventory.js';
+import { TAG_IDS } from '../data/tags.js';
 import { dispatchRunEvent } from '../items/triggerEngine.js';
 import { ModState } from '../items/modState.js';
-import { stageRewards, runPayout, rollItemChoices, itemSkipBolts } from './rewards.js';
+import { stageRewards, runPayout, rollItemChoices, itemSkipBolts, choiceBias } from './rewards.js';
 import { runModStats, runDamageMul } from './runMods.js';
 
 export { runModStats };
@@ -130,8 +131,8 @@ export function runStageSetup(run, save = null) {
   };
 }
 
-// Neuen Run aus der aktuellen Garage-Auswahl. opts: { seed, ascension } – ohne ascension gilt die in der Garage gewählte
-// Schrottstufe (save.ascension.selected, höchstens die freigeschaltete).
+// Neuen Run aus der aktuellen Garage-Auswahl. opts: { seed, ascension, blueprint } – ohne ascension gilt die in der
+// Garage gewählte Schrottstufe (save.ascension.selected, höchstens die freigeschaltete); blueprint: Paket C Bauplan-Start.
 export function newRun(save, opts = {}) {
   const seed = (opts.seed ?? Math.floor(Math.random() * 2 ** 31)) >>> 0;
   const lo = buildLoadout(save);
@@ -163,6 +164,7 @@ export function newRun(save, opts = {}) {
     inventory: [],
     reserve: [],
     seenEvents: [],
+    blueprintTag: null,
     pendingChoices: [],
     poolAll: !!BAL_ITEMS.devAllPools,
     runMods: {
@@ -182,9 +184,17 @@ export function newRun(save, opts = {}) {
     research: save && save.research ? [...save.research.done] : [],
   };
   setupAct(run, 1);
-  // Start-Item des Chassis
-  const start = starterItemFor(lo.chassis, run.seed);
-  if (start) giveItem(run, save, start);
+  // Paket C: Bauplan-Start (opts.blueprint, main.js und Simulatoren) – 1 aus 3 Bauplänen (Episch-„Motor“-Item eines
+  // Tags, Lieblings-Tag des Chassis immer dabei) als erste Auswahl (context 'blueprint'); ohne opts.blueprint (Tests,
+  // Dev) das Start-Item des Chassis wie bisher
+  const plans = opts.blueprint ? blueprintOptions(lo.chassis, run.seed) : [];
+  if (plans.length) {
+    run.pendingChoices.push({ context: 'blueprint', items: plans, skipBolts: 0 });
+    for (const id of plans) codexItem(save, id, 1);
+  } else {
+    const start = starterItemFor(lo.chassis, run.seed);
+    if (start) giveItem(run, save, start);
+  }
   // Schrottstufe 6 „Omas Erbstück“: zufällige verfluchte Items zum Start (Fluch-Pool wie Ereignis-Flüche)
   for (let i = 0; i < (am.startCurse || 0); i++) {
     const pool = cursedItemPool(run.research).filter((it) => !run.inventory.some((e) => e.itemId === it.id));
@@ -194,6 +204,20 @@ export function newRun(save, opts = {}) {
   emitRunEvent(run, save, 'runStart', {});
   run.durability = Math.min(run.durability, durabilityMax(run));
   return run;
+}
+
+// Paket C – Bauplan-Start: SYNERGY.blueprint.options Baupläne = je das Grundpool-Item der Seltenheit
+// SYNERGY.blueprint.rarity („Motor“) eines Tags; der Lieblings-Tag des Chassis (starterTag) ist immer dabei, die übrigen
+// Tags werden aus dem Run-Seed gezogen. Ergebnis: Item-IDs (Reihenfolge: Chassis-Tag zuerst)
+export function blueprintOptions(chassis, seed) {
+  const B = SYNERGY.blueprint;
+  const motor = (tag) => ITEMS.find((it) => it.pool === 'base' && it.rarity === B.rarity && it.tags[0] === tag) || null;
+  const rng = makeRng(hashSeed(`${seed}:bauplan`));
+  const tags = TAG_IDS.filter((t) => motor(t));
+  const fav = chassis && tags.includes(chassis.starterTag) ? chassis.starterTag : null;
+  const rest = tags.filter((t) => t !== fav);
+  rng.shuffle(rest);
+  return [...(fav ? [fav] : []), ...rest].slice(0, B.options).map((t) => motor(t).id);
 }
 
 // Start-Item: chassis.starterItem, sonst ein zufälliges 'base'-Item des starterTag (deterministisch aus dem Seed)
@@ -225,6 +249,8 @@ export function normalizeRun(run) {
   if (!Array.isArray(run.reserve)) run.reserve = [];
   run.reserve = run.reserve.filter((r) => isObj(r) && itemById(r.itemId)).map((r) => ({ itemId: r.itemId, price: Math.max(0, Number(r.price) || 0) }));
   if (!Array.isArray(run.seenEvents)) run.seenEvents = [];
+  // Paket C: Bauplan-Tag (Tag-Bias × SYNERGY.bias.blueprintMul); ältere Runs: keiner
+  if (typeof run.blueprintTag !== 'string' || !TAG_IDS.includes(run.blueprintTag)) run.blueprintTag = null;
   if (!Array.isArray(run.research)) run.research = [];
   // Paket A: schon gutgeschriebene Run-Belohnung (ältere Runs: noch nichts – alles kommt am Run-Ende)
   if (isObj(run.earned)) {
@@ -569,7 +595,7 @@ export function emitRunEvent(run, save, name, data = {}) {
   if (!run.inventory.length) return log;
   const rng = makeRng(hashSeed(`${run.seed}:ereignis:${run.counters.events++}`));
   const setup = applyInventory(runLoadout(run), run.inventory, { biome: biomeForAct(run.act) });
-  const sources = setup.sources.filter((s) => s.kind === 'item' || s.kind === 'set' || s.kind === 'chassis');
+  const sources = setup.sources.filter((s) => s.kind === 'item' || s.kind === 'set' || s.kind === 'recipe' || s.kind === 'chassis');
   dispatchRunEvent({ sources, ctx: runCtx(run, save, rng, log), rules: setup.rules, runCounters: run.counters.trig }, name, data);
   delete log.mods;
   return log;
@@ -584,14 +610,34 @@ function codexItem(save, id, level) {
 export function updateCodexSets(run, save) {
   if (!save || !save.codex) return;
   runStats(run);
-  for (const s of statCache.get(run).setup.sets) save.codex.sets[s.id] = 1;
+  const setup = statCache.get(run).setup;
+  for (const s of setup.sets) save.codex.sets[s.id] = 1;
+  // Paket C: gebaute Rezepte (Kompendium zeigt unbekannte als Silhouette)
+  if (!save.codex.recipes || typeof save.codex.recipes !== 'object') save.codex.recipes = {};
+  for (const r of setup.recipes || []) save.codex.recipes[r.id] = 1;
 }
 
-// Aufbau des Inventars für die Anzeige (Karte, Inventar-Ansicht): { items, sets, counts, slots }
+// Aufbau des Inventars für die Anzeige (Karte, Inventar-Ansicht): { items, sets, counts, slots, tagBoost, strength, recipes }
 export function inventoryView(run) {
   runStats(run);
   const setup = statCache.get(run).setup;
-  return { items: setup.items, sets: setup.sets, counts: setup.counts, slots: itemSlots(run), tagBoost: setup.tagBoost };
+  return { items: setup.items, sets: setup.sets, counts: setup.counts, slots: itemSlots(run), tagBoost: setup.tagBoost, strength: setup.strength, recipes: setup.recipes };
+}
+
+// Paket C: Tag-Bias der Angebote (run/rewards.js → choiceBias) aus Rucksack + Garage-Teilen und dem Bauplan-Tag
+export function runChoiceBias(run) {
+  runStats(run);
+  return choiceBias(statCache.get(run).setup.counts, run.blueprintTag);
+}
+
+// Item-IDs, die in Angeboten nie erscheinen: schon auf ★3 oder Teil eines Hybrids (Nehmen würde kein ★+1 ergeben)
+export function choiceExclude(run) {
+  const out = [];
+  for (const e of run.inventory || []) {
+    if (e.hybrid) { out.push(e.itemId, e.hybrid); continue; }
+    if ((e.tier || 1) >= MAX_TIER) out.push(e.itemId);
+  }
+  return out;
 }
 
 // Item direkt ins Inventar (Start-Item, Händler, Dev-Menü). replace: Platz, der ersetzt wird. Ergebnis wie addEntry
@@ -632,7 +678,8 @@ export function queueChoice(run, save, context, act = run.act) {
   const count = Math.max(1, Math.round(runStats(run).itemChoices) + (runAsc(run).itemChoicesAdd || 0));
   const items = rollItemChoices({
     rng, context, act, count, research: run.research || [], all: !!run.poolAll || !!BAL_ITEMS.devAllPools,
-    owned: run.inventory.flatMap((e) => entryParts(e).map((p) => p.def.id)),
+    owned: run.inventory.flatMap((e) => entryParts(e).map((p) => p.def.id)), exclude: choiceExclude(run),
+    bias: runChoiceBias(run), guarantee: (BAL_ITEMS.guarantee && BAL_ITEMS.guarantee[context]) || null,
   });
   const choice = { context, items, skipBolts: boltIncome(run, itemSkipBolts(act)) };
   run.pendingChoices.push(choice);
@@ -644,14 +691,25 @@ export const pendingChoice = (run) => (run && run.pendingChoices && run.pendingC
 
 // Item der obersten Auswahl nehmen. replace: Inventar-Platz (bei vollem Rucksack Pflicht).
 // Ergebnis: { ok, reason?: 'full'|'none'|'index', itemId, slot, replaced?, events }
+// Paket C: Ist das Item schon im Rucksack (kein Hybrid, unter ★3), wird es ★+1 statt einen Platz zu belegen
+// (Ergebnis upgraded: true, slot). Bauplan-Auswahl (context 'blueprint') merkt sich den Tag (Tag-Bias).
 export function pickItem(run, save, index, replace = null) {
   const ch = pendingChoice(run);
   if (!ch) return { ok: false, reason: 'none' };
   const itemId = ch.items[index];
   if (!itemId) return { ok: false, reason: 'index' };
+  const dup = run.inventory.findIndex((e) => e.itemId === itemId && !e.hybrid && (e.tier || 1) < MAX_TIER);
+  if (dup >= 0 && (replace === null || replace === undefined)) {
+    run.inventory[dup] = { ...run.inventory[dup], tier: (run.inventory[dup].tier || 1) + 1 };
+    run.pendingChoices.shift();
+    codexItem(save, itemId, 2);
+    updateCodexSets(run, save);
+    return { ok: true, itemId, slot: dup, upgraded: true, events: emitRunEvent(run, save, 'itemGained', { itemId }) };
+  }
   const res = giveItem(run, save, itemId, { replace });
   if (!res.ok) return { ...res, itemId };
   run.pendingChoices.shift();
+  if (ch.context === 'blueprint') { const it = itemById(itemId); run.blueprintTag = it ? it.tags[0] : null; }
   return { ...res, itemId };
 }
 

@@ -1,4 +1,4 @@
-// Die 10 Tags mit ihren Set-Boni (2/4/6) – zusammengeführt aus den geprüften Inhaltsdateien in data/content/.
+// Die 10 Tags mit ihren Set-Boni (Paket C: 2/3/5) – zusammengeführt aus den geprüften Inhaltsdateien in data/content/.
 // Die Inhaltsdateien werden NICHT verändert, hier wird nur zusammengeführt (Format ARCHITEKTUR.md 4.7).
 // Reine Daten: kein three.js, kein DOM.
 import { TAGS as T_FEUER_EIS } from './content/content_feuer_eis.js';
@@ -24,13 +24,15 @@ export const TAG_PAINT = {
 export const TAGS = {};
 for (const id of TAG_IDS) TAGS[id] = { ...ALL[id], ...TAG_PAINT[id] };
 
-// Set-Stufen (Anzahl Items/Tag-Teile eines Tags)
-export const SET_LEVELS = [2, 4, 6];
+// Set-Stufen (Anzahl Items/Tag-Teile eines Tags). Paket C: 2 / 3 / 5 (bis v1.0: 2 / 4 / 6) – Set 2 aktiv, Set 3
+// baut den Stil (Ketten-Weiterreicher), Set 5 bricht eine Regel. Dazu wirkt jedes Item eines Tags +10 % stärker
+// (balance.SYNERGY.tagStrength, items/inventory.js → tagStrength).
+export const SET_LEVELS = [2, 3, 5];
 
 export const tagById = (id) => TAGS[id] || null;
 
-// Set-Bonus einer Stufe (2/4/6) oder null
+// Set-Bonus einer Stufe (2/3/5) oder null
 export const setBonus = (tag, level) => (TAGS[tag] && TAGS[tag].sets && TAGS[tag].sets[level]) || null;
 
-// Eindeutige ID eines Set-Bonus (Kompendium, Trigger-Quellen): 'feuer4'
+// Eindeutige ID eines Set-Bonus (Kompendium, Trigger-Quellen): 'feuer3'
 export const setId = (tag, level) => `${tag}${level}`;

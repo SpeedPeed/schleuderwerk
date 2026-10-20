@@ -11,11 +11,14 @@ export const TAGS = {
     desc: 'Anziehung als Spielstil: großer Radius, und jeder Pickup zahlt sich aus – in Schrauben, Schub und Magnetfeldern.',
     sets: {
       2: {
-        desc: '+1 m Magnetradius und +5 % Schrauben aus allen Quellen.',
+        desc: '+1 m Magnetradius und +5 % Schrauben. Jeder 12. Pickup: +4 m/s.',
         stats: { magnet: { add: 1 }, boltGain: { mul: 0.05 } },
+        triggers: [
+          { on: 'pickup', do: [{ fx: 'charge', key: 'set_magnet_schub', n: 1, at: 12, then: [{ fx: 'thrust', amount: 4 }] }] },
+        ],
       },
-      4: {
-        desc: 'Jeder 8. Pickup löst einen Magnetimpuls aus: Gratis-Boost 0,8 s und 2 s Magnetfeld (6 m).',
+      3: {
+        desc: 'Jeder 15. Pickup: Magnetimpuls – Gratis-Boost 0,6 s und Magnetfeld (4 m). Gratis-Boost lädt die Spule: Stromschlag.',
         triggers: [
           {
             on: 'pickup',
@@ -24,17 +27,18 @@ export const TAGS = {
                 fx: 'charge',
                 key: 'set_magnet_impuls',
                 n: 1,
-                at: 8,
+                at: 15,
                 then: [
-                  { fx: 'boost', dur: 0.8 },
-                  { fx: 'magnet', radius: 6, dur: 2 },
+                  { fx: 'boost', dur: 0.6 },
+                  { fx: 'magnet', radius: 4, dur: 1.5 },
                 ],
               },
             ],
           },
+          { on: 'boost', if: { free: true }, limit: { cooldown: 3 }, do: [{ fx: 'emit', event: 'shock', data: { source: 'set_magnet' } }] },
         ],
       },
-      6: {
+      5: {
         desc: 'Gegenseitige Anziehung: In der Luft ziehen Pickups vor dir die Kiste an. Gratis-Boost: 2 s Magnetfeld (8 m).',
         rules: { mutualAttraction: true },
         ruleSpec: {
@@ -55,24 +59,21 @@ export const TAGS = {
     desc: 'Schwer ist schön: Schrott sammeln, Masse aufbauen, Hindernisse rammen und aus allem noch Schrauben machen.',
     sets: {
       2: {
-        desc: '+10 max. Haltbarkeit, +10 % Masse und +10 % Schrott (Meta). Wer schwer ist, fällt nicht so leicht um.',
+        desc: '+10 max. Haltbarkeit, +10 % Masse, +10 % Schrott (Meta). Kollision: +3 m/s (alle 2 s).',
         stats: { durabilityMax: { add: 10 }, mass: { mul: 0.1 }, scrapGain: { mul: 0.1 } },
-      },
-      4: {
-        desc: 'Kollision: +4 m/s und 3 Schrauben (alle 2 s). Schrott-Pickups: Panzerung +1 % (bis Etappenende, max. +10 %).',
         triggers: [
-          {
-            on: 'collision',
-            limit: { cooldown: 2 },
-            do: [
-              { fx: 'thrust', amount: 4 },
-              { fx: 'bolts', amount: 3 },
-            ],
-          },
-          { on: 'pickup', if: { kind: 'scrap' }, do: [{ fx: 'stack', stat: 'armor', add: 0.01, max: 0.1 }] },
+          { on: 'collision', limit: { cooldown: 2 }, do: [{ fx: 'thrust', amount: 3 }] },
         ],
       },
-      6: {
+      3: {
+        desc: 'Kollision oder Landung ab 10 m/s: Explosion 4 m/s und 2 Schrauben (alle 3 s). Explosionen werfen Schrott ab.',
+        triggers: [
+          { on: 'collision', limit: { cooldown: 3 }, do: [{ fx: 'explosion', amount: 4 }, { fx: 'bolts', amount: 2 }] },
+          { on: 'landing', if: { minImpact: 10 }, limit: { cooldown: 3 }, do: [{ fx: 'explosion', amount: 4 }, { fx: 'bolts', amount: 2 }] },
+          { on: 'explosion', limit: { cooldown: 2.5 }, do: [{ fx: 'emit', event: 'pickup', data: { kind: 'scrap' } }, { fx: 'stack', stat: 'armor', add: 0.01, max: 0.1 }] },
+        ],
+      },
+      5: {
         desc: 'Abrissbirne: Ab 16 m/s zerlegst du Hindernisse ohne Schaden. Schrott regnet, und es knallt (Explosion 6 m/s).',
         rules: { wreckingBall: true },
         ruleSpec: {
@@ -81,6 +82,7 @@ export const TAGS = {
         },
         triggers: [
           { on: 'collision', if: { minSpeed: 16 }, limit: { cooldown: 2 }, do: [{ fx: 'explosion', amount: 6 }] },
+          { on: 'pickup', if: { kind: 'scrap' }, limit: { cooldown: 0.5 }, do: [{ fx: 'thrust', amount: 2 }] },
         ],
       },
     },
@@ -126,7 +128,7 @@ export const ITEMS = [
     icon: '📻',
     rarity: 'common',
     tags: ['magnet'],
-    pool: 'r_magnet_1',
+    pool: 'base',
     desc: 'Nach jeder Landung und jedem Abpraller: {dur} s Magnetfeld mit {radius} m (je alle 3 s).',
     flavor: 'Spielt seit dem Ausbau nur noch Schlager. Rückwärts.',
     triggers: [
@@ -140,7 +142,7 @@ export const ITEMS = [
     icon: '🏖️',
     rarity: 'rare',
     tags: ['magnet', 'gluck'],
-    pool: 'r_magnet_1',
+    pool: 'base',
     desc: '+1 Glück, Magnet +0,5 m. Pickups: 20 % Chance auf {amount} Schrauben extra (alle 0,5 s). Schatzhaufen: +8 Schrauben.',
     flavor: 'Fand am Strand drei Kronkorken und Onkel Kurt.',
     stats: { luck: { add: 1 }, magnet: { add: 0.5 } },
@@ -159,7 +161,7 @@ export const ITEMS = [
     icon: '🍿',
     rarity: 'rare',
     tags: ['magnet', 'feuer'],
-    pool: 'r_magnet_2',
+    pool: 'r_magnet_1',
     desc: 'Jeder Pickup: +{amount} Hitze und +1,5 m/s Schub (alle 0,5 s). Überhitzung: 3 s Magnetfeld (6 m).',
     flavor: 'Omas Mikrowelle hat jetzt Feierabend. Das Popcorn auch.',
     triggers: [
@@ -180,7 +182,7 @@ export const ITEMS = [
     icon: '🧪',
     rarity: 'epic',
     tags: ['magnet'],
-    pool: 'r_magnet_2',
+    pool: 'base',
     desc: 'Magnet +0,5 m. Pickups in der Luft: +{amount} m/s, Magnet +0,25 m (bis Etappenende, max. +2 m). Jeder 6.: Hüpfer 5 m/s.',
     flavor: 'Weihnachten 1983. Die Anleitung fehlt, der Ehrgeiz nicht.',
     stats: { magnet: { add: 0.5 } },
@@ -203,7 +205,7 @@ export const ITEMS = [
     icon: '⚛️',
     rarity: 'epic',
     tags: ['magnet'],
-    pool: 'r_magnet_3',
+    pool: 'r_magnet_1',
     desc: 'Jeder Pickup: Tempogrenze +1 % (bis Etappenende, max. +20 %). Jeder 12.: Gratis-Boost {dur} s und Stromschlag.',
     flavor: 'Brummt nachts im Keller. „Nicht anfassen“, sagt Oma.',
     triggers: [
@@ -262,7 +264,7 @@ export const ITEMS = [
     icon: '🪛',
     rarity: 'common',
     tags: ['schrott', 'magnet'],
-    pool: 'r_schrott_1',
+    pool: 'base',
     desc: 'Magnet +0,75 m. Schrott-Pickups öffnen {dur} s ein Magnetfeld mit {radius} m (alle 3 s).',
     flavor: 'Für die Schraube, die in den Motorraum fällt. Jede fällt.',
     stats: { magnet: { add: 0.75 } },
@@ -297,7 +299,7 @@ export const ITEMS = [
     icon: '🟫',
     rarity: 'rare',
     tags: ['schrott'],
-    pool: 'r_schrott_2',
+    pool: 'base',
     desc: 'Schrott-Pickups: +3 % Masse (bis Etappenende, max. +30 %). Jede geschaffte Etappe: +{amount} max. Haltbarkeit (Run).',
     flavor: 'War mal ein Kombi. Jetzt ein Würfel mit Erinnerungen.',
     triggers: [
@@ -311,7 +313,7 @@ export const ITEMS = [
     icon: '🚜',
     rarity: 'epic',
     tags: ['schrott'],
-    pool: 'r_schrott_2',
+    pool: 'base',
     desc: 'Panzerung +8 %. Kollision: Explosion ({amount} m/s) und 3 Schrauben. Danach wird der nächste Treffer ein Abpraller.',
     flavor: 'Bauer Hansen hat Anzeige erstattet. Gegen Unbekannt.',
     stats: { armor: { add: 0.08 } },
@@ -333,7 +335,7 @@ export const ITEMS = [
     icon: '⚒️',
     rarity: 'epic',
     tags: ['schrott'],
-    pool: 'r_schrott_3',
+    pool: 'r_schrott_1',
     desc: '+25 % Masse, +15 max. Haltbarkeit. Ab 8 m/s Aufprall: Explosion {amount} m/s. Explosion: Schrott + Schraube (alle 2 s).',
     flavor: 'Fällt wie im Zeichentrickfilm. Landet auch so.',
     stats: { mass: { mul: 0.25 }, durabilityMax: { add: 15 } },

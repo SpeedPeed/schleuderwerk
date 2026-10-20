@@ -183,6 +183,13 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       };
       await page.tap('#garage [data-id=start]');
       await page.waitForFunction(() => window.__game.state === 'map', null, { timeout: 8000 });
+      // Paket C: Run beginnt mit der Bauplan-Auswahl – dort erscheint der Hinweis „Fundstücke & Tags“
+      await page.waitForFunction(() => window.__game.runScreens.kind === 'choice', null, { timeout: 8000 });
+      await expectTut('items', 'Bauplan-Auswahl am Run-Start');
+      await shot('bauplan');
+      check(await g(() => !document.querySelector('#runui [data-a=skip]')), `[${tag}] Bauplan: kein Überspringen`);
+      await tapRun('[data-pick="0"]');
+      check(await g(() => !!window.__game.run.blueprintTag), `[${tag}] Bauplan gewählt (Tag ${await g(() => window.__game.run.blueprintTag)})`);
       await expectTut('map', 'erste Karte');
       await shot('karte');
       const node = await g(() => window.__game.reachable()[0].id);
@@ -232,7 +239,6 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       await shot('ergebnis');
       check(await g(() => window.__game.save.meta.scrap > 0), `[${tag}] Schrott der Etappe ist sofort gutgeschrieben`);
       if (await g(() => !!document.querySelector('#runui [data-pick]'))) {
-        await expectTut('items', 'Beute auf dem Ergebnis-Bildschirm');
         await shot('ergebnis-beute');
         await back();
         check((await runKind()) === 'result', `[${tag}] Zurück im Ergebnis mit Beute schließt es nicht`);

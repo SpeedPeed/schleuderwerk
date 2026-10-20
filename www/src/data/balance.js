@@ -3,7 +3,7 @@
 // Einheiten: Meter, Sekunden, Radiant – außer wo „Deg“/„Grad“ dabeisteht.
 // Diese Datei importiert nichts und wird auch von node --test geladen.
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;   // Paket C: v5 (Set-Stufen 2/3/5 im Kodex, Rezepte)
 export const GAME_VERSION = '1.0.0';
 
 // ---------- Speichern ----------
@@ -395,7 +395,8 @@ export const ITEMS = {
   effectJumpCancelFall: 0, // Sprung-Impuls aus Item-Effekten (jump, explosion) in der Luft: so viel der Fallgeschwindigkeit wird
                            // aufgehoben (0 = reiner Impuls; die Fähigkeit Hüpfer hebt das Fallen ganz auf). Phase 4: mit 1
                            // ließ sich per Salto-Sprung (Jo-Jo) + Explosionen endlos schweben (Bot: ×16 der Zielweite)
-  chainPopupDepth: 3,      // HUD: ab dieser Kettentiefe „KETTENREAKTION ×n!“ (n = Kettenglieder = Tiefe + 1)
+  chainPopupDepth: 2,      // HUD: ab dieser Kettentiefe „KETTENREAKTION ×n!“ (n = Kettenglieder = Tiefe + 1; Paket C: ab 3 Gliedern,
+                           // gleich SYNERGY.chain.minLinks – jede gezählte Kette ist sichtbar)
   chainPopupGap: 0.8,      // … höchstens alle 0,8 s (außer die Kette wird länger)
   feedSize: 3,             // HUD: so viele letzte Auslösungen in der Feed-Zeile
   feedTime: 2.5,           // … so lange (s) bleibt eine Zeile stehen
@@ -410,9 +411,35 @@ export const ITEMS = {
   },
   // Pro Akt werden die selteneren Stufen häufiger (Faktor auf das Gewicht; Akt 1 = 1)
   rarityActMul: { 2: { rare: 1.25, epic: 1.5, legendary: 1.5 }, 3: { rare: 1.5, epic: 2, legendary: 2 } },
-  ownedWeight: 0,          // Item-Auswahl nach Etappen: besessene Items erscheinen nicht erneut (Doppelte für die Werkbank-Fusion
-                           // gibt es beim Schrotthändler, SHOP.ownedWeight)
+  ownedWeight: 0.35,       // Paket C: besessene Items erscheinen in der Auswahl mit diesem Gewicht – Nehmen macht das vorhandene
+                           // Item ★+1 statt einen Platz zu belegen (run/runState.js → pickItem; ★3 erscheint nicht mehr)
   devAllPools: false,      // Dev-Menü: alle Items im Pool (unabhängig von der Forschung)
+  // Paket C: garantierte Seltenheiten je Kontext (run/rewards.js → rollItemChoices): Boss-Beute hat immer mind. 1 Legendär
+  guarantee: { boss: { legendary: 1 } },
+};
+
+// ---------- Paket C: Synergien (items/inventory.js, run/rewards.js, stage/stage.js) ----------
+export const SYNERGY = {
+  // Tag-Stärke (Brotato-Prinzip): jedes Item eines Tags (Items + Garage-Teile mit Tag, Hybride für beide Tags) gibt
+  // +perItem auf ALLE Effekte dieses Tags – passive Werte (add/mul) und skalierte Effekt-Parameter der Items, Set-Boni
+  // und Rezepte dieses Tags. Zwei-Tag-Items nehmen den stärkeren Tag. Höchstens maxItems Items zählen.
+  // onSets: Anteil der Tag-Stärke, der auch auf die Set-Boni wirkt (0 = nur Items und Rezepte; mit 1 verstärkten sich
+  // Set 3 und Tag-Stärke gegenseitig so stark, dass Magnet/Schrott/Hydraulik schon mit 3 Items die Kappung erreichten).
+  tagStrength: { perItem: 0.1, maxItems: 8, onSets: 0 },
+  // Tag-Bias in Angeboten (Item-Auswahl, Schrotthändler): Gewicht eines Items × min(max, 1 + perItem × n) mit n = Anzahl
+  // Items seines stärksten Tags im Rucksack; Bauplan-Tag (Run-Start) zusätzlich × blueprintMul. Sobald der Rucksack einen
+  // Tag hat, ist mindestens `guarantee` Angebot einer Auswahl ein Item der `topTags` stärksten Tags (falls im Pool).
+  bias: { perItem: 0.6, max: 3.5, blueprintMul: 1.5, guarantee: 1, topTags: 2 },
+  // Bauplan-Start (run/runState.js → newRun): 1 aus `options` Bauplänen; je Bauplan das Episch-„Motor“-Item eines Tags
+  // aus dem Grundpool. Der Lieblings-Tag des Chassis (starterTag) ist immer dabei.
+  blueprint: { options: 3, rarity: 'epic' },
+  // Ketten (stage/stage.js → chainStep): Eine Kette = zusammenhängende Ereignisse aus Effekten (Kettentiefe). Ab minLinks
+  // Gliedern zählt sie (HUD-Zähler „KETTE ×n“, Ereignis chain {links} für Items). Folgen Abarbeitungen mit Tiefe ≥ 1
+  // innerhalb von joinTime s aufeinander, gehören sie zur selben Kette (Gratis-Boost meldet sich einen Schritt später).
+  // Belohnung je Kette: Schrauben = round(boltsPerLink² × Glieder²) − bereits gezahlt (wächst die Kette, wird
+  // nachgezahlt), höchstens maxBoltsPerStage je Etappe; dazu Kombo: komboPts × Glieder Trickpunkte und
+  // +komboMult × (Glieder − minLinks + 1) auf den Kombo-Multiplikator.
+  chain: { minLinks: 3, joinTime: 0.3, boltsPerLink: 0.75, maxBoltsPerStage: 45, komboPts: 12, komboMult: 0.15 },
 };
 
 // ---------- Regel-Schalter (Parameter; Auswertungsstellen siehe ARCHITEKTUR.md Anhang A) ----------
@@ -426,7 +453,7 @@ export const RULES = {
   healOnCleanLanding: { interval: 0.5, maxPerStage: 15 },             // Sofa: Heilung je Landung (Menge = Regelwert)
   groundSpeedStacks: { crashMul: 0.5 },                              // Rasenmäher: Bruchlandung halbiert den Drehzahl-Stapel
   everyThirdTierUp: { every: 3, beyondMax: 3.0 },                    // Dreiblatt-Klee: jede 3. Auslösung eine ★ höher (★3 → 3,0)
-  luckyEcho: { p: 0.15, pMax: 0.5, pDouble: 0.3, pMaxDouble: 0.7, cooldown: 1 }, // Glück-Set 6: Echo-Chance (+ Glück × luckPerPoint)
+  luckyEcho: { p: 0.3, pMax: 0.6, pDouble: 0.45, pMaxDouble: 0.8, cooldown: 1 },   // Paket C: 0,15/0,5 → 0,3/0,6 // Glück-Set 6: Echo-Chance (+ Glück × luckPerPoint)
   shockRecharge: { cooldown: 3 },                                    // Teslaspule: Stromschlag-Abklingzeiten zurücksetzen, max. 1× je 3 s
   spinToSpeed: { perFlip: 4, perFlipDouble: 8, cleanMul: 0.5, maxFlips: 5 }, // Gyro-Set 6: Schub je Salto bei der Landung
   shockArc: { range: 8, rangeDouble: 12, cooldown: 0.5 },            // Elektro-Set 6: Lichtbogen
@@ -441,11 +468,15 @@ export const RULES = {
   obstacleBounce: { vy: 7, vx: 4, rehit: 1 },                        // Hüpfburg
   doubleDamage: { mul: 2 },                                          // Hubstützen
   boltsAreFuel: { fuelPerBolt: 1 },                                  // Schraubenvergaser: 1 Schraube je angefangene 1 Treibstoff (Phase 6: 4 → 1)
-  boltHoardThrust: { per: 5, mul: 0.01, max: 0.3 },                  // Schraubenvergaser: boostThrust +1 % je 5 Schrauben
+  boltHoardThrust: { per: 10, mul: 0.01, max: 0.15 },                // Schraubenvergaser: boostThrust +1 % je 10 Schrauben (Paket C: 5/0,3 → 10/0,15)
   obstacleMagnet: { range: 6, accel: 7 },                            // Geisterbahn-Magnet (Fluch)
   mutualAttraction: { rangeMul: 3, accel: 8, accelDouble: 16 },      // Magnet-Set 6
   wreckingBall: { minSpeed: 16, minSpeedDouble: 12, speedKeep: 0.85, scrap: 2, scrapDouble: 4 }, // Schrott-Set 6
   boostOvercap: { capMul: 1.3, capMulDouble: 1.6 },                  // Raketen-Set 6 (Phase 6: 1,4/1,8 → 1,3/1,6 – Ausreißer nach oben)
+  // ---- Paket C: neue Regeln (Legendäre) ----
+  crashBounce: { speedKeep: 0.7 },                                   // Gummibärchen-Reifen: Bruchlandung → Abpraller, 70 % Tempo
+  lowGravHigh: { above: 30, gravityMul: 0.6 },                       // Gravitations-Gartenzwerg: über 30 m Höhe Schwerkraft × 0,6
+  airDrive: { accelMul: 0.6, fuelMul: 1, heatMul: 3 },               // Zweitakt-Herz: Antrieb in der Luft (60 % Kraft, 3× Hitze)
 };
 
 // ---------- Abschuss (Halten / Loslassen) ----------

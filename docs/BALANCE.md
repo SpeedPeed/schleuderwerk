@@ -180,7 +180,7 @@ Jedes Item allein (★1) gegen „ohne Items“ (Akt 2 + 3, Etage 2, je 10 Etapp
 <!-- progression -->
 ## Progression & Ökonomie (Phase 6, mit Paket A nachgemessen)
 
-> Erzeugt von `node tools/sim/progression.mjs` (8 Karrieren, Modell vom 2026-10-20 mit 12 Etappen je Zelle; Rechenzeit 10 s). Modell neu messen: `--fit`.
+> Erzeugt von `node tools/sim/progression.mjs` (8 Karrieren, Modell vom 2026-10-20 mit 16 Etappen je Zelle; Rechenzeit 10 s). Modell neu messen: `--fit`.
 
 **Verfahren.** Der Bot misst je Akt, Knotenart/Etage und Slot-Stufe 0/3/5/8/10 (alle Slots) die Weite ÷ Ziel (log-normal), Schaden, Schrauben, Schrott und Item-Kisten; dazu die Wirkung von Items (zufällige Builds mit 2/4/6 Items, 4 Items je Seltenheit, Set-Builds 2/4/6 eines Tags) und der Schrottstufen-Physik. Die Karriere läuft mit der echten Run-Logik (Karte, Händler, Werkbank, Ereignisse, Schatz, Tankstelle, Item-Auswahl mit Synergie-Strategie, Belohnungen, Schrottstufen); nur das Etappen-Ergebnis wird aus dem Modell gewürfelt. Zwischen den Runs: Forschung (billigste zuerst), Chassis sobald bezahlbar, dann die billigste Slot-Verbesserung. Nach dem ersten Sieg spielt die Person immer die höchste freigeschaltete Schrottstufe. Paket A: verfehlte Etappen enden mit Notlandung (die Person nimmt nie „Nochmal“), jeder Neuversuch hat eine neue Strecke (eigene Streuung).
 
@@ -189,22 +189,22 @@ Jedes Item allein (★1) gegen „ohne Items“ (Akt 2 + 3, Etage 2, je 10 Etapp
 | Meilenstein | Ziel (V2-DESIGN §8) | Median | Spanne | im Korridor |
 |---|---|---|---|---|
 | Erster Run | 8 min–15 min | 9 min | 8 min – 10 min (8/8) | ✔ |
-| Erster Akt-1-Boss besiegt | 0,50 h–1,0 h | 0,82 h | 0,52 h – 1,4 h (8/8) | ✔ |
-| Erster Run-Sieg | 3,0 h–5,0 h | 2,7 h | 1,8 h – 4,7 h (8/8) | ✗ |
-| Alle Chassis | 15,0 h–25,0 h | 20,3 h | 14,6 h – 27,4 h (8/8) | ✔ |
-| Sieg auf Schrottstufe 5 | – | 8,5 h | 5,6 h – 13,7 h (8/8) | – |
-| Sieg auf Schrottstufe 10 | – | 27,6 h | 20,6 h – 52,9 h (8/8) | – |
-| Alles inkl. Schrottstufe 15 | 30,0 h–50,0 h | 39,7 h | 30,9 h – 78,4 h (8/8) | ✔ |
+| Erster Akt-1-Boss besiegt | 0,50 h–1,0 h | 0,70 h | 0,29 h – 1,6 h (8/8) | ✔ |
+| Erster Run-Sieg | 3,0 h–5,0 h | 2,6 h | 0,87 h – 3,4 h (8/8) | ✗ |
+| Alle Chassis | 15,0 h–25,0 h | 17,8 h | 12,4 h – 26,7 h (8/8) | ✔ |
+| Sieg auf Schrottstufe 5 | – | 10,7 h | 8,1 h – 12,7 h (8/8) | – |
+| Sieg auf Schrottstufe 10 | – | 27,4 h | 14,8 h – 41,5 h (8/8) | – |
+| Alles inkl. Schrottstufe 15 | 30,0 h–50,0 h | 47,9 h | 25,8 h – 62,8 h (8/8) | ✔ |
 
 - Erster Run: endet in 8/8 Karrieren in Akt 1–2 (Akte: 1, 1, 1, 1, 1, 1, 1, 1).
-- Runs bis Schrottstufe 15: Median 242.5, Siege 16, Etappen 2005.5; am Ende Ø Slot-Stufe 10,0, 9/9 Chassis, 367316 ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).
+- Runs bis Schrottstufe 15: Median 237.5, Siege 16, Etappen 2332; am Ende Ø Slot-Stufe 10,0, 9/9 Chassis, 774546 ⚙ übrig (Senken: Lackierungen ≈ 103.000 ⚙, weitere Teile und deren Stufen – kauft die simulierte Person nicht).
 
 **Schlechter Run mit voller Meta** (alle Slots Stufe 10, ganzer Forschungsbaum, Modell ohne Einarbeitung):
 
 | Items | Sieg | Ende Akt 1 | Akt 2 | Akt 3 |
 |---|---|---|---|---|
-| keine (immer Schrauben, keine Shops) | 1 % | 23 % | 36 % | 40 % |
-| 6 zufällige Gewöhnliche, kein Plan | 6 % | 8 % | 49 % | 38 % |
+| keine (immer Schrauben, keine Shops) | 0 % | 100 % | 0 % | 0 % |
+| 6 zufällige Gewöhnliche, kein Plan | 0 % | 74 % | 23 % | 4 % |
 
 Regel „ein schlechter Run muss auch mit voller Meta scheitern können“ (Sieg < 30 %): ✔ erfüllt.
 
@@ -228,6 +228,7 @@ Unverändert geprüft (Phase 6): Kerne je Sieg (1) – 2 Kerne je Sieg machten K
 | Schrottstufe 2 `targetMul` / 7 `bossTargetMul` | 1,08 / 1,15 | 1,12 / 1,22 | Langzeitkurve: Schrottstufe 15 wieder 30–50 h |
 | Akt-3-Boss-Ziel (`biomes.js`) | 740 m | 830 m | erster Sieg ≈ 3 h statt ≈ 2 h (Boss-Neuversuche werden bis −15 % leichter) |
 | Zielkorridore (`PROGRESSION.targets`) | erster Run 10–15 min, Akt-1-Boss 1–2 h, Sieg 6–10 h, alle Chassis 20–30 h | 8–15 min, 0,5–1 h, 3–5 h, 15–25 h | Ziele aus OVERHAUL §5/§6 (Paket A: erster Boss ≤ 45 min; Gesamtbild: Sieg 3–5 h); Schrottstufe 15 bleibt 30–50 h |
+
 
 <!-- paket-a -->
 ## Paket A – geänderte Zahlen (`data/balance.js`, Stand 20.10.2026)
