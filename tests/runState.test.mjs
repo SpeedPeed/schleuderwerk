@@ -80,10 +80,11 @@ test('Run: Sieg über drei Akte mit Aktwechsel, Meilensteinen und Auszahlung', (
   const end = R.endRun(save, run);
   assert.equal(save.run, null);
   assert.ok(end.won);
-  assert.equal(save.meta.scrap - before.scrap, end.payout.scrap, 'Run-Ende zahlt nur den Rest, Summe = Auszahlung');
+  // Paket E: dazu kommen Werkstatt-Stufen, Aufträge und Album (end.meta.total)
+  assert.equal(save.meta.scrap - before.scrap, end.payout.scrap + (end.meta.total.scrap || 0), 'Run-Ende zahlt nur den Rest, Summe = Auszahlung + Meta');
   assert.equal(end.payout.scrap, Math.round(run.earned.scrap) + Math.floor(run.bolts * REWARDS.boltsToScrap));
-  assert.equal(save.meta.blueprints - before.blueprints, run.earned.blueprints);
-  assert.equal(save.meta.cores - before.cores, run.earned.cores);
+  assert.equal(save.meta.blueprints - before.blueprints, run.earned.blueprints + (end.meta.total.blueprints || 0));
+  assert.equal(save.meta.cores - before.cores, run.earned.cores + (end.meta.total.cores || 0));
   assert.equal(save.stats.totalScrap, end.payout.scrap);
   for (const m of ['firstBossAct1', 'firstAct2', 'firstBossAct2', 'firstAct3', 'firstBossAct3', 'firstRunEnd', 'firstWin']) assert.ok(m in save.meta.milestones, m);
   assert.equal(save.stats.runs, 1);

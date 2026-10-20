@@ -29,7 +29,7 @@ export const CHASSIS = [
     desc: 'Leicht und wendig (Luftsteuerung +25 %), aber nur 60 Haltbarkeit. Beim Schrotthändler alles 20 % billiger.',
     flavor: 'Der Pfandchip steckt noch im Schloss. Für Notfälle.',
     model: 'einkaufswagen',
-    unlock: { research: 'r_chassis_einkaufswagen', cores: 2 },
+    unlock: { research: 'r_chassis_einkaufswagen', cores: 1 },
     stats: {
       mass: { xmul: 0.75 },
       durabilityMax: { xmul: 0.6 },
@@ -80,7 +80,7 @@ export const CHASSIS = [
     desc: 'Ein Item-Slot weniger, dafür wirken alle Set-Boni doppelt. Schwer, aber standfest bei der Landung.',
     flavor: 'Der Stöpsel hängt noch an der Kette. Sicher ist sicher.',
     model: 'badewanne',
-    unlock: { research: 'r_chassis_badewanne', cores: 3 },
+    unlock: { research: 'r_chassis_badewanne', cores: 4 },
     stats: {
       mass: { xmul: 1.2 },
       drag: { mul: 0.1 },
@@ -105,7 +105,7 @@ export const CHASSIS = [
     desc: 'Startet träge (Antrieb −25 %), aber jede Bodenberührung bringt +3 % Antrieb – bis +60 % je Etappe.',
     flavor: 'Springt beim dritten Schlüsseldreh an. Meistens.',
     model: 'rasenmaeher',
-    unlock: { research: 'r_chassis_rasenmaeher', cores: 3 },
+    unlock: { research: 'r_chassis_rasenmaeher', cores: 4 },
     stats: {
       driveAccel: { mul: -0.25 },
       mass: { xmul: 1.1 },
@@ -136,7 +136,7 @@ export const CHASSIS = [
     desc: 'Sammelt Schrott beim Fahren: Jedes Stück gibt Masse und Boost-Schub, je 3 Stück heilen 3 Haltbarkeit. Rammt gern.',
     flavor: 'Dienstags wird sie abgeholt. Heute nicht.',
     model: 'muelltonne',
-    unlock: { research: 'r_chassis_muelltonne', cores: 4 },
+    unlock: { research: 'r_chassis_muelltonne', cores: 5 },
     stats: {
       mass: { xmul: 1.1 },
       armor: { add: 0.05 },
@@ -171,7 +171,7 @@ export const CHASSIS = [
     desc: 'Kann nicht überhitzen, und Eis-Items wirken 50 % stärker. Dafür schwer wie ein Kühlschrank. Logisch.',
     flavor: 'Das Licht geht wirklich aus, wenn die Tür zu ist.',
     model: 'kuehlschrank',
-    unlock: { research: 'r_chassis_kuehlschrank', cores: 4 },
+    unlock: { research: 'r_chassis_kuehlschrank', cores: 5 },
     stats: {
       mass: { xmul: 1.35 },
       durabilityMax: { add: 20 },
@@ -200,7 +200,7 @@ export const CHASSIS = [
     desc: 'Luftsteuerung ×2 und schnittig. Am Boden kaum Haftung. Perfekter Abschuss zündet 0,8 s Gratis-Boost.',
     flavor: 'Opas Rodel plus zwei Silvesterraketen. Was soll schon passieren?',
     model: 'raketenschlitten',
-    unlock: { research: 'r_chassis_raketenschlitten', cores: 5 },
+    unlock: { research: 'r_chassis_raketenschlitten', cores: 6 },
     stats: {
       airControl: { xmul: 2 },
       mass: { xmul: 0.9 },
@@ -226,7 +226,7 @@ export const CHASSIS = [
     desc: 'Hitze ist Ressource: kein Überhitzungs-Stillstand, und der Schleudergang macht aus Hitze Schub. Bleischwer.',
     flavor: 'Kochwäsche, 95 Grad, Schleudern auf Stufe elf.',
     model: 'waschmaschine',
-    unlock: { research: 'r_chassis_waschmaschine', cores: 6 },
+    unlock: { research: 'r_chassis_waschmaschine', cores: 7 },
     stats: {
       mass: { xmul: 1.3 },
       coolRate: { mul: -0.25 },

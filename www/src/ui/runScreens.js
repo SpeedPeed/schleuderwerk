@@ -46,6 +46,20 @@ function weatherText(w) {
 // Kompakt: Art, Ziel, Medaillen, Gefahren, Wetter, Neuversuch, Haltbarkeit; Boss mit Tipps und Belohnung.
 // Paket B: als Karteikarte mit Kreppband (style.css → .stage-banner).
 // d: { spec, node, attempts, durability, durabilityMax, ascension, towPct, firstBoss, twin, back }
+// Paket E: Werkstatt-Stufe, erledigte Aufträge und Album am Run-Ende (Slay-the-Spire-Prinzip: der Balken füllt sich)
+const rwHtml = (rw) => (rw ? [rw.scrap ? cur('schrott', fmt(rw.scrap)) : '', rw.blueprints ? cur('blaupause', fmt(rw.blueprints)) : '', rw.cores ? cur('kern', fmt(rw.cores)) : '', rw.paint ? `${icon('lack')} Lack` : ''].filter(Boolean).join(' ') : '');
+function metaHtml(m) {
+  if (!m) return '';
+  const W = TXT.workshop;
+  const pct = m.xpNeed ? Math.round((m.xpNow / m.xpNeed) * 100) : 100;
+  const lv = m.levels.map((l) => `<div class="me-row up"><span>${icon('stern')} ${W.levelUp(l.level)}</span><b>${rwHtml(l.reward)}</b></div>`).join('');
+  const cs = m.contracts.map((c) => `<div class="me-row done"><span>${icon('haken')} ${W.contractDone}: ${esc(c.text)}</span><b>${rwHtml(c.reward)}</b></div>`).join('');
+  const al = m.album.map((a) => `<div class="me-row done"><span>${icon('buch')} ${W.albumDone}: ${esc(a.text)}</span><b>${rwHtml(a.reward)}</b></div>`).join('');
+  return `<h4>${icon('schluessel')} ${W.level} ${m.levelTo} <small>${W.runXp(m.xp)}</small></h4>
+    <div class="sheet-paper me-box"><div class="sb-track"><div class="sb-fill" style="width:${pct}%"></div></div>
+      <div class="me-xp">${fmt(m.xpNow)} / ${fmt(m.xpNeed)} XP</div>${lv}${cs}${al}</div>`;
+}
+
 export function introBannerHtml(d) {
   const s = d.spec;
   const b = biomeById(s.biome);
@@ -360,6 +374,7 @@ export class RunScreens {
       <h4>Belohnung für die Garage <small>(schon unterwegs gutgeschrieben – hier die Summe)</small></h4>
       <div class="sheet-paper"><div class="res-rows">${rows}</div>
       <div class="res-total">${icon('schrott')} <span data-count="${p.scrap}">+0</span>${p.blueprints ? ` · ${cur('blaupause', fmt(p.blueprints))}` : ''}${p.cores ? ` · ${cur('kern', fmt(p.cores))}` : ''}</div></div>
+      ${metaHtml(res.meta)}
       <div class="btn-row"><button class="btn btn-primary" data-a="garage">${icon('garage')} ${E.garage}</button></div>`);
     this.bind('[data-a=garage]', onGarage);
     this.countUp();

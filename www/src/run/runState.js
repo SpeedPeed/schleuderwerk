@@ -42,6 +42,7 @@ import { generateActMap, mapNode, isStageType, BOSS_FLOOR } from '../map/mapGen.
 import { generateStageSpec } from '../physics/trackGen.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { markMilestone, ascensionMods, ascensionState, ascensionCoreReward, recordRunEnd } from '../garage/progression.js';
+import { grantMeta } from '../garage/workshop.js';
 import { computeStats } from '../items/statMods.js';
 import { applyInventory, addEntry, makeEntry, isValidEntry, upgradeRandom, entryParts, MAX_TIER } from '../items/inventory.js';
 import { TAG_IDS } from '../data/tags.js';
@@ -409,7 +410,10 @@ export function applyStageResult(run, result, save = null) {
   s.bestDist = Math.max(s.bestDist, result.dist || 0);
   s.damage += result.damageTaken || 0;
   s.crates += result.crates || 0;
-  if (result.stunts) { s.flips += result.stunts.flips || 0; s.loops += result.stunts.loops || 0; }
+  if (result.stunts) { s.flips += result.stunts.flips || 0; s.loops += result.stunts.loops || 0; s.perfect = (s.perfect || 0) + (result.stunts.perfectLandings || 0); }
+  // Paket E: Zähler für Aufträge (garage/workshop.js → runSummary)
+  s.maxChain = Math.max(s.maxChain || 0, result.maxChain || 0);
+  s.stageEvents = (s.stageEvents || 0) + (result.events || 0);
   const roll = makeRng(hashSeed(`${run.seed}:blaupause:${s.stages}`)).next();
   const rw = stageRewards(run.act, kind, result, { roll, firstEncounter: !(cur.attempts > 0) });
   out.grade = rw.grade;
@@ -464,6 +468,15 @@ export function applyStageResult(run, result, save = null) {
   }
   s.cleared++;
   s.medals[out.medal] = (s.medals[out.medal] || 0) + 1;
+  if (kind === 'elite') s.elites = (s.elites || 0) + 1;
+  if (out.medal === 'gold' && result.goal && result.goal.type) (s.goalGold ||= {})[result.goal.type] = 1;
+  {
+    const v = inventoryView(run);
+    s.maxSet = Math.max(s.maxSet || 0, ...v.sets.map((x) => x.level), 0);
+    s.recipes = Math.max(s.recipes || 0, (v.recipes || []).length);
+    // Tag-Zählung am Akt-Ende (Boss besiegt) – für Aufträge wie „Schaffe Akt 1 mit 3 Gummi-Items“
+    if (kind === 'boss') (s.tagAtAct ||= {})[run.act] = { ...v.counts };
+  }
   out.events = emitRunEvent(run, save, 'stageClear', { medal: out.medal, kind });
   const act = run.act;
   // Schrottstufe 15 „Doppelter Ärger“: der erste Boss in Akt 3 öffnet sofort die zweite Boss-Strecke (andere Variante)
@@ -810,8 +823,10 @@ export function endRun(save, run = save.run) {
   if (run.over.won) markMilestone(save, 'firstWin');
   const time = Math.max(0, save.meta.totalPlaytime - (run.startPlaytime || 0));
   const asc = recordRunEnd(save, run, { won: run.over.won, act: run.act, reason: run.over.reason, stages: run.stats.stages, cleared: run.stats.cleared, scrap: payout.scrap, time });
+  // Paket E: Werkstatt-XP, Aufträge, Sammelalbum (garage/workshop.js)
+  const meta = grantMeta(save, run, { won: run.over.won });
   save.run = null;
-  return { won: run.over.won, reason: run.over.reason, act: run.act, ascension: run.ascension || 0, unlockedAscension: asc.unlocked, payout, stats: { ...run.stats, medals: { ...run.stats.medals } }, bolts: run.bolts, time };
+  return { won: run.over.won, reason: run.over.reason, act: run.act, ascension: run.ascension || 0, unlockedAscension: asc.unlocked, payout, stats: { ...run.stats, medals: { ...run.stats.medals } }, bolts: run.bolts, time, meta };
 }
 
 // ---------- Dev-Menü ----------

@@ -5,12 +5,13 @@ import { SAVE_VERSION, GARAGE, AUDIO, RENDER } from '../data/balance.js';
 import { sanitizeGarage, partBasePrice, upgradeCostTotal } from '../garage/garage.js';
 import { SLOTS, partById } from '../data/index.js';
 import { isValidRun, normalizeRun } from '../run/runState.js';
+import { workshopState } from '../garage/workshop.js';
 
 const KEY = 'schleuderwerk.save';
 export const BACKUP_KEY = 'schleuderwerk.save.bak';
 
 export function defaultSave() {
-  return {
+  const s = {
     version: SAVE_VERSION,
     meta: { scrap: 0, blueprints: 0, cores: 0, totalPlaytime: 0, milestones: {} },
     garage: {
@@ -38,9 +39,13 @@ export function defaultSave() {
     // Paket D6: Figuren-Ketten der Textereignisse (shops/textEvent.js) – seen = schon erlebte Kapitel { evId: 1 }.
     // Ältere Stände bekommen das Feld über fill() (ohne Versionswechsel).
     story: { seen: {} },
+    // Paket E: Werkstatt-Stufe, Auftragsbrett, Sammelalbum (garage/workshop.js → workshopState repariert/ergänzt)
+    workshop: { level: 1, xp: 0, contracts: { active: [], done: 0, rolls: 0 }, album: {} },
     createdAt: Date.now(),
     savedAt: Date.now(),
   };
+  workshopState(s);   // Auftragsbrett gleich füllen
+  return s;
 }
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -209,6 +214,7 @@ export function migrate(data) {
   data.tutorial.runs = n0(data.tutorial.runs);
   for (const [k, t] of Object.entries(data.tutorial.seen)) if (t !== 1) delete data.tutorial.seen[k];
   for (const [k, t] of Object.entries(data.story.seen)) if (t !== 1 || !/^ev_[a-z0-9_]+$/.test(k)) delete data.story.seen[k];
+  workshopState(data);   // Paket E
   // Einstellungen: Lautstärken 0…1, Grafikqualität nur bekannte Stufen
   for (const k of ['sfxVol', 'musicVol']) data.settings[k] = Math.max(0, Math.min(1, data.settings[k]));
   if (!Object.prototype.hasOwnProperty.call(RENDER.pixelRatio, data.settings.quality)) data.settings.quality = RENDER.defaultQuality;

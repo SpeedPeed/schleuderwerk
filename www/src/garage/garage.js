@@ -191,15 +191,19 @@ const ascNeed = (p) => {
   return m ? Number(m[1]) : 0;
 };
 
+// Paket E: Bedingung „workshop:N“ → N (Werkstatt-Stufe; der Lack wird beim Aufstieg gutgeschrieben)
+const workshopNeed = (p) => { const m = /^workshop:(\d+)$/.exec(p.unlock || ''); return m ? Number(m[1]) : 0; };
+
 export function paintState(save, p) {
   const cost = p.cost || null;
   const need = ascNeed(p);
+  const workshop = workshopNeed(p);
   const earned = !cost && need > 0 && ((save.ascension && save.ascension.best) || 0) >= need;
   const owned = save.cosmetics.owned.includes(p.id) || earned;
   const cur = cost ? (cost.scrap !== undefined ? 'scrap' : 'cores') : null;
   const price = cost ? cost[cur] : 0;
   return {
-    owned, equipped: save.cosmetics.paint === p.id, currency: cur, price, ascension: need,
+    owned, equipped: save.cosmetics.paint === p.id, currency: cur, price, ascension: need, workshop,
     canBuy: !owned && !!cost && save.meta[cur] >= price,
   };
 }

@@ -348,7 +348,7 @@ test('Schrottstufen-Belohnung: +10 % Schrott je Stufe, erster Sieg auf 5/10/15 â
   assert.ok(row, 'Zeile Schrottstufe');
   assert.equal(row.scrap, Math.round(scrap * 0.5));
   assert.ok(res.payout.rows.some((r) => /Erster Sieg auf Schrottstufe 5/.test(r.label) && r.cores === ASCENSION_REWARDS.coresPerMilestone));
-  assert.equal(save.meta.cores, cores0 + coresRun + 1);
+  assert.equal(save.meta.cores, cores0 + coresRun + 1 + (res.meta.total.cores || 0));   // Paket E: dazu Kerne aus Werkstatt-Stufe/AuftrÃ¤gen
   assert.ok(save.meta.milestones.ascension5 !== undefined);
   assert.ok(paintState(save, PAINTS.find((p) => p.unlock === 'ascension:5')).owned);
   // zweiter Sieg auf Stufe 5: kein Kern mehr

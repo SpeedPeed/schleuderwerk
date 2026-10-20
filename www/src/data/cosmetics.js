@@ -4,7 +4,11 @@
 //   - 16 × Schrott (500–20000, aufsteigend sortiert)
 //   - 4 × Kerne (1–3)
 //   - 4 × Schrottstufen-Belohnung: cost null, unlock 'ascension:N' = Run-Sieg auf Schrottstufe ≥ N
+//   - Paket E: 6 × Werkstatt-Stufe: cost null, unlock 'workshop:N' (data/workshop.js → WORKSHOP_PAINTS, gutgeschrieben
+//     von garage/workshop.js beim Erreichen der Stufe)
 // Rein kosmetisch – keine Spielwerte.
+
+import { WORKSHOP_PAINTS } from './workshop.js';
 
 export const PAINTS = [
   // ── Schrott (⚙) ─────────────────────────────────────────────
@@ -184,4 +188,6 @@ export const PAINTS = [
     unlock: 'ascension:15',
     flavor: 'Stufe 15. Der ganze Schrottplatz verneigt sich.',
   },
+  // ── Paket E: Werkstatt-Stufe ─────────────────────────────────
+  ...WORKSHOP_PAINTS.map((p) => ({ id: p.id, name: p.name, colors: p.colors, cost: null, unlock: `workshop:${p.level}`, flavor: p.flavor })),
 ];

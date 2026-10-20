@@ -1205,6 +1205,7 @@ export class Stage {
       biome: this.biome.id,
       world: this.biome.id,
       mutator: this.spec.mutator || null,
+      events: (this.spec.events || []).filter((e) => this.vehicle.maxX >= e.x).length,   // Paket E: erlebte Strecken-Ereignisse
       goal: { type: this.goal.type, value: goalVal, medals: { ...this.goalMedals } },
     };
     // Testfahrt (Dev-Menü): Schrott wie in Phase 2

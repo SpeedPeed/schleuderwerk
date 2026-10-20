@@ -230,6 +230,19 @@ export const TXT = {
     shop: 'Erst entscheiden, dann weiter.',
   },
 
+  // Paket E: Werkstatt-Stufe, Aufträge, Sammelalbum
+  workshop: {
+    level: 'Werkstatt-Stufe',
+    next: 'Nächste Stufe:',
+    contracts: 'AUFTRAGSBRETT',
+    noContracts: 'Opa hat gerade keine Aufträge. Gönn dir eine Pause.',
+    album: 'Sammelalbum',
+    runXp: (xp) => `+${xp} Werkstatt-XP`,
+    levelUp: (n) => `WERKSTATT-STUFE ${n}!`,
+    contractDone: 'Auftrag erledigt',
+    albumDone: 'Sammelalbum',
+  },
+
   // Paket C: Synergien – Tag-Stärke, Rezepte, Bauplan-Start, Ketten
   synergy: {
     tagLevel: (tag, n, pct) => `${tag} Stufe ${n} · +${pct} %`,

@@ -1857,6 +1857,7 @@ window.__game = {
   mapScreen,
   runScreens,
   startRun,
+  finishRun,
   openMap,
   openGarage,
   startTestDrive,

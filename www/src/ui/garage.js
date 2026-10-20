@@ -14,8 +14,21 @@ import { ascensionState, ascensionSummary, fmtPlaytime, MAX_ASCENSION } from '..
 import { ITEMS } from '../data/items.js';
 import { TAG_IDS, TAGS, SET_LEVELS, setId, tagById } from '../data/tags.js';
 import { RESEARCH } from '../data/research.js';
+import { workshopState, levelCost, nextReward, contractById, albumProgress } from '../garage/workshop.js';
+import { ALBUM, WORKSHOP } from '../data/workshop.js';
 
+// Paket E: Belohnung als kleine Währungs-Plaketten ({ scrap, blueprints, cores, paint })
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+export function rewardHtml(rw) {
+  if (!rw) return '';
+  const out = [];
+  if (rw.scrap) out.push(curHtml('schrott', fmt(rw.scrap)));
+  if (rw.blueprints) out.push(curHtml('blaupause', fmt(rw.blueprints)));
+  if (rw.cores) out.push(curHtml('kern', fmt(rw.cores)));
+  if (rw.paint) out.push(`${icon('lack')} Lack`);
+  return out.join(' ');
+}
+
 
 // Werte-Vergleich als HTML-Zeilen (nur Stats, die sich sichtbar ändern)
 function diffRows(a, b, max = 8) {
@@ -85,6 +98,7 @@ export class GarageScreen {
         <div class="g-scroll" data-id="scroll">
           <div class="g-run hidden" data-id="runinfo"></div>
           <div data-id="main">
+            <div class="g-workshop" data-id="workshop"></div>
             <div class="g-stats" data-id="stats"></div>
             <h4 class="g-h">${TXT.garage.parts}</h4>
             <div class="g-slots" data-id="slots"></div>
@@ -269,6 +283,7 @@ export class GarageScreen {
     this.loadout = cur;
     const view = this.viewingLocked ? buildLoadout(save, { chassis: this.viewId }) : null;
     this.renderStats(cur.stats, view ? view.stats : (this.previewStats || null));
+    this.renderWorkshop();
 
     // Teile-Slots
     for (const slot of SLOTS) {
@@ -329,6 +344,24 @@ export class GarageScreen {
   }
 
   // ---------- Statistik & Kodex (Run-Historie, Bestwerte, entdeckte Inhalte) ----------
+  // Paket E: Werkstatt-Stufe mit nächster Belohnung und Auftragsbrett (Klemmbrett mit 3 Aufträgen)
+  renderWorkshop() {
+    const w = workshopState(this.save);
+    const need = levelCost(w.level);
+    const max = w.level >= WORKSHOP.maxLevel;
+    const pct = max ? 100 : Math.round((w.xp / need) * 100);
+    const rw = nextReward(this.save);
+    const contracts = w.contracts.active.map(contractById).filter(Boolean);
+    this.q.workshop.innerHTML = `
+      <div class="gw-level"><span class="gw-badge">${icon('schluessel')}<b>${w.level}</b></span>
+        <div class="gw-bar"><div class="gw-label">${TXT.workshop.level} ${w.level}${max ? '' : ` · ${fmt(w.xp)}/${fmt(need)} XP`}</div>
+          <div class="sb-track"><div class="sb-fill" style="width:${pct}%"></div></div>
+          ${rw ? `<div class="gw-next">${TXT.workshop.next} ${rewardHtml(rw)}</div>` : ''}</div></div>
+      <div class="gw-board"><h4>${icon('bleistift')} ${TXT.workshop.contracts}</h4>
+        ${contracts.map((c) => `<div class="gw-c"><span>${esc(c.text)}</span><b>${rewardHtml(c.reward)}</b></div>`).join('') || `<p class="small">${TXT.workshop.noContracts}</p>`}
+      </div>`;
+  }
+
   renderStatsTab() {
     const save = this.save;
     const st = save.stats;
@@ -354,6 +387,14 @@ export class GarageScreen {
       ['Etappen geschafft', fmt(st.stagesCleared || 0)], ['Bosse besiegt', fmt(st.bossesBeaten || 0)],
       ['Saltos', fmt(st.totalFlips || 0)], ['Schrott verdient', curHtml('schrott', fmt(st.totalScrap))],
     ];
+    // Paket E: Sammelalbum – Schwellen mit Belohnung
+    const ap = albumProgress(save);
+    const wk = workshopState(save);
+    html += `<h4 class="g-h">${TXT.workshop.album}</h4><div class="gs-album">${ALBUM.map((a) => {
+      const n = a.n === 'all' ? ap.total[a.type] : a.n;
+      const got = !!wk.album[a.id];
+      return `<div class="gs-al ${got ? 'got' : ''}"><span>${got ? icon('haken') : icon('schloss')} ${esc(a.text)}</span><small>${fmt(Math.min(ap[a.type], n))}/${fmt(n)}</small><b>${rewardHtml(a.reward)}</b></div>`;
+    }).join('')}</div>`;
     html += `<h4 class="g-h">Bestwerte</h4><div class="re-stats gs-best">${rows.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('')}</div>`;
     const recs = Object.entries(asc.records).map(([lv, r]) => [Number(lv), r]).sort((x, y) => x[0] - y[0]);
     if (recs.length) {
@@ -386,7 +427,7 @@ export class GarageScreen {
       if (st.equipped) btn = `<span class="pc-tag">${icon('haken')} Angelegt</span>`;
       else if (st.owned) btn = '<button class="btn btn-primary small-btn" data-act="equip">Anlegen</button>';
       else if (st.currency) btn = `<button class="btn btn-buy small-btn ${st.canBuy ? '' : 'cant'}" data-act="buy">Kaufen ${curHtml(st.currency === 'scrap' ? 'schrott' : 'kern', short(st.price))}</button>`;
-      else btn = `<span class="pc-lock">${icon('schloss')} Run-Sieg auf Schrottstufe ${st.ascension}</span>`;
+      else btn = `<span class="pc-lock">${icon('schloss')} ${st.workshop ? `Werkstatt-Stufe ${st.workshop}` : `Run-Sieg auf Schrottstufe ${st.ascension}`}</span>`;
       html += card(p.id, p.name, [p.colors.body, p.colors.accent], `<div class="pc-desc">${esc(p.flavor || '')}</div><div class="pc-btns">${btn}</div>`, st.owned ? '' : 'locked-soft');
     }
     const q = this.q;
