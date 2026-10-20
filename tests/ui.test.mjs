@@ -8,12 +8,13 @@ import { defaultSave, migrate, exportSave, importSave } from '../www/src/save/sa
 import { GAME_VERSION, RENDER, AUDIO, TUTORIAL } from '../www/src/data/balance.js';
 
 // Tutorial mit Schein-Anzeige und sofort laufenden Zeitgebern (Zeit wird von Hand weitergedreht)
-function makeTutorial(save = defaultSave()) {
+function makeTutorial(save = defaultSave(), allow = null) {
   const shown = [];
   let hidden = 0, persisted = 0;
   const timers = [];
   const t = new Tutorial({
     getSave: () => save,
+    allow,
     persist: () => { persisted++; },
     view: { show: (step, id, n, total) => shown.push({ id, n, total, mode: step.mode }), hide: () => { hidden++; } },
     schedule: (fn, ms) => { const h = { fn, ms, done: false }; timers.push(h); return h; },
@@ -31,8 +32,9 @@ function makeTutorial(save = defaultSave()) {
   return { t, save, shown, run, get hidden() { return hidden; }, get persisted() { return persisted; } };
 }
 
-test('Tutorial: 10 Hinweise, jeder mit Text (2–3 Sätze), Symbol, Art und Ziel', () => {
-  assert.deepEqual(TUTORIAL_ORDER, ['garage', 'map', 'goal', 'launch', 'fly', 'resources', 'items', 'shop', 'workbench', 'lab']);
+test('Tutorial: höchstens 6 Hinweise (Paket A), jeder mit Text (1–3 Sätze), Symbol, Art und Ziel', () => {
+  assert.deepEqual(TUTORIAL_ORDER, ['garage', 'map', 'launch', 'fly', 'items', 'lab']);
+  assert.ok(TUTORIAL_ORDER.length <= 6);
   for (const [id, s] of Object.entries(TUTORIAL_STEPS)) {
     assert.ok(s.icon && s.title && s.text, id);
     assert.ok(['card', 'toast'].includes(s.mode), id);
@@ -40,8 +42,35 @@ test('Tutorial: 10 Hinweise, jeder mit Text (2–3 Sätze), Symbol, Art und Ziel
     assert.ok(sentences >= 1 && sentences <= 3, `${id}: ${sentences} Sätze`);
     assert.ok(s.target, `${id} hebt ein Element hervor`);
   }
-  // In der Etappe blockieren die Hinweise nichts (Toast), sonst Karte
-  assert.deepEqual(TUTORIAL_ORDER.filter((id) => TUTORIAL_STEPS[id].mode === 'toast'), ['launch', 'fly', 'resources']);
+  // In der Etappe blockieren die Hinweise nichts (Toast) und sitzen als Sprechblase in der Bildmitte (nie über dem HUD)
+  assert.deepEqual(TUTORIAL_ORDER.filter((id) => TUTORIAL_STEPS[id].mode === 'toast'), ['launch', 'fly']);
+  for (const id of ['launch', 'fly']) assert.equal(TUTORIAL_STEPS[id].place, 'mid', id);
+});
+
+test('Tutorial: Etappen-Hinweise nur, wenn erlaubt (beim Zielen) – sonst warten sie; holdToasts schließt sie beim Abschuss', () => {
+  let aiming = false;
+  const k = makeTutorial(defaultSave(), (step) => step.mode !== 'toast' || aiming);
+  k.t.trigger('launch');
+  k.t.trigger('fly');
+  k.run(TUTORIAL.showDelay * 1000);
+  assert.equal(k.shown.length, 0, 'im Flug kein Hinweis');
+  aiming = true;
+  k.t.poke();
+  assert.deepEqual(k.shown.map((x) => x.id), ['launch']);
+  aiming = false;           // Abschuss
+  k.t.holdToasts();
+  assert.equal(k.t.isOpen, false);
+  k.run(TUTORIAL.showDelay * 1000);
+  assert.deepEqual(k.shown.map((x) => x.id), ['launch'], '„fly“ wartet auf das nächste Zielen');
+  k.t.trigger('items');     // Karten-Hinweise sind immer erlaubt
+  k.run(TUTORIAL.showDelay * 1000);
+  assert.deepEqual(k.shown.map((x) => x.id), ['launch', 'items']);
+  k.t.close();
+  k.run(TUTORIAL.showDelay * 1000);   // im Flug: wartet weiter
+  assert.deepEqual(k.shown.map((x) => x.id), ['launch', 'items']);
+  aiming = true;
+  k.t.poke();
+  assert.deepEqual(k.shown.map((x) => x.id), ['launch', 'items', 'fly']);
 });
 
 test('Tutorial: Auslösen zeigt den Hinweis nach der Verzögerung und merkt ihn sich', () => {
@@ -55,7 +84,7 @@ test('Tutorial: Auslösen zeigt den Hinweis nach der Verzögerung und merkt ihn 
   assert.equal(k.save.tutorial.seen.garage, 1, 'beim Zeigen als gesehen gespeichert');
   assert.ok(k.persisted >= 1);
   assert.equal(k.shown[0].n, 1);
-  assert.equal(k.shown[0].total, 10);
+  assert.equal(k.shown[0].total, TUTORIAL_ORDER.length);
 });
 
 test('Tutorial: jeder Hinweis erscheint nur einmal (auch nach Neustart mit gespeichertem Stand)', () => {
@@ -91,15 +120,15 @@ test('Tutorial: Warteschlange – mehrere Hinweise nacheinander, Toasts schließ
 
 test('Tutorial: dropToasts verwirft Etappen-Hinweise, Karten-Hinweise bleiben', () => {
   const k = makeTutorial();
+  k.t.trigger('launch');
   k.t.trigger('fly');
-  k.t.trigger('resources');
   k.t.trigger('items');
-  k.run(TUTORIAL.showDelay * 1000);   // „fly“ sichtbar
+  k.run(TUTORIAL.showDelay * 1000);   // „launch“ sichtbar
   k.t.dropToasts();
   assert.equal(k.t.isOpen, false);
   k.run(TUTORIAL.showDelay * 1000);
-  assert.deepEqual(k.shown.map((s) => s.id), ['fly', 'items'], '„resources“ verworfen (noch nicht gesehen → kommt in der nächsten Etappe)');
-  assert.equal(tutorialWants(k.save, 'resources'), true);
+  assert.deepEqual(k.shown.map((s) => s.id), ['launch', 'items'], '„fly“ verworfen (noch nicht gesehen → kommt in der nächsten Etappe)');
+  assert.equal(tutorialWants(k.save, 'fly'), true);
 });
 
 test('Tutorial: „Alle Hinweise aus“ und Zurücksetzen (Einstellungen)', () => {
@@ -124,7 +153,7 @@ test('Tutorial: „Alle Hinweise aus“ und Zurücksetzen (Einstellungen)', () =
 
 test('Tutorial: Fortschritt zählt gesehene Hinweise; unbekannte Hinweise werden ignoriert', () => {
   const s = defaultSave();
-  assert.deepEqual(tutorialProgress(s), { seen: 0, total: 10, off: false, done: false });
+  assert.deepEqual(tutorialProgress(s), { seen: 0, total: TUTORIAL_ORDER.length, off: false, done: false });
   markSeen(s, 'garage');
   markSeen(s, 'map');
   assert.equal(tutorialProgress(s).seen, 2);
@@ -211,6 +240,9 @@ test('Zurück-Taste: Karte → Garage, Etappe → Pause ↔ weiter', () => {
   assert.equal(back({ state: 'map', run: 'intro' }), 'introBack');
   assert.equal(back({ state: 'stage' }), 'pause');
   assert.equal(back({ state: 'stage', paused: true }), 'resume');
+  // Paket A: Zielansicht mit Intro-Banner (Knoten noch nicht betreten) → zurück zur Karte, ohne Kosten
+  assert.equal(back({ state: 'stage', aimBack: true }), 'stageBack');
+  assert.equal(back({ state: 'stage', aimBack: true, paused: true }), 'resume');
   assert.equal(back({ state: 'results', testResults: true }), 'testResultsGarage');
 });
 
@@ -219,6 +251,7 @@ test('Zurück-Taste: Run-Bildschirme', () => {
   assert.equal(back({ state: 'map', run: 'act' }), 'runPrimary');
   assert.equal(back({ state: 'runEnd', run: 'end' }), 'runPrimary');
   assert.equal(back({ state: 'map', run: 'choice' }), 'choiceHint', 'Item-Auswahl nur über die Knöpfe');
+  assert.equal(back({ state: 'results', run: 'result', runHasPick: true }), 'choiceHint', 'Ergebnis mit Beute: erst wählen');
   assert.equal(back({ state: 'map', run: 'replace', runHasBack: true }), 'runBack');
   assert.equal(back({ state: 'map', run: 'pick', runHasBack: true }), 'runBack');
   assert.equal(back({ state: 'map', run: 'pick', runHasBack: false }), 'choiceHint');

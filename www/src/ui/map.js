@@ -118,11 +118,17 @@ export class MapScreen {
     });
   }
 
+  // Paket A: Knoten hervorheben, zu dem die Karte gleich automatisch weiterfährt (nur ein Nachfolger)
+  highlight(id) {
+    const btn = this.q.canvas.querySelector(`.mnode[data-node="${id}"]`);
+    if (btn) btn.classList.add('auto', 'here');
+  }
+
   // Aktive Erschwerungen der Schrottstufe (alle Stufen 1..N)
   showAscension() {
     const lv = (this.run && this.run.ascension) || 0;
     if (!lv) return;
-    this.q.info.innerHTML = `<b>☠ Schrottstufe ${lv}</b>${ascensionList(lv).map((a) => `<p><b>${a.level}</b> · ${esc(a.desc)}</p>`).join('')}<small>+${lv * 10} % Schrott am Run-Ende</small>`;
+    this.q.info.innerHTML = `<b>☠ Schrottstufe ${lv}</b>${ascensionList(lv).map((a) => `<p><b>${a.level}</b> · ${esc(a.desc)}</p>`).join('')}<small>+${lv * 10} % Schrott</small>`;
     show(this.q.info, true);
     clearTimeout(this.infoTimer);
     this.infoTimer = setTimeout(() => show(this.q.info, false), 8000);

@@ -79,6 +79,9 @@ async function main() {
       }, 100);
     });
 
+    // Paket A: Karte fährt bei nur einem Weg selbst weiter – hier aus, damit die Karten-Prüfungen gezielt bleiben
+    await g(() => { window.__game.balance.MAP.autoAdvanceDelay = 3600; });
+
     // ---------- Garage: Tutorial weg, Chassis per Q/E, Enter = RUN STARTEN ----------
     check(await until(() => window.__game.tutorial.current === 'garage'), 'Tutorial-Hinweis „Garage“ erscheint');
     const tut = await g(() => document.querySelector('#tutorial .tut-text').textContent);
@@ -128,11 +131,17 @@ async function main() {
     for (let i = 0; i < reach.length + 1 && f && f.node !== stageNode.id; i++) { await press('ArrowRight', 150); f = await active(); }
     check(!!f && f.node === stageNode.id, `→ wählt den Etappen-Knoten ${stageNode.id} (${stageNode.type}, ${reach.length} erreichbar)`);
     await press('Enter', 600);
-    check((await runKind()) === 'intro', 'Enter betritt den Knoten → Etappen-Intro');
-    if (await until(() => window.__game.tutorial.current === 'goal', null, 4000)) await press('Enter', 400);
-    await shot('04-intro');
-    await press('Enter', 300);
-    check(await until(() => window.__game.state === 'stage' && window.__game.stage), 'Enter = LOS → Etappe');
+    // Paket A: kein Intro-Bildschirm – Enter führt direkt in die Zielansicht, das Intro ist ein Banner darüber
+    check(await until(() => window.__game.state === 'stage' && window.__game.stage && window.__game.stage.phase === 'aim'), 'Enter → Zielansicht (ohne Intro-Bildschirm)');
+    check(await g(() => !document.querySelector('#hud .stage-banner').classList.contains('hidden')), 'Intro als Banner über der Zielansicht');
+    await shot('04-zielansicht-banner');
+    // Esc schließt zuerst die Sprechblase (oberste Ebene), dann geht es zurück zur Karte
+    for (let i = 0; i < 3 && (await g(() => window.__game.state)) === 'stage'; i++) await press('Escape', 500);
+    check(await until(() => window.__game.state === 'map' && !window.__game.run.current, null, 4000), 'Esc in der Zielansicht → Karte (Knoten nicht betreten)');
+    f = await active();
+    if (!f || f.node !== stageNode.id) { for (let i = 0; i < reach.length + 1 && (!f || f.node !== stageNode.id); i++) { await press('ArrowRight', 150); f = await active(); } }
+    await press('Enter', 600);
+    check(await until(() => window.__game.state === 'stage' && window.__game.stage), 'Enter → wieder in der Zielansicht');
 
     // ---------- Etappe: nur Tastatur ----------
     let cleared = false;
@@ -193,8 +202,8 @@ async function main() {
         const u1 = await g(() => (window.__game.stage ? window.__game.stage.eventCounts.abilityUse || 0 : 0));
         log(`Fähigkeiten per 1/2: abilityUse ${u0} → ${u1}`);
         await kb.down('Space');
-        await sleep(300);
-        const boosting = await g(() => { const s = window.__game.stage; return !s || s.phase !== 'fly' || s.vehicle.boosting || s.vehicle.fuel <= 0; });
+        // (Software-Grafik: wenige Bilder/s – auf das nächste Bild warten statt fest 300 ms)
+        const boosting = await until(() => { const s = window.__game.stage; return !s || s.phase !== 'fly' || s.vehicle.boosting || s.vehicle.fuel <= 0; }, null, 3000);
         await kb.up('Space');
         check(boosting, 'Leertaste im Flug = Boost');
         // Pause, Tastenbelegung, weiter
@@ -227,19 +236,29 @@ async function main() {
       await hold(null);
       await kb.up('Space');
       check(await until(() => window.__game.runScreens.open && window.__game.runScreens.kind === 'result', null, 20000), 'Etappe vorbei → Ergebnis');
-      const r = await g(() => ({ title: document.querySelector('#runui h2').textContent, next: !!document.querySelector('#runui [data-a=next]') }));
+      const r = await g(() => ({ title: document.querySelector('#runui h2').textContent, pick: !!document.querySelector('#runui [data-pick]'), retry: !!document.querySelector('#runui [data-a=retry]') }));
       log(`Ergebnis: ${r.title}`);
       await sleep(900);
       await shot(`09-ergebnis-${attempt + 1}`);
-      cleared = r.next;
-      await press('Enter', 600);   // Weiter bzw. ↻ Neuversuch (Hauptaktion)
-      if (!cleared) check(await until(() => window.__game.state === 'stage'), 'nicht geschafft: Enter = Neuversuch');
+      cleared = r.pick;
+      if (!cleared) {
+        // Paket A: verfehlt → Notlandung (Enter) oder ↻ Nochmal (Tab bis zum Knopf, Enter) – hier Nochmal: neue Strecke
+        check(r.retry, 'verfehlt: Knopf „Nochmal“');
+        const seed0 = await g(() => window.__game.stage && window.__game.stage.spec.seed);
+        for (let i = 0; i < 12; i++) {
+          if (await g(() => document.activeElement && document.activeElement.dataset.a === 'retry')) break;
+          await press('Tab', 80);
+        }
+        await press('Enter', 600);
+        check(await until(() => window.__game.state === 'stage'), 'nicht geschafft: Nochmal → Etappe');
+        check((await g(() => window.__game.stage.spec.seed)) !== seed0, 'Nochmal: neue Strecke (anderer Seed)');
+      }
     }
     check(cleared, 'Etappe geschafft (Zielmarke per Tastatur erreicht)');
 
     // ---------- Item-Auswahl: 1 = nehmen ----------
     if (cleared) {
-      check(await until(() => window.__game.runScreens.open && window.__game.runScreens.kind === 'choice', null, 5000), 'Item-Auswahl erscheint');
+      check(await until(() => window.__game.runScreens.open && !!document.querySelector('#runui [data-pick]'), null, 5000), 'Item-Auswahl erscheint (auf dem Ergebnis-Bildschirm)');
       if (await until(() => window.__game.tutorial.current === 'items', null, 3000)) {
         const it = await g(() => document.querySelector('#tutorial .tut-text').textContent);
         check(/1\/2\/3/.test(it), 'Item-Hinweis nennt 1/2/3');
@@ -250,7 +269,7 @@ async function main() {
       await press('Digit1', 600);
       const inv1 = await g(() => window.__game.run.inventory.length);
       check(inv1 === inv0 + 1, `1 nimmt das erste Item (Rucksack ${inv0} → ${inv1})`);
-      for (let i = 0; i < 5 && (await runKind()) === 'choice'; i++) await press('KeyS', 600);   // weitere Kisten: S = überspringen
+      for (let i = 0; i < 5 && ['choice', 'result'].includes(await runKind()); i++) await press('KeyS', 600);   // weitere Kisten: S = überspringen
     }
     check(await until(() => window.__game.state === 'map' && !window.__game.runScreens.open, null, 8000), 'zurück auf der Karte');
     await sleep(300);

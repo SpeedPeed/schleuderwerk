@@ -11,6 +11,8 @@ import { CONTROLS } from '../data/balance.js';
 //    takeAbilityPress(i) = Anzahl neuer Drücke seit dem letzten Abruf (für Tipp-Fähigkeiten).
 //  - Tastatur: Leertaste = halten (Abschuss) bzw. Boost (Fähigkeit boostSlot), 1–4 = Fähigkeit 1–4 (CONTROLS.abilityKeys),
 //    ← / → = neigen, ↑ / ↓ = Winkel beim Zielen.
+//  - takeTap() = neue Berührungen der Spielfläche bzw. Leertasten-Drücke seit dem letzten Abruf (Paket A: Tippen beim
+//    Ausrollen = Sofort-Ende, stage/stage.js).
 // Tasten gehören einem Eingabefeld nur, wenn darin getippt wird: sichtbares Text-/Zahlenfeld. Kontrollkästchen und
 // Felder in geschlossenen Menüs (behalten nach dem Ausblenden u. U. den Fokus) sperren die Spielsteuerung nicht.
 const TEXT_TYPES = new Set(['text', 'search', 'number', 'email', 'password', 'tel', 'url', '']);
@@ -37,6 +39,7 @@ export class Input {
     this.aimDY = 0;
     this.primary = null;
     this.captureKeys = false;   // nur im Spiel Leertaste/Pfeile abfangen (sonst bleiben Knöpfe bedienbar)
+    this.taps = 0;              // Berührungen/Leertasten-Drücke seit dem letzten takeTap()
 
     surface.addEventListener('pointerdown', (e) => this.onDown(e));
     surface.addEventListener('pointermove', (e) => this.onMove(e));
@@ -58,6 +61,7 @@ export class Input {
     try { this.surface.setPointerCapture(e.pointerId); } catch (_) { /* egal */ }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.primary === null) this.primary = e.pointerId;
+    this.taps++;
   }
 
   onMove(e) {
@@ -84,7 +88,7 @@ export class Input {
       if (!this.keys.has(e.code)) {
         const slot = CONTROLS.abilityKeys.indexOf(e.code);
         if (slot >= 0) this.press(`ab${slot}`);
-        else if (e.code === 'Space') this.press(`ab${this.boostSlot}`);
+        else if (e.code === 'Space') { this.press(`ab${this.boostSlot}`); this.taps++; }
       }
       this.keys.add(e.code);
     } else this.keys.delete(e.code);
@@ -154,6 +158,12 @@ export class Input {
 
   get aimKey() { return (this.keys.has('ArrowUp') ? 1 : 0) - (this.keys.has('ArrowDown') ? 1 : 0); }
 
+  takeTap() {
+    const n = this.taps;
+    this.taps = 0;
+    return n;
+  }
+
   takeAimDrag() {
     const d = this.aimDY;
     this.aimDY = 0;
@@ -165,6 +175,7 @@ export class Input {
     this.pointers.clear();
     this.primary = null;
     this.aimDY = 0;
+    this.taps = 0;
     this.keys.clear();
     this.presses.clear();
     for (const [name, s] of this.buttons) {

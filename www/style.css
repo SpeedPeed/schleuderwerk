@@ -72,6 +72,31 @@ html, body {
   font-weight: 800; font-size: 17px; min-width: 70px; text-align: right;
 }
 .hud-bolts.bump { animation: bump .25s; }
+/* Paket A: Schrott-Zähler (Spielstand + diese Etappe), Vorspulen, Intro-Banner beim Zielen (Stil folgt mit Paket B) */
+.hud-scrap small { color: var(--accent-2); font-size: 14px; }
+.hud-ff {
+  position: absolute; top: calc(var(--safe-top) + 128px); left: 50%; transform: translateX(-50%);
+  background: rgba(20, 24, 38, .7); padding: 6px 12px; border-radius: 12px; font-weight: 900; text-align: center; pointer-events: none;
+}
+.hud-ff small { display: block; font-size: 11px; color: var(--muted); font-weight: 800; }
+.hud-ff.knapp b { color: var(--bad); }
+#hud .stage-banner {
+  position: absolute; top: calc(var(--safe-top) + 104px); left: 50px; width: min(calc(100% - 128px), 380px);
+  padding: 10px 12px; pointer-events: none; max-height: 52vh; overflow: hidden; animation: rise .3s ease-out;
+}
+.stage-banner button { pointer-events: auto; }
+.stage-banner .ri-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.stage-banner .ri-kind { font-size: 18px; padding: 3px 8px; }
+.stage-banner .ri-goal { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.stage-banner .ri-target { margin: 0; }
+.stage-banner .ri-target b { font-size: 28px; white-space: nowrap; }
+.stage-banner .ri-medals { justify-content: flex-start; }
+.stage-banner .ri-tips, .stage-banner h4 { display: none; }
+.stage-banner .ri-desc { font-size: 12px; margin: 4px 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.stage-banner .chips { margin-top: 4px; }
+.stage-banner .ri-dur, .stage-banner .ri-go { font-size: 12.5px; margin-top: 6px; color: var(--muted); }
+.rr-loot { margin-top: 14px; }
+.rm-slot.bonus { opacity: .45; }
 .hud-sub {
   position: absolute; top: calc(var(--safe-top) + 62px); left: 12px; right: 12px;
   display: flex; justify-content: space-between; font-weight: 800; font-size: 15px;
@@ -311,6 +336,7 @@ html:not(.kbd) .ability-btn .ab-key { display: none; }   /* Tasten-Beschriftung 
 .sr-lvl { text-transform: none; letter-spacing: 0; color: var(--accent-2); }
 .sr-part { font-weight: 800; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sr-part small { font-weight: 700; font-size: 11px; color: var(--muted); }
+.sr-gain { display: block; font-size: 10.5px; font-weight: 800; opacity: .85; white-space: nowrap; }   /* Paket A: „+N m“ */
 .sr-bar { height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; margin-top: 5px; overflow: hidden; }
 .sr-bar div { height: 100%; background: var(--accent); }
 .btn-buy { padding: 10px 10px; min-width: 88px; min-height: 44px; font-size: 14px; background: linear-gradient(#ffe066, #f5b82e); color: #3a2600; }
@@ -819,6 +845,9 @@ textarea {
 .place-top .tut-card { top: calc(var(--safe-top) + 64px); }
 .place-bottom .tut-card { bottom: calc(var(--safe-bottom) + 16px); }
 #tutorial.mode-toast .tut-card { bottom: auto; top: calc(var(--safe-top) + 168px); background: rgba(32, 38, 60, .94); border-color: rgba(51, 230, 255, .5); padding: 10px 12px; }
+/* Paket A: Etappen-Hinweise als kleine Sprechblase in der Bildmitte (nie über dem HUD, nur beim Zielen) */
+#tutorial.place-mid .tut-card { top: auto; bottom: calc(var(--safe-bottom) + 34vh); left: auto; right: 100px; transform: none; width: min(calc(100% - 108px), 320px); font-size: 13px; }
+#tutorial.place-mid .tut-text { font-size: 13.5px; }
 .tut-head { display: flex; align-items: center; gap: 8px; }
 .tut-icon { font-size: 26px; line-height: 1; }
 .tut-head b { flex: 1; font-size: 17px; font-weight: 900; color: var(--accent-2); }
@@ -955,10 +984,10 @@ kbd {
 .st-opt kbd, .ev-opt kbd { margin: 0 4px 0 0; }
 /* Querformat (PC): Item-Auswahl und Läden nebeneinander statt einer langen Liste; Karte in einer Spalte */
 @media (min-aspect-ratio: 1/1) and (min-width: 900px) {
-  html.kbd .run-card.rc-choice, html.kbd .run-card.rc-dealer, html.kbd .run-card.rc-blackmarket { width: min(100%, 1000px); }
-  html.kbd .rc-choice .ch-cards, html.kbd .rc-dealer .ch-cards, html.kbd .rc-blackmarket .ch-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
-  html.kbd .rc-choice .ch-cards { align-items: stretch; }
-  html.kbd .rc-choice .ch-cards .icard { display: flex; flex-direction: column; }
-  html.kbd .rc-choice .ch-cards .ic-pick { margin-top: auto; }
+  html.kbd .run-card.rc-choice, html.kbd .run-card.rc-loot, html.kbd .run-card.rc-dealer, html.kbd .run-card.rc-blackmarket { width: min(100%, 1000px); }
+  html.kbd .rc-choice .ch-cards, html.kbd .rc-loot .ch-cards, html.kbd .rc-dealer .ch-cards, html.kbd .rc-blackmarket .ch-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+  html.kbd .rc-choice .ch-cards, html.kbd .rc-loot .ch-cards { align-items: stretch; }
+  html.kbd .rc-choice .ch-cards .icard, html.kbd .rc-loot .ch-cards .icard { display: flex; flex-direction: column; }
+  html.kbd .rc-choice .ch-cards .ic-pick, html.kbd .rc-loot .ch-cards .ic-pick { margin-top: auto; }
   html.kbd #map .map-head, html.kbd #map .map-res, html.kbd #map .map-items { width: min(100%, 760px); align-self: center; }
 }

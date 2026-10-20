@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BIOMES, biomeById } from './data/biomes.js';
-import { FX, CAMERA, STAGE, PHYSICS, SAVE, RESOURCES, TUTORIAL } from './data/balance.js';
+import { FX, CAMERA, STAGE, PHYSICS, SAVE, RESOURCES, MAP } from './data/balance.js';
 import * as BALANCE from './data/balance.js';
 import { PARTS, abilityById, chassisById, chassisVisual, partById } from './data/index.js';
 import { TAGS } from './data/tags.js';
@@ -35,7 +35,7 @@ import { Menus } from './ui/menus.js';
 import { Popups } from './ui/popups.js';
 import { DevMenu } from './ui/devMenu.js';
 import { MapScreen } from './ui/map.js';
-import { RunScreens } from './ui/runScreens.js';
+import { RunScreens, introBannerHtml } from './ui/runScreens.js';
 import { ItemSheet } from './ui/items.js';
 import { ShopScreens } from './ui/shops.js';
 import * as Dealer from './shops/scrapDealer.js';
@@ -48,7 +48,7 @@ import * as researchLogic from './garage/research.js';
 import { confirmDialog, infoDialog } from './ui/dom.js';
 import { itemById, itemPools } from './data/items.js';
 import { setChainLog } from './items/triggerEngine.js';
-import { Tutorial, TutorialView, tutorialProgress, resetTutorial } from './ui/tutorial.js';
+import { Tutorial, TutorialView, tutorialProgress, resetTutorial, TUTORIAL_ORDER } from './ui/tutorial.js';
 import { backAction } from './ui/backButton.js';
 import { FxOverlay } from './ui/fxOverlay.js';
 import { applyInputMode, inputMode } from './ui/inputMode.js';
@@ -95,10 +95,11 @@ const objectsView = new ObjectsView(view.scene);
 const particles = new Particles(view.scene, FX.maxParticles);
 const rain = new Rain(view.scene);
 const sling = new Slingshot(view.scene, track.heightAt(0), REST.y, pal);
-// Ziel-Flaggen: Bronze (= Ziel), Silber, Gold
+// Ziel-Flaggen: Bronze (= Ziel), Silber, Gold – Paket A: dazu Platin und Schrottkönig (Überweite)
 const MF = FX.medalFlags;
 const flags = {};
-for (const m of ['bronze', 'silver', 'gold']) {
+const FLAG_MEDALS = ['bronze', 'silver', 'gold', 'platin', 'king'];
+for (const m of FLAG_MEDALS) {
   flags[m] = buildFlag(MF.colors[m]);
   flags[m].visible = false;
   view.scene.add(flags[m]);
@@ -160,7 +161,6 @@ let mode = 'run';          // Etappe gehört zum Run ('run') oder ist eine Testf
 let paused = false;
 let stage = null;
 let flyPhaseT = -1;          // Sekunden seit dem Abschuss (-1 = noch nicht abgeschossen) – Tutorial-Hinweise im Flug
-let resHintDone = false;
 let cam = null;
 let garageSpin = CAMERA.garage.startAngle;
 let flashLevel = 0, flashTimer = 3;
@@ -210,6 +210,7 @@ const menus = new Menus(uiRoot, {
       allowOverwrite();
       writeSave(save);
       afterSaveChange();
+      setTimeout(reportMigration, 0);   // SW3-Texte: Umbau der Stufen erklären
       return null;
     } catch (e) {
       return e.message || 'Unbekannter Fehler';
@@ -227,7 +228,11 @@ const menus = new Menus(uiRoot, {
 });
 // Tutorial: Hinweise an den richtigen Momenten des ersten Runs (ui/tutorial.js), jeder nur einmal
 const tutorialView = new TutorialView(uiRoot, { onOk: () => { sfx.click(); tutorial.close(); }, onSkip: () => { sfx.click(); tutorial.skipAll(); popups.show('Hinweise aus – in den Einstellungen wieder einschaltbar', 'info'); } });
-const tutorial = new Tutorial({ getSave: () => save, persist: () => writeSave(save), view: tutorialView, onShow: () => sfx.tutorial() });
+// Paket A: Etappen-Hinweise (Sprechblasen) nur beim Zielen – nie im Flug über dem HUD
+const tutorial = new Tutorial({
+  getSave: () => save, persist: () => writeSave(save), view: tutorialView, onShow: () => sfx.tutorial(),
+  allow: (step) => step.mode !== 'toast' || (state === 'stage' && !!stage && stage.phase === 'aim' && !paused),
+});
 
 const devMenu = new DevMenu(uiRoot, {
   getSave: () => save,
@@ -519,18 +524,21 @@ const hooks = {
   triggered: (src, depth, info) => { hud.itemTriggered(src, depth, info); if (!info || !info.recharge) itemJuice(src, depth); },
   // hud.chain() meldet false, wenn dieselbe Kette gerade schon gezeigt wurde (ITEMS.chainPopupGap)
   chain: (n) => { if (hud.chain(n)) { sfx.chain(n); chainJuice(n); platform.haptic('light'); } },
+  // Paket A: Abschuss → Run-Knoten wird erst jetzt betreten (vorher: zurück zur Karte ohne Kosten)
+  launched: () => onLaunched(),
+  knapp: () => { sfx.denied(); platform.haptic('medium'); },
 };
 
 // ---------- Etappe ----------
 // Gemeinsamer Start einer Etappe (Run oder Testfahrt)
-function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = null, runInfo = null, farEnd = true } = {}) {
+// Paket A: banner (Intro über der Zielansicht) und scrap (Schrott-Zähler des Runs) gehen an das HUD
+function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = null, runInfo = null, farEnd = true, banner = null, scrap = null } = {}) {
   setVehicle(loadout.chassis.id, partIds(loadout));
   carModel.rotation.y = 0;
   setTrack(newSpec, biomeById(newSpec.biome));
   stage = new Stage({ biome, spec, track, loadout, seed, hooks, durability, runMods, inventory, runInfo, farEnd });
   stage.slowmoEnabled = save.settings.slowmo;
   flyPhaseT = -1;
-  resHintDone = false;
   featuresView.build(track, stage.objects);
   rain.setActive(!!stage.weather.rain);
   state = 'stage';
@@ -554,14 +562,15 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
     abilities: stage.abilities.slots.map((s) => s.def),
     goal: { target: stage.target, medals: stage.medals, medalList: stage.medalList },
     items: inventory ? { inventory, napped: stage.nappedSlot } : null,
+    banner, scrap,
   });
   if (stage.nappedSlot >= 0 && inventory) {
     const e = inventory[stage.nappedSlot];
     const d = e && itemById(e.itemId);
     if (d) popups.show(`🐈‍⬛ ${d.icon} ${d.name} schläft diese Etappe`, 'info');
   }
-  for (const m of ['bronze', 'silver', 'gold']) {
-    const x = stage.medalList.includes(m) ? stage.medals[m] : undefined;
+  for (const m of FLAG_MEDALS) {
+    const x = stage.medalList.includes(m) || ((m === 'platin' || m === 'king') && farEnd) ? stage.medals[m] : undefined;
     flags[m].visible = x !== undefined;
     flags[m].userData.x = x;
     if (x !== undefined) flags[m].userData.y = track.refHeightAt(x);
@@ -573,6 +582,7 @@ function beginStage(newSpec, loadout, { seed, durability, runMods, inventory = n
     sfx.startMusic(stage.boss.music);
   } else sfx.stopMusic();
   tutorial.trigger('launch');
+  tutorial.trigger('fly');
 }
 
 // Testfahrt (Dev-Menü): Etappe (Standard: Etage 0) des Bioms mit der Garage-Ausrüstung, Schrott wie in Phase 2.
@@ -588,15 +598,63 @@ function startTestDrive(biomeId, opts = {}) {
   beginStage(sp, loadout, { seed, farEnd: false });   // Testfahrt: kein Ende bei „Ziel weit übertroffen“ (Weitflug-Test)
 }
 
-// Etappe des aktuellen Run-Knotens starten (auch Neuversuch: gleiche Strecke, neuer Abschuss)
-function startRunStage() {
+// Etappe eines Run-Knotens starten (Paket A: ohne Intro-Bildschirm – das Intro ist ein Banner über der Zielansicht).
+// Der Knoten wird erst beim Abschuss betreten (onLaunched); bis dahin führt „◀ Karte“/Zurück ohne Kosten zur Karte.
+// Neuversuch (Knoten schon offen): neue Strecke (run/runState.js → stageSpecFor), neuer Abschuss.
+let pendingNode = null;
+function startRunStage(nodeId = null) {
   const run = save.run;
-  if (!run || !run.current) return;
-  const node = mapNode(run.map, run.current.node);
+  if (!run) return;
+  const id = nodeId || (run.current && run.current.node);
+  const node = id && mapNode(run.map, id);
+  if (!node) return;
+  const entered = !!run.current && run.current.node === id;
   const sp = runLogic.stageSpecFor(run, node);
   mode = 'run';
+  pendingNode = entered ? null : id;
+  const attempts = entered ? run.current.attempts : 0;
   const su = runLogic.runStageSetup(run, save);
-  beginStage(sp, su.loadout, { seed: hashSeed(`${run.seed}:${node.id}:${run.current.attempts}`), durability: run.durability, runMods: run.runMods, inventory: su.inventory, runInfo: su.runInfo });
+  const firstBoss = sp.kind === 'boss' && save.meta.milestones[`firstBossAct${run.act}`] === undefined;
+  const banner = {
+    html: introBannerHtml({
+      spec: sp, node, attempts, durability: run.durability, durabilityMax: runLogic.durabilityMax(run), ascension: run.ascension || 0,
+      towPct: runLogic.towPenaltyPct(run), firstBoss, twin: sp.kind === 'boss' && !!run.bossTwin, back: !entered,
+    }),
+    onBack: () => stageBackToMap(),
+  };
+  beginStage(sp, su.loadout, {
+    seed: hashSeed(`${run.seed}:${node.id}:${attempts}`), durability: run.durability, runMods: run.runMods, inventory: su.inventory, runInfo: su.runInfo,
+    banner, scrap: { total: save.meta.scrap, act: run.act, kind: sp.kind },
+  });
+}
+
+// Abschuss einer Run-Etappe: Knoten jetzt betreten (Ereignis nodeEnter). Ändert das die Haltbarkeit/Schrauben (Items mit
+// nodeEnter), übernimmt die Etappe die neuen Werte – vor dem ersten Physik-Schritt, also wie ein anderer Startwert.
+function onLaunched() {
+  hud.setBanner(null);
+  tutorial.holdToasts();
+  const run = save.run;
+  if (mode !== 'run' || !run || !pendingNode || !stage) return;
+  const id = pendingNode;
+  pendingNode = null;
+  const e = runLogic.enterNode(run, id);
+  if (!e.ok) return;
+  writeSave(save);
+  reportRunEvents(e.events);
+  const v = stage.vehicle;
+  const dur = Math.max(0, Math.min(run.durability, stage.stats.durabilityMax));
+  if (dur !== v.durability) { v.durability = dur; stage.startDurability = dur; if (stage.initArgs) stage.initArgs.durability = dur; }
+  if (stage.runInfo && stage.runInfo.bolts !== run.bolts) { stage.runBolts = run.bolts; if (stage.initArgs && stage.initArgs.runInfo) stage.initArgs.runInfo.bolts = run.bolts; }
+}
+
+// Zielansicht (noch nicht abgeschossen) → zurück zur Karte, ohne den Knoten zu betreten
+function stageBackToMap() {
+  if (state !== 'stage' || !stage || stage.phase !== 'aim' || !pendingNode) return false;
+  sfx.click();
+  pendingNode = null;
+  stage = null;
+  openMap({ auto: false });
+  return true;
 }
 
 function endStage(r) {
@@ -627,35 +685,88 @@ function endStage(r) {
   showRunResult(r);
 }
 
-// Ergebnis in den Run übernehmen und anzeigen
+// Ergebnis in den Run übernehmen und anzeigen. Paket A: Belohnung ist sofort gutgeschrieben (HUD-Zähler), Ergebnis
+// und Item-Auswahl liegen auf EINEM Bildschirm (Nehmen = weiter), verfehlt = Notlandung oder Nochmal.
 function showRunResult(r) {
   const run = save.run;
   if (!run) { openGarage(); return; }
   state = 'results';
   const o = runLogic.applyStageResult(run, r, save);
   writeSave(save);
+  if (o.credited && (o.credited.scrap || o.credited.blueprints)) {
+    hud.setScrap(save.meta.scrap, 0);
+    sfx.money();
+  }
   later(() => {
     hud.show(false);
     if (o.cleared) { sfx.record(); platform.haptic('success'); }
     else if (!o.defeat) sfx.denied();
     reportRunEvents(o.events);
-    runScreens.stageResult(r, o, { durability: run.durability, durabilityMax: runLogic.durabilityMax(run), towPct: runLogic.towPenaltyPct(run) }, {
-      onNext: () => {
-        sfx.click();
-        if (o.won) { finishRun(); return; }
-        // Schrottstufe 15: nach der Boss-Beute sofort das Intro des Zwillingsbosses
-        if (o.secondBoss) { showChoices(() => { openMap(); if (save.run && save.run.current) selectNode(save.run.current.node); }); return; }
-        // erst die Item-Auswahl(en), dann Akt-Übergang bzw. Karte
-        showChoices(() => {
-          if (o.nextAct) runScreens.actTransition({ act: run.act, biome: run.biome, prevBiome: r.biome }, { onNext: () => { sfx.click(); openMap(); } });
-          else openMap();
-        });
-      },
-      onRetry: () => { sfx.click(); startRunStage(); },
-      onMap: () => { sfx.click(); openMap(); },
-      onEnd: () => { sfx.click(); finishRun(); },
-    });
-  });
+    const extra = () => ({ durability: run.durability, durabilityMax: runLogic.durabilityMax(run), towPct: runLogic.towPenaltyPct(run) });
+    const after = () => afterStage(o, r);
+    const present = () => {
+      const ch = !o.defeat && !o.missed && !o.towed ? runLogic.pendingChoice(run) : null;
+      const info = { inventory: run.inventory, parts: run.parts, slots: runLogic.itemSlots(run), remaining: run.pendingChoices.length };
+      runScreens.stageResult(r, o, extra(), {
+        choice: ch, info,
+        onNext: () => { sfx.click(); after(); },
+        onPick: (i) => {
+          const res = runLogic.pickItem(run, save, i);
+          if (!res.ok && res.reason === 'full') { sfx.click(); showReplace(ch, i, () => showChoices(after)); return; }
+          if (res.ok) gotItem(res);
+          writeSave(save);
+          showChoices(after);
+        },
+        onSkip: () => {
+          const sk = runLogic.skipChoice(run);
+          writeSave(save);
+          sfx.money();
+          if (sk.ok && sk.bolts) popups.show(`+${fmtN(sk.bolts)} 🔩`, 'good');
+          showChoices(after);
+        },
+        onInventory: () => { sfx.click(); openInventory(); },
+        onLand: () => {
+          sfx.click();
+          const res = runLogic.resolveMiss(run, 'land');
+          writeSave(save);
+          if (res.ok) { popups.show(`🛬 Notlandung −${fmtN(res.penalty)} 🔧`, 'bad'); if (res.bolts) popups.show(`📦 Trostkiste +${fmtN(res.bolts)} 🔩`, 'good'); }
+          if (res.defeat || run.over) { finishRun(); return; }
+          continueMap();
+        },
+        onRetry: () => {
+          sfx.click();
+          if (o.missed) {
+            const res = runLogic.resolveMiss(run, 'retry');
+            writeSave(save);
+            if (res.ok) popups.show(`↻ Nochmal −${fmtN(res.penalty)} 🔧 – neue Strecke`, 'info');
+            if (res.defeat || run.over) { finishRun(); return; }
+          }
+          startRunStage();
+        },
+        onMap: () => { sfx.click(); openMap({ auto: false }); },
+        onEnd: () => { sfx.click(); finishRun(); },
+      });
+      if (ch) tutorial.trigger('items');
+    };
+    present();
+  }, r.instant ? 0.15 : 1);
+}
+
+// Nach Ergebnis und Item-Auswahl: Sieg → Run-Ende, Zwillingsboss → gleich weiter, Akt-Übergang, sonst Karte (automatisch
+// weiter, wenn es nur einen Weg gibt)
+function afterStage(o, r) {
+  const run = save.run;
+  if (!run) { openGarage(); return; }
+  if (o.won || run.over) { finishRun(); return; }
+  // Schrottstufe 15: nach der Boss-Beute sofort der Zwillingsboss
+  if (o.secondBoss && run.current) { startRunStage(run.current.node); return; }
+  if (o.nextAct) { runScreens.actTransition({ act: run.act, biome: run.biome, prevBiome: r.biome }, { onNext: () => { sfx.click(); continueMap(); } }); return; }
+  continueMap();
+}
+
+// Karte öffnen und – wenn es genau einen nächsten Knoten gibt – nach MAP.autoAdvanceDelay automatisch dorthin
+function continueMap() {
+  openMap({ auto: true });
 }
 
 // ---------- Items im Run ----------
@@ -734,8 +845,9 @@ function openInventory() {
   itemSheet.openInventory({ inventory: run.inventory, slots: v.slots, counts: v.counts, tagBoost: v.tagBoost, napped: -1 });
 }
 
-function later(fn) {
-  setTimeout(() => { if (state === 'results') fn(); }, FX.resultDelay * 1000);
+// mul: Faktor auf FX.resultDelay (Sofort-Ende: fast keine Pause – das Ergebnis steht ja schon fest)
+function later(fn, mul = 1) {
+  setTimeout(() => { if (state === 'results') fn(); }, FX.resultDelay * 1000 * mul);
 }
 
 // ---------- Run ----------
@@ -748,12 +860,15 @@ function startRun() {
   openMap();
 }
 
-function openMap() {
+let autoTimer = null;
+function openMap({ auto = false } = {}) {
   const run = save.run;
   if (!run) { openGarage(); return; }
   if (run.over) { finishRun(); return; }
+  clearTimeout(autoTimer);
   state = 'map';
   stage = null;
+  pendingNode = null;
   paused = false;
   input.captureKeys = false;
   garage.closePicker(true);
@@ -778,11 +893,38 @@ function openMap() {
   sfx.stopMusic();
   const G = CAMERA.garage;
   camRig.snap(REST.x, REST.y - G.widthPortrait, G.widthPortrait);
-  if (!run.current && !runLogic.pendingChoice(run)) tutorial.trigger('map');
   // offene Item-Auswahl (z. B. nach einem Neustart der App), danach ein noch offener Sonderknoten (Fortsetzen im Shop)
   const shopOpen = () => run.current && !isStageType(run.current.type);
-  if (runLogic.pendingChoice(run)) showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); });
-  else if (shopOpen()) openShop();
+  if (run.current && run.current.missed) { showMissDecision(); return; }
+  if (runLogic.pendingChoice(run)) { showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); else autoAdvance(auto); }); return; }
+  if (shopOpen()) { openShop(); return; }
+  if (!autoAdvance(auto)) tutorial.trigger('map');
+}
+
+// Paket A: Hat der aktuelle Knoten nur einen Nachfolger, fährt die Karte nach MAP.autoAdvanceDelay von selbst weiter
+// (Etappe → Zielansicht mit Banner, Sonderknoten → öffnet). Ergebnis: true, wenn weitergefahren wird.
+function autoAdvance(auto) {
+  const run = save.run;
+  if (!auto || !run || run.current || run.pos.floor < 0) return false;
+  const reach = runLogic.reachableNodes(run);
+  if (reach.length !== 1) return false;
+  const id = reach[0].id;
+  mapScreen.highlight?.(id);
+  autoTimer = setTimeout(() => { if (state === 'map' && save.run === run && !run.current && !runScreens.open && !tutorial.isOpen) selectNode(id); }, MAP.autoAdvanceDelay * 1000);
+  return true;
+}
+
+// Verfehlte Etappe nach einem Neustart der App: Entscheidung Notlandung/Nochmal nachholen
+function showMissDecision() {
+  const run = save.run;
+  const max = runLogic.durabilityMax(run);
+  runScreens.missDecision({
+    emergency: { penalty: Math.round(max * runLogic.emergencyPenaltyPct(run) * 10) / 10, bolts: runLogic.consolationBolts(run) },
+    retry: { penalty: Math.round(max * runLogic.towPenaltyPct(run) * 10) / 10 },
+  }, {
+    onLand: () => { sfx.click(); const res = runLogic.resolveMiss(run, 'land'); writeSave(save); runScreens.hide(); if (res.defeat || run.over) finishRun(); else continueMap(); },
+    onRetry: () => { sfx.click(); const res = runLogic.resolveMiss(run, 'retry'); writeSave(save); runScreens.hide(); if (res.defeat || run.over) finishRun(); else startRunStage(); },
+  });
 }
 
 // Knoten auf der Karte gewählt
@@ -792,25 +934,12 @@ function selectNode(id) {
   const node = mapNode(run.map, id);
   if (!node) return;
   sfx.click();
+  clearTimeout(autoTimer);
+  if (run.current && run.current.missed) { showMissDecision(); return; }
   if (isStageType(runLogic.nodeKind(run, node))) {
-    // Intro (Knoten wird erst mit LOS betreten)
-    const sp = runLogic.stageSpecFor(run, node);
-    const firstBoss = sp.kind === 'boss' && save.meta.milestones[`firstBossAct${run.act}`] === undefined;
-    if (sp.kind === 'boss') sfx.bossTheme(biomeById(sp.biome).bosses.find((b) => b.id === sp.bossId)?.music);
-    runScreens.intro({
-      spec: sp, node, attempts: run.current ? run.current.attempts : 0, durability: run.durability, durabilityMax: runLogic.durabilityMax(run),
-      ascension: run.ascension || 0, towPct: runLogic.towPenaltyPct(run), firstBoss, twin: sp.kind === 'boss' && !!run.bossTwin,
-    }, {
-      onGo: () => {
-        const e = runLogic.enterNode(run, id);
-        if (!e.ok) { popups.show('Dieser Knoten ist gerade nicht erreichbar', 'info'); return; }
-        writeSave(save);
-        sfx.launch(0.4);
-        startRunStage();
-      },
-      onBack: () => { sfx.click(); runScreens.hide(); },
-    });
-    tutorial.trigger('goal');
+    // Paket A: direkt in die Zielansicht (Intro als Banner); der Knoten wird erst beim Abschuss betreten
+    if (!run.current && !runLogic.canEnter(run, id)) { popups.show('Dieser Knoten ist gerade nicht erreichbar', 'info'); return; }
+    startRunStage(id);
     return;
   }
   const e = runLogic.enterNode(run, id);
@@ -845,7 +974,7 @@ function leaveShop() {
   writeSave(save);
   sfx.click();
   runScreens.hide();
-  openMap();
+  continueMap();
 }
 
 // Rückmeldung nach einer Shop-Aktion; true = hat geklappt
@@ -909,7 +1038,7 @@ function shopDealer(keep = false) {
     onLeave: () => leaveShop(),
     onInventory: () => { sfx.click(); openInventory(); },
   }, keep);
-  tutorial.trigger('shop');
+
 }
 
 function shopWorkbench(keep = false) {
@@ -933,7 +1062,7 @@ function shopWorkbench(keep = false) {
     },
     onLeave: () => leaveShop(),
   }, keep);
-  tutorial.trigger('workbench');
+
 }
 
 function shopBlackMarket(keep = false) {
@@ -965,6 +1094,7 @@ function shopEvent() {
   if (!v) { openShop(); return; }
   const after = (r) => {
     if (!r.ok) { shopFeedback(r); shopEvent(); return; }
+    runLogic.settleRun(run, save);   // Paket A: Schrott/Blaupausen/Kerne aus dem Ereignis sofort gutschreiben
     writeSave(save);
     const good = r.result.log.filter((l) => l.good === true).length, bad = r.result.log.filter((l) => l.good === false).length;
     if (good >= bad) { sfx.buy(); platform.haptic('success'); } else { sfx.crash(); platform.haptic('heavy'); }
@@ -1260,6 +1390,8 @@ function backSnapshot() {
     run: rk,
     runHasCont: !!(rk && runScreens.card.querySelector('[data-a=cont]')),
     runHasBack: !!(rk && runScreens.card.querySelector('[data-a=back]')),
+    runHasPick: !!(rk && runScreens.card.querySelector('[data-pick]')),
+    aimBack: state === 'stage' && !paused && !!stage && stage.phase === 'aim' && !!pendingNode,
     pickerOpen: state === 'garage' && garage.pickerOpen,
     tab: garage.tab,
     testResults: state === 'results' && !results.el.classList.contains('hidden'),
@@ -1287,6 +1419,7 @@ async function handleBack() {
     case 'choiceHint': popups.show('Wähle ein Item – oder überspringe', 'info'); break;
     case 'shopHint': popups.show('Erst eine Entscheidung treffen', 'info'); break;
     case 'introBack': click('[data-a=back]'); break;
+    case 'stageBack': stageBackToMap(); break;
     case 'runPrimary': runScreens.card.querySelector('.btn-row .btn-primary')?.click(); break;
     case 'closePicker': garage.closePicker(); break;
     case 'garageTab': garage.setTab('garage'); break;
@@ -1430,7 +1563,7 @@ function frame(now) {
 
   const playing = state === 'stage' && stage && !paused;
   if (playing) stage.update(dt, input);
-  const vdt = paused ? 0 : dt * (stage && state === 'stage' ? stage.timeScale : 1);
+  const vdt = paused ? 0 : dt * (stage && state === 'stage' ? stage.playScale : 1);
 
   // Fahrzeug-Position (absolute Koordinaten); in der Garage steht es auf dem Hügel und der Aufbau wippt leicht
   const v = stage ? stage.vehicle : null;
@@ -1576,16 +1709,16 @@ function frame(now) {
     hudView.tilt = input.tilt;
     hudView.indicator = cam.indicator;
     hud.update(stage, hudView);
+    if (playing && stage.phase === 'aim') tutorial.poke();   // Sprechblasen nur beim Zielen
     if (playing && stage.phase === 'fly') {
-      // Tutorial: erst „Fliegen“, ein paar Sekunden später „Ressourcen“
-      if (flyPhaseT < 0) { flyPhaseT = 0; tutorial.trigger('fly'); }
+      if (flyPhaseT < 0) flyPhaseT = 0;
       flyPhaseT += dt;
-      if (!resHintDone && flyPhaseT > TUTORIAL.resourcesAfter) { resHintDone = true; tutorial.trigger('resources'); }
       // roter Hitze-Rand: pulsiert bei Überhitzung
       fxOverlay.heat(v.stall > 0 && !stage.rules.noOverheat ? 2 : v.heatFrac >= RESOURCES.heatWarn ? 1 : 0);
     } else if (!playing) fxOverlay.heat(0);
   }
-  sfx.loop(!!(v && playing && stage.phase === 'fly'), v ? v.speed : 0, v ? v.boosting : false, v ? !v.onGround : false);
+  // Vorspulen: Motor klingt höher (Tempo × Vorspul-Faktor)
+  sfx.loop(!!(v && playing && stage.phase === 'fly'), v ? v.speed * (stage.fastForward ? STAGE.fastForward.scale * 0.5 : 1) : 0, v ? v.boosting : false, v ? !v.onGround : false);
 
   const tUpd = performance.now();
   view.renderer.render(view.scene, view.camera);
@@ -1632,6 +1765,7 @@ applySettings();
 openGarage();
 requestAnimationFrame(frame);
 reportLoadIssue();
+reportMigration();
 // Startbildschirm (index.html) ausblenden, sobald das erste Bild gezeichnet ist
 requestAnimationFrame(() => requestAnimationFrame(() => {
   const boot = document.getElementById('boot');
@@ -1639,6 +1773,17 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
   boot.classList.add('done');
   setTimeout(() => boot.remove(), 600);
 }));
+
+// Paket A: Spielstand v3 → v4 umgebaut (Teile-Stufen → Slot-Stufen) → einmal erklären, was passiert ist
+function reportMigration() {
+  const n = save.migrationNote;
+  if (!n) return;
+  delete save.migrationNote;
+  writeSave(save);
+  const any = Object.values(n.slotLevels || {}).some((l) => l > 0);
+  if (!any && !n.refund) return;
+  infoDialog(uiRoot, `Umbau in der Werkstatt: Stufen gelten jetzt je Slot (0–${BALANCE.GARAGE.maxPartLevel}, doppelte Wirkung je Stufe) – ein Teilwechsel behält die Stufe. Deine Stufen wurden mindestens gleich stark übernommen${n.refund > 0 ? `, zu viel Bezahltes kommt zurück: +${fmtN(n.refund)} ⚙` : ''}.`);
+}
 
 // Spielstand ließ sich nicht laden → Hinweis. Der Rohtext liegt im Backup (Einstellungen → „Backup anzeigen“).
 // Stammt er aus einer neueren Version, wird erst gespeichert, wenn die Person „Neu anfangen“ bestätigt.
@@ -1673,6 +1818,7 @@ window.__game = {
   inputMode,
   menus,
   tutorial,
+  tutorialSteps: TUTORIAL_ORDER.length,
   fxOverlay,
   sfx,
   handleBack,

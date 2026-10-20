@@ -157,6 +157,26 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       check(await g(() => !document.querySelector('#ui .modal')), `[${tag}] Zurück im Dialog = Abbrechen`);
 
       // ---------- Run: Karte ----------
+      // Paket A: die Karte fährt bei nur einem Weg selbst weiter – im Rundgang aus (eigene Prüfung unten), damit jeder
+      // Knoten gezielt angetippt werden kann
+      await g(() => { window.__game.balance.MAP.autoAdvanceDelay = 3600; });
+      // Ergebnis + Beute auf einem Bildschirm: erste Karte nehmen, weitere Auswahlen (Kisten) ebenso; ohne Beute „Weiter“
+      const finishResult = async () => {
+        for (let k = 0; k < 6; k++) {
+          const kind = await runKind();
+          if (kind !== 'result' && kind !== 'choice') return;
+          if (await g(() => !!document.querySelector('#runui [data-pick]'))) await tapRun('[data-pick="0"]');
+          else if (await g(() => !!document.querySelector('#runui [data-a=next]'))) await tapRun('[data-a=next]');
+          else if (await g(() => !!document.querySelector('#runui [data-a=land]'))) await tapRun('[data-a=land]');
+          else return;
+          await sleep(300);
+        }
+      };
+      // Zielansicht (Knoten noch nicht betreten) → Karte
+      const toMap = async () => {
+        if ((await g(() => window.__game.state)) === 'stage') { await back(); await sleep(300); }
+        await page.waitForFunction(() => window.__game.state === 'map' && !window.__game.runScreens.open, null, { timeout: 8000 });
+      };
       await page.tap('#garage [data-id=start]');
       await page.waitForFunction(() => window.__game.state === 'map', null, { timeout: 8000 });
       await expectTut('map', 'erste Karte');
@@ -164,43 +184,59 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       const node = await g(() => window.__game.reachable()[0].id);
       await page.locator(`#map [data-node="${node}"]`).scrollIntoViewIfNeeded();
       await page.tap(`#map [data-node="${node}"]`);
-      await sleep(400);
-      await expectTut('goal', 'Etappen-Intro');
-      await shot('etappen-intro');
-      await back();
-      check((await runKind()) === null && (await g(() => window.__game.state)) === 'map', `[${tag}] Zurück im Intro → Karte`);
-      await page.tap(`#map [data-node="${node}"]`);
-      await sleep(400);
-      await tapRun('[data-a=go]');
       await page.waitForFunction(() => window.__game.state === 'stage' && window.__game.stage.phase === 'aim', null, { timeout: 15000 });
-      await expectTut('launch', 'Zielen (Toast)');
+      // Paket A: Intro als Banner über der Zielansicht (kein eigener Bildschirm), Hinweise als Sprechblase beim Zielen
+      check(await g(() => !document.querySelector('#hud .stage-banner').classList.contains('hidden') && !!document.querySelector('#hud .stage-banner .ri-target')), `[${tag}] Etappen-Intro als Banner über der Zielansicht`);
+      await expectTut('launch', 'Zielen (Sprechblase)');
+      await expectTut('fly', 'noch beim Zielen (Sprechblase)');
+      await shot('etappen-banner');
+      await back();
+      check((await runKind()) === null && (await g(() => window.__game.state)) === 'map' && (await g(() => !window.__game.run.current)), `[${tag}] Zurück in der Zielansicht → Karte (Knoten nicht betreten)`);
+      await page.tap(`#map [data-node="${node}"]`);
+      await page.waitForFunction(() => window.__game.state === 'stage' && window.__game.stage.phase === 'aim', null, { timeout: 15000 });
       await shot('etappe-zielen');
       await g(() => window.__game.stage.launchNow(0.9, 34));
-      await expectTut('fly', 'Abschuss (Toast)');
-      for (let i = 0; i < 6; i++) { await sample(); await sleep(150); }
+      await sleep(200);
+      check(await g(() => window.__game.run.current && window.__game.run.current.node) === node, `[${tag}] Abschuss betritt den Knoten`);
+      check(await g(() => document.querySelector('#hud .stage-banner').classList.contains('hidden')), `[${tag}] Banner verschwindet beim Abschuss`);
+      for (let i = 0; i < 12; i++) {
+        await sample();
+        if (await tut()) check(false, `[${tag}] kein Hinweis im Flug über dem HUD`);
+        await sleep(150);
+      }
+      check(true, `[${tag}] kein Hinweis im Flug über dem HUD (12 Proben)`);
       await shot('etappe-flug');
-      const resOk = await waitTut('resources', 15000);
-      check(resOk, `[${tag}] Tutorial „resources“ erscheint im Flug`);
-      if (resOk) { seenTut.add('resources'); await sleep(450); await shot('tutorial-resources'); await page.tap('#tutorial .tut-card'); await sleep(200); }
-      for (let i = 0; i < 6; i++) { await sample(); await sleep(150); }
-      await back();
-      check(await g(() => window.__game.paused), `[${tag}] Zurück in der Etappe = Pause`);
-      await shot('pause');
-      await back();
-      check(await g(() => !window.__game.paused), `[${tag}] Zurück in der Pause = weiter`);
-      // Etappe mit Gold beenden → Ergebnis → Item-Auswahl
-      await g(() => window.__game.devSkip('gold'));
-      await page.waitForFunction(() => window.__game.runScreens.kind === 'result', null, { timeout: 15000 });
-      await sleep(1600);
+      // Vorspulen: warten, bis die Kiste ausrollt (⏩ ×4 im HUD), dann Tippen = Sofort-Ende
+      const ff = await page.waitForFunction(() => { const s = window.__game.stage; return !s || s.phase !== 'fly' || s.fastForward || !!s.settle; }, null, { timeout: 30000 }).then(() => true).catch(() => false);
+      const ffOn = ff && (await g(() => { const s = window.__game.stage; return !!s && s.phase === 'fly' && (s.fastForward || !!s.settle); }));
+      if (ffOn) {
+        check(await g(() => !document.querySelector('#hud .hud-ff').classList.contains('hidden')), `[${tag}] HUD zeigt das Vorspulen`);
+        await shot('etappe-vorspulen');
+        await page.tap('#game', { position: { x: Math.round(W / 2), y: Math.round(H / 2) } });
+        await page.waitForFunction(() => !window.__game.stage || window.__game.stage.phase === 'over', null, { timeout: 5000 }).catch(() => {});
+        check(await g(() => !window.__game.stage || window.__game.stage.instantDone || window.__game.stage.phase === 'over'), `[${tag}] Tippen beim Ausrollen beendet die Etappe sofort`);
+      } else {
+        await back();
+        check(await g(() => window.__game.paused), `[${tag}] Zurück in der Etappe = Pause`);
+        await shot('pause');
+        await back();
+        check(await g(() => !window.__game.paused), `[${tag}] Zurück in der Pause = weiter`);
+        await g(() => window.__game.devSkip('gold'));
+      }
+      await page.waitForFunction(() => window.__game.runScreens.kind === 'result', null, { timeout: 20000 });
+      await sleep(1200);
       await shot('ergebnis');
-      await tapRun('[data-a=next]');
-      await expectTut('items', 'erste Item-Auswahl');
-      await shot('item-auswahl');
-      await back();
-      check((await runKind()) === 'choice', `[${tag}] Zurück in der Item-Auswahl schließt sie nicht`);
-      await tapRun('[data-pick="0"]');
-      while ((await runKind()) === 'choice') await tapRun('[data-pick="0"]');
-      await page.waitForFunction(() => window.__game.state === 'map' && !window.__game.runScreens.open, null, { timeout: 8000 });
+      check(await g(() => window.__game.save.meta.scrap > 0), `[${tag}] Schrott der Etappe ist sofort gutgeschrieben`);
+      if (await g(() => !!document.querySelector('#runui [data-pick]'))) {
+        await expectTut('items', 'Beute auf dem Ergebnis-Bildschirm');
+        await shot('ergebnis-beute');
+        await back();
+        check((await runKind()) === 'result', `[${tag}] Zurück im Ergebnis mit Beute schließt es nicht`);
+      } else if (await g(() => !!document.querySelector('#runui [data-a=land]'))) {
+        await shot('notlandung');
+      }
+      await finishResult();
+      await toMap();
       await page.tap('#map [data-id=items]');
       await sleep(350);
       await shot('inventar');
@@ -219,7 +255,6 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       };
       await g(() => { window.__game.save.run.bolts += 400; });
       await visit('dealer', 'Schrotthändler', async () => {
-        await expectTut('shop', 'erster Händler');
         await shot('haendler');
         await back();
         check(await g(() => !!document.querySelector('#ui .modal')), `[${tag}] Zurück im Laden fragt „verlassen?“`);
@@ -228,7 +263,6 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
         await sleep(400);
       });
       await visit('workbench', 'Werkbank', async () => {
-        await expectTut('workbench', 'erste Werkbank');
         await shot('werkbank');
         await tapRun('[data-a=leave]');
       });
@@ -243,17 +277,15 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
         if (await g(() => !!document.querySelector('#runui [data-a=pending]'))) { await tapRun('[data-a=pending]'); await tapRun('[data-pick]'); }
         if (await g(() => !!document.querySelector('#runui [data-a=cont]'))) await tapRun('[data-a=cont]');
         await sleep(700);
-        // Elite-Etappe aus dem Ereignis: fahren (Dev: Gold), dann Beute
-        if ((await runKind()) === 'intro') {
-          await tapRun('[data-a=go]');
-          await page.waitForFunction(() => window.__game.state === 'stage', null, { timeout: 15000 });
+        // Elite-Etappe aus dem Ereignis: direkt in die Zielansicht, fahren (Dev: Gold), dann Beute
+        if ((await g(() => window.__game.state)) === 'stage') {
           await g(() => window.__game.devSkip('gold'));
           await page.waitForFunction(() => window.__game.runScreens.kind === 'result', null, { timeout: 15000 });
-          await sleep(1500);
+          await sleep(1200);
           await shot('elite-ergebnis');
-          await tapRun('[data-a=next]');
+          await finishResult();
         }
-        while ((await runKind()) === 'choice') await tapRun('[data-pick="0"]');
+        await finishResult();
       });
       await visit('treasure', 'Schatzhaufen', async () => {
         await shot('schatz');
@@ -269,20 +301,16 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       const boss = await g(() => window.__game.reachable()[0].id);
       await page.locator(`#map [data-node="${boss}"]`).scrollIntoViewIfNeeded();
       await page.tap(`#map [data-node="${boss}"]`);
-      await sleep(900);
-      await shot('boss-intro');
-      await tapRun('[data-a=go]');
       await page.waitForFunction(() => window.__game.state === 'stage', null, { timeout: 15000 });
       await sleep(400);
       check(await g(() => !document.querySelector('#fxbanner').classList.contains('hidden') && window.__game.sfx.music !== null), `[${tag}] Boss-Strecke: Einblendung „BOSS“ und Musik-Schleife`);
       await shot('boss-banner');
       await g(() => window.__game.devSkip('gold'));
       await page.waitForFunction(() => window.__game.runScreens.kind === 'result', null, { timeout: 15000 });
-      await sleep(1600);
+      await sleep(1400);
       await shot('boss-besiegt');
       check(await g(() => window.__game.sfx.music === null), `[${tag}] Boss-Musik endet mit der Etappe`);
-      await tapRun('[data-a=next]');
-      while ((await runKind()) === 'choice') await tapRun('[data-pick="0"]');
+      await finishResult();
       await page.waitForFunction(() => window.__game.runScreens.kind === 'act', null, { timeout: 8000 });
       await shot('akt-uebergang');
       await back();
@@ -290,13 +318,39 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       await shot('karte-akt2');
       await visit('station', 'Tankstelle', async () => { await shot('tankstelle'); await back(); await tapRun('[data-choice=repair]'); });
 
-      // ---------- Run-Sieg (Akt 3, Boss) → Konfetti ----------
-      await g(() => { window.__game.devNextAct(); window.__game.devToBoss(); });
+      // ---------- Verfehlt → Notlandung (weiter auf der Karte) ----------
+      await g(() => window.__game.devForceNode('stage'));
+      await g(() => window.__game.devSkip('miss'));
+      await page.waitForFunction(() => window.__game.runScreens.kind === 'result', null, { timeout: 15000 });
+      await sleep(900);
+      check(await g(() => !!document.querySelector('#runui [data-a=land]') && !!document.querySelector('#runui [data-a=retry]')), `[${tag}] verfehlt: Notlandung oder Nochmal`);
+      await shot('notlandung');
+      const nodeMissed = await g(() => window.__game.run.current.node);
+      await tapRun('[data-a=land]');
+      await toMap();
+      check(await g((id) => window.__game.run.visited.includes(id) && !window.__game.run.current, nodeMissed), `[${tag}] Notlandung: weiter auf der Karte`);
+
+      // ---------- Karte fährt bei nur einem Weg selbst weiter ----------
+      await g(() => { window.__game.balance.MAP.autoAdvanceDelay = 0.6; window.__game.devForceNode('stage'); });
       await g(() => window.__game.devSkip('gold'));
       await page.waitForFunction(() => window.__game.runScreens.kind === 'result', null, { timeout: 15000 });
-      await sleep(1500);
-      await tapRun('[data-a=next]');
-      while ((await runKind()) === 'choice') await tapRun('[data-pick="0"]');
+      await sleep(900);
+      const single = await g(() => { const r = window.__game.run; const n = r.map.floors.flat().find((x) => x.id === (r.current ? r.current.node : r.pos.node)); return n && n.next.length === 1; });
+      await finishResult();
+      if (single) {
+        const auto = await page.waitForFunction(() => window.__game.state === 'stage' || window.__game.runScreens.open, null, { timeout: 4000 }).then(() => true).catch(() => false);
+        check(auto, `[${tag}] nur ein Weg: die Karte fährt selbst weiter`);
+        await toMap().catch(() => {});
+        if ((await runKind()) !== null) { await back(); await sleep(400); }
+      }
+      await g(() => { window.__game.balance.MAP.autoAdvanceDelay = 3600; });
+
+      // ---------- Run-Sieg (Akt 3, Boss) → Konfetti ----------
+      await g(() => { if (window.__game.state !== 'map') window.__game.openMap({ auto: false }); window.__game.devNextAct(); window.__game.devToBoss(); });
+      await g(() => window.__game.devSkip('gold'));
+      await page.waitForFunction(() => window.__game.runScreens.kind === 'result', null, { timeout: 15000 });
+      await sleep(1400);
+      await finishResult();
       await page.waitForFunction(() => window.__game.state === 'runEnd', null, { timeout: 8000 });
       await sleep(700);
       check(await g(() => !document.querySelector('#confetti').classList.contains('hidden')), `[${tag}] Run-Sieg: Konfetti`);
@@ -308,14 +362,15 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
 
       // ---------- Tutorial: jeder Hinweis nur einmal, Zurücksetzen ----------
       const st = await g(() => ({ seen: Object.keys(window.__game.save.tutorial.seen).sort(), off: window.__game.save.tutorial.off }));
-      check(st.seen.length === 10 && !st.off, `[${tag}] alle 10 Hinweise gesehen (${st.seen.join(', ')})`);
+      const total = await g(() => window.__game.tutorialSteps);
+      check(st.seen.length === total && total <= 6 && !st.off, `[${tag}] alle ${total} Hinweise gesehen (${st.seen.join(', ')})`);
       await g(() => window.__game.openGarage());
       await sleep(900);
       check(!(await tut()), `[${tag}] Hinweise erscheinen nur einmal (Garage erneut geöffnet: kein Hinweis)`);
       await page.reload({ waitUntil: 'load' });
       await page.waitForFunction(() => window.__game && window.__game.state === 'garage', null, { timeout: 20000 });
       await sleep(900);
-      check(!(await tut()) && (await g(() => Object.keys(window.__game.save.tutorial.seen).length)) === 10, `[${tag}] Tutorial-Fortschritt übersteht einen Neustart`);
+      check(!(await tut()) && (await g(() => Object.keys(window.__game.save.tutorial.seen).length)) === total, `[${tag}] Tutorial-Fortschritt übersteht einen Neustart`);
       // Einstellungen: Lautstärke/Qualität werden gespeichert
       await page.tap('#garage [data-id=settings]');
       await sleep(300);

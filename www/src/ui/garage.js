@@ -2,7 +2,7 @@ import { el, fmt, short, show } from './dom.js';
 import { inputMode, modeLabel } from './inputMode.js';
 import { GARAGE } from '../data/balance.js';
 import { CHASSIS, ABILITIES, SLOTS, SLOT_INFO, partsForSlot, partById, abilityById, isSlotAbility, researchLabel, chassisById } from '../data/index.js';
-import { chassisState, partState, abilityState, PAINTS, paintState } from '../garage/garage.js';
+import { chassisState, partState, abilityState, PAINTS, paintState, levelGain } from '../garage/garage.js';
 import { LabPanel } from './lab.js';
 import { buildLoadout } from '../garage/loadout.js';
 import { isBoostAbility } from '../stage/abilities.js';
@@ -27,6 +27,19 @@ function diffRows(a, b, max = 8) {
     if (rows.length >= max) break;
   }
   return rows.length ? rows.join('') : '<div class="dr same">keine Werte-Änderung</div>';
+}
+
+// Paket A: Was bringt die nächste Slot-Stufe? „+N m“ (Bot-Messung, garage/garage.js → levelGain); ist der Weitengewinn
+// nicht messbar (Panzerung, Kühlung …), die wichtigste Werte-Änderung. base: aktuelle Werte, part: ausgerüstetes Teil
+function gainLabel(save, base, part, level) {
+  const g = levelGain(part.id, level);
+  if (g.m >= 1) return `+${fmt(g.m)} m`;
+  const next = buildLoadout(save, { parts: { [part.slot]: { id: part.id, level: level + 1 } } }).stats;
+  for (const d of statDiff(base, next)) {
+    const f = fmtStat(d.stat, d.from), t = fmtStat(d.stat, d.to);
+    if (f !== t) return `${statName(d.stat)} ${t}`;
+  }
+  return '';
 }
 
 // Garage: Währungen, 3D-Vorschau (oben, durchsichtig), Chassis-Wahl, Werte-Übersicht, 7 Teile-Slots,
@@ -263,7 +276,9 @@ export class GarageScreen {
       r.querySelector('.sr-lvl').textContent = `· St. ${st.level}/${GARAGE.maxPartLevel}`;
       r.querySelector('.sr-bar div').style.width = `${(st.level / GARAGE.maxPartLevel) * 100}%`;
       const b = r.querySelector('.sr-up');
-      b.textContent = st.maxed ? 'MAX' : `▲ ⚙ ${short(st.upgradeCost)}`;
+      const gain = st.maxed ? '' : gainLabel(save, cur.stats, p, st.level);
+      b.innerHTML = st.maxed ? 'MAX' : `▲ ⚙ ${short(st.upgradeCost)}${gain ? `<small class="sr-gain">${esc(gain)}</small>` : ''}`;
+      b.title = st.maxed ? '' : `Nächste Stufe: ${gain}${levelGain(p.id, st.level).m >= 1 ? ` (${levelGain(p.id, st.level).ref}, Bot-Messung)` : ''} – gilt für jedes Teil in diesem Slot`;
       b.disabled = st.maxed;
       b.classList.toggle('max', st.maxed);
       b.classList.toggle('cant', !st.maxed && !st.canUpgrade);
@@ -471,7 +486,7 @@ export class GarageScreen {
         } else {
           btns = st.equipped ? '<span class="pc-tag">✓ Ausgerüstet</span>' : '<button class="btn btn-primary small-btn" data-act="equip">Ausrüsten</button>';
           btns += st.maxed ? '<span class="pc-tag">MAX</span>'
-            : `<button class="btn btn-buy small-btn ${st.canUpgrade ? '' : 'cant'}" data-act="upgrade">▲ Stufe ${st.level + 1} · ⚙ ${short(st.upgradeCost)}</button>`;
+            : `<button class="btn btn-buy small-btn ${st.canUpgrade ? '' : 'cant'}" data-act="upgrade">▲ Slot-Stufe ${st.level + 1} · ⚙ ${short(st.upgradeCost)}${(() => { const g = gainLabel(this.save, base, p, st.level); return g ? ` · ${esc(g)}` : ''; })()}</button>`;
         }
         const cls = ['pcard', st.equipped ? 'equipped' : '', !st.owned && !st.researchOk ? 'locked' : '', pk.sel === p.id ? 'sel' : ''].join(' ');
         // Ausgerüstet: Wirkung der nächsten Stufe zeigen (sonst Vergleich mit dem ausgerüsteten Teil)
@@ -482,7 +497,7 @@ export class GarageScreen {
         } else diff = diffRows(base, lo.stats);
         return `<div class="${cls}" data-id="${p.id}">
           <div class="pc-top"><span class="pc-icon">${p.icon}</span>
-            <div class="pc-name">${esc(p.name)}${st.owned ? ` <small>St. ${st.level}/${GARAGE.maxPartLevel}</small>` : ''}${p.tag ? ` <small class="pc-tagname">${esc(tagLabel(p.tag))}</small>` : ''}</div></div>
+            <div class="pc-name">${esc(p.name)}${st.owned ? ` <small>Slot-St. ${st.level}/${GARAGE.maxPartLevel}</small>` : ''}${p.tag ? ` <small class="pc-tagname">${esc(tagLabel(p.tag))}</small>` : ''}</div></div>
           <div class="pc-desc">${esc(p.desc)}</div>
           <div class="pc-diff">${diff}</div>
           <div class="pc-btns">${btns}</div>

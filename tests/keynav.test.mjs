@@ -40,7 +40,7 @@ test('Tasten-Texte: Fähigkeits-Knöpfe zeigen ihre Taste, Leertaste beim Boost'
 });
 
 test('Tutorial: Tastatur-Varianten der Steuerungs-Hinweise (1–3 Sätze, keine Touch-Wörter)', () => {
-  for (const id of ['garage', 'map', 'launch', 'fly', 'items', 'shop', 'lab']) assert.ok(TUTORIAL_STEPS[id].textKbd, id);
+  for (const id of ['garage', 'map', 'launch', 'fly', 'items', 'lab']) assert.ok(TUTORIAL_STEPS[id].textKbd, id);
   for (const [id, s] of Object.entries(TUTORIAL_STEPS)) {
     const t = stepText(s, true);
     assert.equal(stepText(s, false), s.text, `${id}: Handy-Text unverändert`);
@@ -75,7 +75,8 @@ test('Hauptaktion (Enter ohne Auswahl) auf jedem Bildschirm', () => {
   assert.deepEqual(first('garage'), { sel: '[data-id=start]', how: 'click' }, 'RUN STARTEN');
   assert.deepEqual(first('run', { run: 'intro' }), { sel: '[data-a=go]', how: 'click' }, 'LOS');
   assert.equal(first('run', { run: 'result' }).sel, '[data-a=next]', 'Weiter');
-  assert.deepEqual(primaryFor('run', { run: 'result' }).map((p) => p.sel), ['[data-a=next]', '[data-a=retry]', '[data-a=end]'], 'Neuversuch / Run beenden, wenn kein Weiter');
+  assert.deepEqual(primaryFor('run', { run: 'result' }).map((p) => p.sel), ['[data-a=next]', '[data-a=land]', '[data-a=retry]', '[data-a=end]', '[data-pick]'], 'Notlandung / Neuversuch / Run beenden, wenn kein Weiter; mit Beute: Item wählen');
+  assert.equal(primaryFor('run', { run: 'result' }).at(-1).how, 'focus', 'Ergebnis mit Beute: nichts ungefragt nehmen');
   assert.deepEqual(primaryFor('run', { run: 'treasure' }).map((p) => p.sel), ['[data-a=cont]', '[data-a=take]'], 'Nehmen');
   for (const k of ['dealer', 'workbench', 'blackmarket']) assert.equal(first('run', { run: k }).sel, '[data-a=leave]', k);
   assert.equal(first('run', { run: 'act' }).sel, '[data-a=next]');
@@ -147,6 +148,10 @@ test('Kürzel: Garage Q/E (ohne Auswahl ←/→), Karte Pfeile/I, Item-Auswahl 1
   assert.deepEqual(key(ch, 'Numpad2'), { type: 'click', sel: '[data-pick="1"]' });
   assert.deepEqual(key(ch, 'KeyS'), { type: 'click', sel: '[data-a=skip]' });
   assert.deepEqual(key(ch, 'Digit1', { repeat: true }), { type: 'none' }, 'gehaltene Ziffer nimmt nicht zweimal');
+  // Paket A: Ergebnis und Beute auf einem Bildschirm – dieselben Kürzel
+  const rs = { state: 'results', run: 'result' };
+  assert.deepEqual(key(rs, 'Digit2'), { type: 'click', sel: '[data-pick="1"]' });
+  assert.deepEqual(key(rs, 'KeyS'), { type: 'click', sel: '[data-a=skip]' });
   assert.deepEqual(key({ state: 'map', run: 'event' }, 'Digit2'), { type: 'click', sel: '[data-opt="1"]' });
   assert.deepEqual(key({ state: 'map', run: 'station' }, 'Digit3'), { type: 'click', sel: '[data-choice]', nth: 2 });
   assert.equal(key({ state: 'map', run: 'dealer' }, 'Digit1'), null, 'im Laden keine Ziffern-Käufe');

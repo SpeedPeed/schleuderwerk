@@ -36,7 +36,8 @@ const F = (sel) => ({ sel, how: 'focus' });
 // how 'focus' = nur auswählen (bei echten Entscheidungen wird nichts ungefragt genommen).
 const RUN_PRIMARY = {
   intro: [C('[data-a=go]')],
-  result: [C('[data-a=next]'), C('[data-a=retry]'), C('[data-a=end]')],
+  // Paket A: Ergebnis mit Item-Auswahl (Nehmen = weiter) bzw. Notlandung (Weiter) / Nochmal
+  result: [C('[data-a=next]'), C('[data-a=land]'), C('[data-a=retry]'), C('[data-a=end]'), F('[data-pick]')],
   choice: [F('[data-pick]'), C('[data-a=skip]')],
   replace: [F('[data-rep]')],
   pick: [F('[data-pick]')],
@@ -87,7 +88,7 @@ export function shortcutFor(layer, s, code) {
   if (layer === 'pause' && code === 'KeyP') return { type: 'click', sel: '[data-a=resume]' };
   if (layer === 'run') {
     const k = s.run;
-    if (k === 'choice') {
+    if (k === 'choice' || k === 'result') {
       if (n >= 0) return { type: 'click', sel: `[data-pick="${n}"]` };
       if (code === 'KeyS') return { type: 'click', sel: '[data-a=skip]' };
       if (code === 'KeyI') return { type: 'click', sel: '[data-a=inv]' };

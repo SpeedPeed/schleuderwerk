@@ -9,6 +9,9 @@
 //   - TutorialView – die DOM-Anzeige (Karte mit Abdunklung bzw. „Toast“ während der Etappe)
 // Arten: 'card' (Garage, Karte, Shops: dunkelt ab, „Verstanden ✔“) und 'toast' (Etappe: blockiert nichts,
 // verschwindet nach TUTORIAL.toastTime Sekunden oder per Antippen).
+// Paket A: höchstens 6 Hinweise; Etappen-Hinweise sind kleine Sprechblasen (place 'mid') und erscheinen nur, solange
+// h.allow(step) es erlaubt (main.js: beim Zielen) – nie im Flug über dem HUD. Ein nicht erlaubter Hinweis bleibt
+// eingereiht, bis poke() ihn bei passender Gelegenheit zeigt.
 import { el, show } from './dom.js';
 import { TUTORIAL } from '../data/balance.js';
 import { inputMode } from './inputMode.js';
@@ -24,38 +27,20 @@ export const TUTORIAL_STEPS = {
     text: 'Tippe einen <b>pulsierenden Knoten</b> an. ⚑ Etappen bringen Items, 🛒 Händler und 🔧 Werkbank helfen beim Bauen. Ganz oben wartet der Boss des Akts.',
     textKbd: 'Wähle mit den <b>Pfeiltasten</b> einen pulsierenden Knoten, <b>Enter</b> betritt ihn. ⚑ Etappen bringen Items, 🛒 Händler und 🔧 Werkbank helfen beim Bauen – ganz oben wartet der Boss.',
   },
-  goal: {
-    icon: '🏁', title: 'Zielmarke & Medaillen', mode: 'card', place: 'top', target: '#runui .ri-target',
-    text: 'Erreichst du die Zielmarke, gibt es 🥉 Bronze – Silber und Gold bringen mehr. Schaffst du sie nicht, wirst du <b>abgeschleppt</b>: das kostet Haltbarkeit, dann darfst du nochmal.',
-    textKbd: 'Erreichst du die Zielmarke, gibt es 🥉 Bronze – Silber und Gold bringen mehr. Schaffst du sie nicht, wirst du <b>abgeschleppt</b> und darfst nochmal. <b>Enter</b> = LOS!',
-  },
   launch: {
-    icon: '🎯', title: 'Abschuss', mode: 'toast', place: 'top', target: '#hud .power-meter',
-    text: '<b>Finger irgendwo halten</b> – die Kraft pendelt. Hoch/runter ziehen ändert den Winkel. <b>Loslassen im grünen Bereich!</b>',
-    textKbd: '<b>Leertaste halten</b> = Kraft (pendelt), <b>↑/↓</b> = Winkel. <b>Loslassen im grünen Bereich!</b>',
+    icon: '🎯', title: 'Abschuss & Ziel', mode: 'toast', place: 'mid', target: '#hud .power-meter',
+    text: '<b>Finger irgendwo halten</b> – die Kraft pendelt, hoch/runter ziehen = Winkel. <b>Loslassen im grünen Bereich!</b> Jeder Meter bringt ⚙ Schrott, die Zielmarke 🥉 und mehr.',
+    textKbd: '<b>Leertaste halten</b> = Kraft (pendelt), <b>↑/↓</b> = Winkel. <b>Loslassen im grünen Bereich!</b> Jeder Meter bringt ⚙ Schrott, die Zielmarke 🥉 und mehr.',
   },
   fly: {
-    icon: '🪂', title: 'Fliegen', mode: 'toast', place: 'top', target: '#hud .ab-0',
-    text: '<b>Links halten</b> = Nase hoch, <b>rechts halten</b> = Nase runter – möglichst gerade landen. Die runden Knöpfe unten rechts sind deine Fähigkeiten (🚀 Boost halten).',
-    textKbd: '<b>←</b> = Nase hoch, <b>→</b> = Nase runter – möglichst gerade landen. <b>Leertaste halten</b> = 🚀 Boost, <b>1–4</b> = deine Fähigkeiten.',
-  },
-  resources: {
-    icon: '⛽', title: 'Treibstoff, Hitze, Haltbarkeit', mode: 'toast', place: 'top', target: '#hud .res-bars',
-    text: 'Unten links: ⛽ Treibstoff für Antrieb und Boost, 🌡 Hitze – bei 100 % überhitzt die Kiste, 🔧 Haltbarkeit gilt für den <b>ganzen Run</b>.',
+    icon: '🪂', title: 'Fliegen & Ausrollen', mode: 'toast', place: 'mid', target: '#hud .ab-0',
+    text: 'In der Luft: <b>links halten</b> = Nase hoch, <b>rechts</b> = runter – gerade landen. Runde Knöpfe = Fähigkeiten (🚀 Boost halten). Rollt die Kiste aus, spult das Spiel vor – <b>Tippen</b> beendet sofort.',
+    textKbd: 'In der Luft: <b>←</b> = Nase hoch, <b>→</b> = runter – gerade landen. <b>Leertaste halten</b> = 🚀 Boost, <b>1–4</b> = Fähigkeiten. Rollt die Kiste aus, spult das Spiel vor – <b>Leertaste</b> beendet sofort.',
   },
   items: {
     icon: '🎁', title: 'Items & Tags', mode: 'card', place: 'bottom', target: '#runui .ch-cards',
     text: 'Wähle ein Item. Die farbigen Chips sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei. Im 🎒 Rucksack siehst du deine Sets.',
     textKbd: 'Nimm ein Item mit <b>1/2/3</b> (<b>S</b> = überspringen). Die farbigen Chips sind <b>Tags</b>: 2, 4 oder 6 Items mit gleichem Tag schalten <b>Set-Boni</b> frei.',
-  },
-  shop: {
-    icon: '🛒', title: 'Schrotthändler', mode: 'card', place: 'bottom', target: '#runui .sh-bar',
-    text: 'Bezahlt wird mit 🔩 Schrauben aus dem Run. ↻ würfelt das Angebot neu, 📌 reserviert ein Item für den nächsten Händler. <b>Weiter ▶</b> verlässt den Laden.',
-    textKbd: 'Bezahlt wird mit 🔩 Schrauben aus dem Run. ↻ würfelt neu, 📌 reserviert ein Item für den nächsten Händler (Tab/Pfeile wählen, Enter kauft). <b>Enter</b> ohne Auswahl = Weiter ▶.',
-  },
-  workbench: {
-    icon: '🔧', title: 'Werkbank', mode: 'card', place: 'bottom', target: '#runui .wb-opts',
-    text: 'Zwei gleiche Items mit gleichen ★ verschmelzen zu <b>★+1</b>. Zwei Items mit verschiedenen Tags werden ein <b>Hybrid</b> mit beiden Wirkungen. Zerlegen bringt Schrauben.',
   },
   lab: {
     icon: '🧪', title: 'Erfinder-Labor', mode: 'card', place: 'bottom', target: '#garage [data-tab=lab]',
@@ -120,14 +105,16 @@ export class Tutorial {
     return true;
   }
 
-  // nächsten Hinweis aus der Warteschlange zeigen
+  // nächsten Hinweis aus der Warteschlange zeigen (der erste, den h.allow gerade erlaubt; die anderen warten)
   next() {
     if (this.current) return;
     const save = this.h.getSave();
-    while (this.queue.length) {
-      const id = this.queue.shift();
-      if (!tutorialWants(save, id)) continue;
+    for (let k = 0; k < this.queue.length; k++) {
+      const id = this.queue[k];
+      if (!tutorialWants(save, id)) { this.queue.splice(k--, 1); continue; }
       const step = TUTORIAL_STEPS[id];
+      if (this.h.allow && !this.h.allow(step, id)) continue;
+      this.queue.splice(k, 1);
       this.current = id;
       markSeen(save, id);
       if (this.h.persist) this.h.persist();
@@ -137,6 +124,17 @@ export class Tutorial {
       if (step.mode === 'toast') this.hideTimer = this.schedule(() => { this.hideTimer = null; if (this.current === id) this.close(); }, TUTORIAL.toastTime * 1000);
       return;
     }
+  }
+
+  // Wartende Hinweise erneut prüfen (z. B. Etappe wieder beim Zielen) – zeigt höchstens einen
+  poke() {
+    if (!this.current && this.timer === null && this.queue.length) this.next();
+  }
+
+  // Sichtbaren Etappen-Hinweis schließen, wenn er gerade nicht erlaubt ist (Abschuss → Flug); Warteschlange bleibt
+  holdToasts() {
+    const step = this.currentStep;
+    if (step && step.mode === 'toast' && this.h.allow && !this.h.allow(step, this.current)) this.close();
   }
 
   // sichtbaren Hinweis schließen („Verstanden“, Antippen, Zurück-Taste) → danach der nächste

@@ -7,7 +7,8 @@ import { choiceCardsHtml, entryRowHtml, itemCardHtml } from './items.js';
 import { itemById } from '../data/items.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const MEDAL = { bronze: { icon: '🥉', name: 'Bronze' }, silver: { icon: '🥈', name: 'Silber' }, gold: { icon: '🥇', name: 'Gold' } };
+const MEDAL = { bronze: { icon: '🥉', name: 'Bronze' }, silver: { icon: '🥈', name: 'Silber' }, gold: { icon: '🥇', name: 'Gold' }, platin: { icon: '💿', name: 'Platin' }, king: { icon: '👑', name: 'Schrottkönig' } };
+export const GRADE_NAME = { miss: 'verfehlt', bronze: 'Bronze', silver: 'Silber', gold: 'Gold', platin: 'Platin', king: 'Schrottkönig' };
 const pctTxt = (x) => `${Math.round(x * 100)} %`;
 
 // Biom-Besonderheiten als kurze Texte (Etappen-Intro, Akt-Übergang)
@@ -26,6 +27,47 @@ function weatherText(w) {
   const b = Math.round(w.base);
   const dir = w.gust ? `Böen bis ${Math.round(w.gust)} m/s` : b >= 0 ? `Rückenwind ${Math.abs(b)} m/s` : `Gegenwind ${Math.abs(b)} m/s`;
   return `${w.icon} ${w.name} · ${dir}${w.rain ? ' · Regen' : ''}`;
+}
+
+// Paket A: Etappen-Intro als Banner über der Zielansicht (ui/hud.js → banner) – kein eigener Bildschirm mehr.
+// Kompakt: Art, Ziel, Medaillen, Gefahren, Wetter, Neuversuch, Haltbarkeit; Boss mit Tipps und Belohnung.
+// d: { spec, node, attempts, durability, durabilityMax, ascension, towPct, firstBoss, twin, back }
+export function introBannerHtml(d) {
+  const s = d.spec;
+  const b = biomeById(s.biome);
+  const def = NODE_TYPES[s.kind] || NODE_TYPES.stage;
+  const title = s.kind === 'boss' ? `${def.icon} ${esc(s.bossName)}` : `${def.icon} ${def.name}`;
+  const sub = s.kind === 'boss' ? `Boss-Strecke · ${b.icon} ${b.name}` : `Etage ${s.floor + 1} · ${b.icon} ${b.name}`;
+  const boss = s.kind === 'boss' ? bossById(s.bossId) || {} : null;
+  const bossDesc = boss ? boss.intro || boss.desc : '';
+  const medals = s.medalList.map((m) => `<span class="ri-medal m-${m}">${MEDAL[m].icon} ${fmt(s.medals[m])} m${s.kind === 'boss' && m === 'gold' ? ' <small>Bonus</small>' : ''}</span>`).join('');
+  const hz = s.hazards.map((h) => FEATURE_INFO[h]).filter(Boolean)
+    .map((f) => `<span class="chip ${f.danger ? 'danger' : ''}">${f.icon} ${f.name}</span>`).join('') || '<span class="chip">keine Besonderheiten</span>';
+  const traits = biomeTraits(b).map((t) => `<span class="chip">${esc(t)}</span>`).join('');
+  const tired = s.kind === 'boss' && d.attempts > 0 ? ` · Boss müde: Ziel −${Math.round(RUN.bossRetry.targetCut * Math.min(RUN.bossRetry.maxCuts, d.attempts) * 100)} %` : '';
+  const retry = d.attempts > 0 ? `<div class="ri-retry">↻ Neuversuch ${d.attempts + 1} – neue Strecke${tired}</div>` : '';
+  // Boss: Tipps und Belohnung (Episch/Legendär-Auswahl, Blaupausen, Kerne beim ersten Sieg in Akt 2/3)
+  let bossHtml = '';
+  if (boss) {
+    const act = s.act || b.act;
+    const rw = [`👑 Episch/Legendär-Auswahl`, `📘 ${REWARDS.blueprints.boss[act] || 0}`, `⚙ Akt-Bonus ${fmt(REWARDS.actScrap[act] || 0)}`];
+    if (d.firstBoss && REWARDS.firstBossCores[act]) rw.push(`💠 ${REWARDS.firstBossCores[act]} (erster Sieg)`);
+    if (act >= RUN.acts && !d.twin) rw.push(`💠 ${REWARDS.winCores} Run-Sieg`);
+    bossHtml = (d.twin ? '<div class="ri-twin">☠ Doppelter Ärger – der Zwillingsboss!</div>' : '')
+      + (boss.tips && boss.tips.length ? `<ul class="ri-tips">${boss.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '')
+      + `<h4>Belohnung</h4><div class="chips">${rw.map((t) => `<span class="chip good">${esc(t)}</span>`).join('')}</div>`;
+  }
+  const asc = d.ascension > 0 ? `<h4>☠ Schrottstufe ${d.ascension}</h4><div class="chips">${ascensionSummary(d.ascension).map((t) => `<span class="chip danger">${esc(t)}</span>`).join('')}</div>` : '';
+  return `
+    <div class="ri-head"><div class="ri-kind" style="--c:${def.color}">${title}</div><div class="ri-sub">${sub}</div></div>
+    ${bossDesc ? `<p class="ri-desc">${esc(bossDesc)}</p>` : ''}
+    ${bossHtml}
+    <div class="ri-goal"><div class="ri-target"><small>ZIEL</small><b>${fmt(s.target)} m</b></div><div class="ri-medals">${medals}</div></div>
+    ${retry}
+    <div class="chips">${hz}<span class="chip">${esc(weatherText(s.weather))}</span>${traits}</div>
+    ${asc}
+    <div class="ri-dur">🔧 Haltbarkeit ${fmt(Math.ceil(d.durability))} / ${fmt(d.durabilityMax)}</div>
+    <div class="ri-go"><span class="touch-only">Finger halten = Kraft laden</span><span class="kbd-only"><b>Leertaste halten</b> = Kraft laden</span>${d.back ? ' · <button class="btn btn-secondary small-btn" data-a="back">◀ Karte</button>' : ''}</div>`;
 }
 
 // Alle Run-Bildschirme außer der Karte in EINEM Overlay (#runui): Etappen-Intro, Ergebnis (Medaillen/Abschleppen),
@@ -63,91 +105,97 @@ export class RunScreens {
 
   bind(sel, fn) { const b = this.card.querySelector(sel); if (b) b.onclick = fn; return b; }
 
-  // ---------- Etappen-Intro ----------
+  // ---------- Etappen-Intro (Paket A: Banner über der Zielansicht, siehe introBannerHtml) ----------
   // d: { spec, node, biome, attempts, durability, durabilityMax, ascension, towPct, firstBoss, twin }
   intro(d, { onGo, onBack }) {
-    const s = d.spec;
-    const b = biomeById(s.biome);
-    const def = NODE_TYPES[s.kind] || NODE_TYPES.stage;
-    const title = s.kind === 'boss' ? `${def.icon} ${esc(s.bossName)}` : `${def.icon} ${def.name}`;
-    const sub = s.kind === 'boss' ? `Boss-Strecke · ${b.icon} ${b.name}` : `Etage ${s.floor + 1} · ${b.icon} ${b.name}`;
-    const boss = s.kind === 'boss' ? bossById(s.bossId) || {} : null;
-    const bossDesc = boss ? boss.intro || boss.desc : '';
-    const medals = s.medalList.map((m) => `<span class="ri-medal m-${m}">${MEDAL[m].icon} ${fmt(s.medals[m])} m${s.kind === 'boss' && m === 'gold' ? ' <small>Bonus</small>' : ''}</span>`).join('');
-    const hz = s.hazards.map((h) => FEATURE_INFO[h]).filter(Boolean)
-      .map((f) => `<span class="chip ${f.danger ? 'danger' : ''}">${f.icon} ${f.name}</span>`).join('') || '<span class="chip">keine Besonderheiten</span>';
-    const traits = biomeTraits(b).map((t) => `<span class="chip">${esc(t)}</span>`).join('');
-    const retry = d.attempts > 0 ? `<div class="ri-retry">↻ Neuversuch ${d.attempts + 1} – nicht geschafft kostet wieder ${pctTxt(d.towPct ?? RUN.towPenalty)} Haltbarkeit</div>` : '';
-    // Boss: Tipps und Belohnung (Episch/Legendär-Auswahl, Blaupausen, Kerne beim ersten Sieg in Akt 2/3)
-    let bossHtml = '';
-    if (boss) {
-      const act = s.act || b.act;
-      const rw = [`👑 Episch/Legendär-Auswahl`, `📘 ${REWARDS.blueprints.boss[act] || 0}`, `⚙ Akt-Bonus ${fmt(REWARDS.actScrap[act] || 0)}`];
-      if (d.firstBoss && REWARDS.firstBossCores[act]) rw.push(`💠 ${REWARDS.firstBossCores[act]} (erster Sieg)`);
-      if (act >= RUN.acts && !d.twin) rw.push(`💠 ${REWARDS.winCores} Run-Sieg`);
-      bossHtml = (d.twin ? '<div class="ri-twin">☠ Doppelter Ärger – der Zwillingsboss!</div>' : '')
-        + (boss.tips && boss.tips.length ? `<ul class="ri-tips">${boss.tips.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '')
-        + `<h4>Belohnung</h4><div class="chips">${rw.map((t) => `<span class="chip good">${esc(t)}</span>`).join('')}</div>`;
-    }
-    const asc = d.ascension > 0 ? `<h4>☠ Schrottstufe ${d.ascension}</h4><div class="chips">${ascensionSummary(d.ascension).map((t) => `<span class="chip danger">${esc(t)}</span>`).join('')}</div>` : '';
-    this.present('intro', `
-      <div class="ri-kind" style="--c:${def.color}">${title}</div>
-      <div class="ri-sub">${sub}</div>
-      ${bossDesc ? `<p class="ri-desc">${esc(bossDesc)}</p>` : ''}
-      ${bossHtml}
-      <div class="ri-target"><small>ZIEL</small><b>${fmt(s.target)} m</b></div>
-      <div class="ri-medals">${medals}</div>
-      ${retry}
-      <h4>Gefahren & Strecke</h4><div class="chips">${hz}</div>
-      <h4>Wetter</h4><div class="chips"><span class="chip">${esc(weatherText(s.weather))}</span>${traits}</div>
-      ${asc}
-      <div class="ri-dur">🔧 Haltbarkeit ${fmt(Math.ceil(d.durability))} / ${fmt(d.durabilityMax)}</div>
+    this.present('intro', `${introBannerHtml({ ...d, back: false })}
       <div class="btn-row"><button class="btn btn-secondary" data-a="back">🗺 Karte</button><button class="btn btn-primary" data-a="go">LOS ▶</button></div>`);
-    if (boss) this.card.classList.add('rc-boss');
+    if (d.spec.kind === 'boss') this.card.classList.add('rc-boss');
     this.bind('[data-a=go]', onGo);
     this.bind('[data-a=back]', onBack);
   }
 
-  // ---------- Ergebnis einer Run-Etappe ----------
-  // r: Etappen-Ergebnis, o: Ergebnis von applyStageResult, extra: { durability (nach Abschleppen), durabilityMax }
-  stageResult(r, o, extra, { onNext, onRetry, onMap, onEnd }) {
+  // ---------- Ergebnis einer Run-Etappe (Paket A: mit Item-Auswahl auf demselben Bildschirm) ----------
+  // r: Etappen-Ergebnis, o: Ergebnis von applyStageResult, extra: { durability, durabilityMax, towPct },
+  // choice: offene Item-Auswahl (oder null) mit info { inventory, parts, slots, remaining }.
+  // Rückrufe: onNext (weiter), onPick(i)/onSkip/onInventory (Auswahl), onLand/onRetry (verfehlt), onMap, onEnd
+  stageResult(r, o, extra, h) {
+    const choice = h.choice || null;
+    const grade = o.grade || r.grade || (r.medal || 'miss');
     const title = o.defeat ? (r.reason === 'wreck' ? 'TOTALSCHADEN!' : 'Run vorbei!')
-      : o.cleared ? (r.kind === 'boss' ? 'BOSS BESIEGT!' : 'GESCHAFFT!')
-        : r.reason === 'fall' ? 'Abgestürzt!' : 'Nicht geschafft';
+      : o.cleared ? (grade === 'king' ? 'SCHROTTKÖNIG!' : grade === 'platin' ? 'PLATIN!' : r.kind === 'boss' ? 'BOSS BESIEGT!' : 'GESCHAFFT!')
+        : o.missed ? (r.reason === 'fall' ? 'Abgestürzt – Notlandung' : 'Knapp daneben – Notlandung')
+          : r.reason === 'fall' ? 'Abgestürzt!' : 'Nicht geschafft';
     const why = { stop: 'ausgerollt', fall: 'in die Schlucht gestürzt', time: 'Zeit abgelaufen', wreck: 'Totalschaden', far: 'Ziel weit übertroffen' }[r.reason] || '';
-    const slots = r.medalList.map((m, i) => `<div class="rm-slot m-${m}" data-medal="${m}" style="--i:${i}"><span>${MEDAL[m].icon}</span><small>${fmt(r.medals[m])} m</small></div>`).join('');
-    const rw = o.rewards || { bolts: 0, scrap: 0, blueprints: 0, base: {} };
+    const ff = r.instant ? ' · ⏩ vorgespult' : '';
+    const slots = r.medalList.map((m, i) => `<div class="rm-slot m-${m}" data-medal="${m}" style="--i:${i}"><span>${MEDAL[m].icon}</span><small>${fmt(r.medals[m])} m</small></div>`).join('')
+      + (r.medals.platin ? ['platin', 'king'].map((m, i) => `<div class="rm-slot m-${m}${grade === m || (m === 'platin' && grade === 'king') ? '' : ' bonus'}" data-medal="${m}" style="--i:${r.medalList.length + i}"><span>${MEDAL[m].icon}</span><small>${fmt(r.medals[m])} m</small></div>`).join('') : '');
+    const rw = o.rewards || { bolts: 0, scrap: 0, blueprints: 0, base: {}, combo: { bolts: 0, scrap: 0 } };
+    const cr = o.credited || null;
     const rows = [];
+    rows.push(['⚙ Schrott', rw.scrap, `${fmt(r.dist)} m · ${GRADE_NAME[grade]}${cr ? ' · gutgeschrieben' : ''}`]);
     rows.push(['🔩 Schrauben', rw.bolts, rw.base.bolts ? `davon ${fmt(r.bolts)} gesammelt` : 'gesammelt']);
-    rows.push(['⚙ Schrott', rw.scrap, 'Auszahlung am Run-Ende']);
-    if (rw.blueprints) rows.push(['📘 Blaupausen', rw.blueprints, 'Auszahlung am Run-Ende']);
+    if (rw.combo && (rw.combo.bolts || rw.combo.scrap)) rows.push(['🎪 Kombo', rw.combo.bolts, `${fmt(r.tricks)} Trickpunkte → +${fmt(rw.combo.bolts)} 🔩 · +${fmt(rw.combo.scrap)} ⚙ (im Schrott enthalten)`]);
+    if (rw.blueprints) rows.push(['📘 Blaupausen', rw.blueprints, cr ? 'gutgeschrieben' : '']);
     if (o.cores) rows.push(['💠 Kerne', o.cores, 'erster Sieg über diesen Boss']);
     if (o.actBonus) rows.push(['🏁 Akt-Bonus ⚙', o.actBonus, '']);
-    if (r.crates) rows.push(['📦 Item-Kisten', r.crates, o.cleared ? 'je Kiste eine Item-Auswahl' : 'nur bei Erfolg']);
-    const tow = o.towed ? `<div class="rr-tow">🚛 Abschleppen: <b>−${fmt(o.towPenalty)} 🔧</b> (${pctTxt(extra.towPct ?? RUN.towPenalty)} der max. Haltbarkeit)${o.defeat ? '' : ' – danach Neuversuch derselben Strecke'}</div>` : '';
+    if (r.crates && o.cleared) rows.push(['📦 Item-Kisten', r.crates, 'je Kiste eine Item-Auswahl']);
+    const knapp = r.knapp ? `<div class="rr-tow">📉 Knapp: <b>${r.knapp} %</b> der Zielmarke – hochgerechnet</div>` : '';
+    const tow = o.towed ? `<div class="rr-tow">🚛 Abschleppen: <b>−${fmt(o.towPenalty)} 🔧</b> (${pctTxt(extra.towPct ?? RUN.towPenalty)} der max. Haltbarkeit)${o.defeat ? '' : o.bossReroll ? ` – Neuversuch gegen <b>${esc(o.bossReroll.icon)} ${esc(o.bossReroll.name)}</b>, Ziel −${Math.round((1 - o.bossReroll.targetMul) * 100)} % („Der Boss ist auch müde“)` : ' – danach Neuversuch'}</div>` : '';
+    const miss = o.missed ? `<div class="rr-tow">🛬 <b>Notlandung:</b> −${fmt(o.emergency.penalty)} 🔧 (${pctTxt(o.emergency.pct)}), Trostkiste <b>+${fmt(o.emergency.bolts)} 🔩</b>, weiter auf der Karte.<br>↻ <b>Nochmal:</b> −${fmt(o.retry.penalty)} 🔧 (${pctTxt(o.retry.pct)}) auf einer <b>neuen</b> Strecke.</div>` : '';
     const twin = o.secondBoss ? `<div class="ri-twin">☠ Doppelter Ärger! Gleich danach: ${esc(o.secondBoss.icon)} ${esc(o.secondBoss.name)}</div>` : '';
     let btns;
     if (o.defeat) btns = '<button class="btn btn-primary" data-a="end">Run beenden ▶</button>';
+    else if (o.missed) btns = '<button class="btn btn-secondary" data-a="retry">↻ Nochmal</button><button class="btn btn-primary" data-a="land">Weiter ▶ <small>Notlandung</small></button>';
     else if (o.towed) btns = '<button class="btn btn-secondary" data-a="map">🗺 Karte</button><button class="btn btn-primary" data-a="retry">↻ Neuversuch</button>';
+    else if (choice) btns = `<button class="btn btn-secondary" data-a="skip">${choice.skipBolts ? `Überspringen: +${fmt(choice.skipBolts)} 🔩` : 'Ablehnen'} <kbd class="kbd-only">S</kbd></button>`;
     else btns = '<button class="btn btn-primary" data-a="next">Weiter ▶</button>';
+    let loot = '';
+    if (choice && !o.defeat) {
+      const d = h.info;
+      const cards = choice.items.length ? choiceCardsHtml(choice, d) : '<p class="ri-desc">Der Pool ist leer – nimm die Schrauben.</p>';
+      const head = { elite: '☠️ Elite-Beute – mindestens Selten', boss: '👑 Boss-Beute – Episch oder Legendär', crate: '📦 Item-Kiste' }[choice.context] || '🎁 Beute – eins darfst du einpacken';
+      loot = `<h4 class="rr-loot">${head}${d.remaining > 1 ? ` <small>· noch ${d.remaining - 1} weitere Auswahl</small>` : ''}</h4>
+        <button class="ch-inv" data-a="inv">🎒 ${d.inventory.length}/${d.slots} ${d.inventory.length >= d.slots ? '· voll – Nehmen ersetzt ein Item' : ''}</button>
+        <div class="ch-cards">${cards}</div>`;
+    }
     this.present('result', `
       <h2 class="${o.cleared ? 'good' : 'bad'}">${title}</h2>
-      <div class="rr-dist"><b>${fmt(r.dist)} m</b> <small>/ Ziel ${fmt(r.target)} m · ${why}</small></div>
+      <div class="rr-dist"><b>${fmt(r.dist)} m</b> <small>/ Ziel ${fmt(r.target)} m · ${why}${ff}</small></div>
       <div class="rr-medals">${slots}</div>
-      <div class="res-rows">${rows.map(([a, v, s], i) => `<div class="res-row" style="animation-delay:${0.5 + i * 0.12}s"><span>${a}</span><span class="res-sub">${esc(s)}</span><b data-count="${v}">+0</b></div>`).join('')}
-        <div class="res-row" style="animation-delay:${0.5 + rows.length * 0.12}s"><span>🔧 Schaden</span><span class="res-sub">${fmt(Math.ceil(extra.durability ?? r.durability))} / ${fmt(extra.durabilityMax)} übrig</span><b class="neg">−${fmt(r.damageTaken)}</b></div></div>
-      ${tow}${twin}
+      <div class="res-rows">${rows.map(([a, v, sub], i) => `<div class="res-row" style="animation-delay:${0.3 + i * 0.08}s"><span>${a}</span><span class="res-sub">${esc(sub)}</span><b data-count="${v}">+0</b></div>`).join('')}
+        <div class="res-row" style="animation-delay:${0.3 + rows.length * 0.08}s"><span>🔧 Schaden</span><span class="res-sub">${fmt(Math.ceil(extra.durability ?? r.durability))} / ${fmt(extra.durabilityMax)} übrig</span><b class="neg">−${fmt(r.damageTaken)}</b></div></div>
+      ${knapp}${miss}${tow}${twin}
+      ${loot}
       <div class="btn-row">${btns}</div>`);
-    this.bind('[data-a=next]', onNext);
-    this.bind('[data-a=retry]', onRetry);
-    this.bind('[data-a=map]', onMap);
-    this.bind('[data-a=end]', onEnd);
+    if (choice) this.card.classList.add('rc-loot');
+    this.bind('[data-a=next]', h.onNext);
+    this.bind('[data-a=retry]', h.onRetry);
+    this.bind('[data-a=land]', h.onLand);
+    this.bind('[data-a=map]', h.onMap);
+    this.bind('[data-a=end]', h.onEnd);
+    this.bind('[data-a=skip]', h.onSkip);
+    this.bind('[data-a=inv]', h.onInventory);
+    this.card.querySelectorAll('[data-pick]').forEach((b) => { b.onclick = () => h.onPick(Number(b.dataset.pick)); });
     // Medaillen nacheinander aufleuchten lassen, Zahlen hochzählen
-    const got = r.medal ? r.medalList.indexOf(r.medal) : -1;
+    const order = [...r.medalList, ...(r.medals.platin ? ['platin', 'king'] : [])];
+    const gi = order.indexOf(grade === 'miss' ? '' : grade);
+    const got = gi >= 0 ? gi : (r.medal ? r.medalList.indexOf(r.medal) : -1);
     this.card.querySelectorAll('.rm-slot').forEach((e, i) => {
-      if (i <= got) this.timers.push(setTimeout(() => { e.classList.add('got'); if (this.onTick) this.onTick('medal', i); }, 350 + i * 420));
+      if (i <= got) this.timers.push(setTimeout(() => { e.classList.add('got'); if (this.onTick) this.onTick('medal', i); }, 200 + i * 260));
     });
     this.countUp();
+  }
+
+  // Verfehlte Etappe nach einem Neustart der App: Notlandung oder Nochmal. d: { emergency, retry }
+  missDecision(d, { onLand, onRetry }) {
+    this.present('result', `
+      <h2 class="bad">Notlandung offen</h2>
+      <p class="ri-desc">Die letzte Etappe wurde verfehlt.</p>
+      <div class="rr-tow">🛬 <b>Notlandung:</b> −${fmt(d.emergency.penalty)} 🔧, Trostkiste <b>+${fmt(d.emergency.bolts)} 🔩</b>, weiter auf der Karte.<br>↻ <b>Nochmal:</b> −${fmt(d.retry.penalty)} 🔧 auf einer neuen Strecke.</div>
+      <div class="btn-row"><button class="btn btn-secondary" data-a="retry">↻ Nochmal</button><button class="btn btn-primary" data-a="land">Weiter ▶ <small>Notlandung</small></button></div>`);
+    this.bind('[data-a=land]', onLand);
+    this.bind('[data-a=retry]', onRetry);
   }
 
   // Zahlen mit data-count hochzählen
@@ -227,14 +275,14 @@ export class RunScreens {
   // res: Ergebnis von endRun
   runEnd(res, { onGarage }) {
     const s = res.stats;
-    const reason = { win: 'Alle drei Akte geschafft – die Kiste hat gehalten!', wreck: 'Totalschaden – die Kiste ist hinüber.', tow: 'Der Abschleppdienst hat das letzte Stück Haltbarkeit gefressen.', giveup: 'Run aufgegeben.' }[res.reason] || '';
+    const reason = { win: 'Alle drei Akte geschafft – die Kiste hat gehalten!', wreck: 'Totalschaden – die Kiste ist hinüber.', tow: 'Der Abschleppdienst hat das letzte Stück Haltbarkeit gefressen.', emergency: 'Die letzte Notlandung war eine zu viel.', giveup: 'Run aufgegeben.' }[res.reason] || '';
     const stat = [
       ['Akt erreicht', res.won ? '3 / 3 ✔' : `${res.act} / 3`],
       ['Etappen geschafft', `${s.cleared} / ${s.stages}`],
       ['Medaillen', `🥇 ${s.medals.gold}  🥈 ${s.medals.silver}  🥉 ${s.medals.bronze}`],
       ['Weiteste Etappe', `${fmt(s.bestDist)} m`],
       ['Schrauben verdient', `🔩 ${fmt(s.boltsEarned)}`],
-      ['Abgeschleppt', `${s.tows}×`],
+      ['Notlandungen / Neuversuche', `${s.emergencies || 0}× / ${s.tows}×`],
       ['Saltos / Loopings', `${fmt(s.flips)} / ${fmt(s.loops)}`],
     ];
     if (res.time) stat.push(['Spielzeit des Runs', fmtPlaytime(res.time)]);
@@ -250,7 +298,7 @@ export class RunScreens {
       <p class="ri-desc">${esc(reason)}</p>
       ${unlock}
       <div class="re-stats">${stat.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('')}</div>
-      <h4>Belohnung für die Garage</h4>
+      <h4>Belohnung für die Garage <small>(schon unterwegs gutgeschrieben – hier die Summe)</small></h4>
       <div class="res-rows">${rows}</div>
       <div class="res-total">⚙ <span data-count="${p.scrap}">+0</span>${p.blueprints ? ` · 📘 ${fmt(p.blueprints)}` : ''}${p.cores ? ` · 💠 ${fmt(p.cores)}` : ''}</div>
       <div class="btn-row"><button class="btn btn-primary" data-a="garage">🔧 Zur Garage</button></div>`);

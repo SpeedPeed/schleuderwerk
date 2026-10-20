@@ -1,5 +1,6 @@
 import { el, fmt, show } from './dom.js';
-import { KOMBO, RESOURCES, SOFTCAPS, ITEMS } from '../data/balance.js';
+import { KOMBO, RESOURCES, SOFTCAPS, ITEMS, STAGE } from '../data/balance.js';
+import { liveStageScrap } from '../run/rewards.js';
 import { DEG } from '../core/math.js';
 import { itemBarHtml, esc } from './items.js';
 import { abilityKeyLabel, modeLabel } from './inputMode.js';
@@ -12,6 +13,9 @@ export const MAX_ABILITY_BUTTONS = SOFTCAPS.abilitySlots.max + 1;
 // Feed-Zeile der letzten Auslösungen, „KETTENREAKTION ×n!“ ab Kettentiefe ITEMS.chainPopupDepth, Drehzahl (Rasenmäher).
 // Phase 7: DOM wird nur bei Änderung angefasst (changed()), pro Bild entstehen keine neuen Objekte oder Funktionen;
 // die Ketten-Einblendung wächst mit der Kettenlänge (--n). Bedienhinweise kommen vom Tutorial (ui/tutorial.js).
+// Paket A: Etappen-Intro als Banner über der Zielansicht (nur beim Zielen), Schrott-Zähler mit dem Schrott dieser
+// Etappe (wächst mit der Weite, run/rewards.js → liveStageScrap), Anzeige „⏩ ×4“ beim Vorspulen (Tippen = Ende)
+// und „Knapp: NN %“ nach der Hochrechnung.
 export class Hud {
   constructor(root, { onPause }) {
     const abBtns = Array.from({ length: MAX_ABILITY_BUTTONS }, (_, i) =>
@@ -23,7 +27,10 @@ export class Hud {
         <button class="icon-btn hud-pause" data-id="pause" aria-label="Pause">❚❚<i class="key-badge kbd-only">Esc</i></button>
         <div class="hud-dist"><span data-id="dist">0</span><small> m</small></div>
         <div class="hud-bolts">🔩 <span data-id="bolts">0</span></div>
+        <div class="hud-bolts hud-scrap hidden" data-id="scrapbox">⚙ <span data-id="scrap">0</span><small data-id="scrapadd"></small></div>
       </div>
+      <div class="hud-ff hidden" data-id="ff"><b data-id="fftext">⏩ ×${STAGE.fastForward.scale}</b><small><span class="touch-only">Tippen = Ende</span><span class="kbd-only">Leertaste = Ende</span></small></div>
+      <div class="stage-banner card hidden" data-id="banner"></div>
       <div class="hud-sub">
         <span data-id="alt">↑ 0 m</span>
         <span data-id="wind" class="hud-wind"></span>
@@ -128,8 +135,14 @@ export class Hud {
   // goal: { target, medals: {bronze, silver?, gold}, medalList } → Zielbalken mit Medaillen-Marken
   // items: { inventory, slots, napped } → Item-Leiste
   // boostSlot: Fähigkeit der Leertaste (Tasten-Beschriftung am PC)
-  show(on, { best = 0, weather = null, abilities = [], goal = null, items = null, boostSlot = 0 } = {}) {
+  // scrap: { total (Spielstand), act, kind } → Schrott-Zähler (Run); banner: { html, onBack } → Intro beim Zielen
+  show(on, { best = 0, weather = null, abilities = [], goal = null, items = null, boostSlot = 0, scrap = null, banner = null } = {}) {
     show(this.el, on);
+    this.scrap = scrap;
+    show(this.q.scrapbox, !!scrap);
+    if (scrap) { this.q.scrap.textContent = fmt(scrap.total); this.q.scrapadd.textContent = ''; }
+    this.setBanner(banner);
+    show(this.q.ff, false);
     this.last = {};
     this.feed = [];
     this.renderFeed();
@@ -178,11 +191,33 @@ export class Hud {
     show(this.q.tzr, false);
   }
 
+  // Intro-Banner (nur beim Zielen sichtbar); null = keiner
+  setBanner(banner) {
+    const q = this.q;
+    this.bannerOn = !!banner;
+    q.banner.innerHTML = banner ? banner.html : '';
+    show(q.banner, !!banner);
+    const b = q.banner.querySelector('[data-a=back]');
+    if (b && banner.onBack) b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); banner.onBack(); });
+  }
+
+  // Schrott-Zähler: Spielstand + Schrott dieser Etappe (n), mit kurzem Hüpfer bei Änderung
+  setScrap(total, add = 0) {
+    const q = this.q;
+    if (this.changed('scrapTotal', total)) q.scrap.textContent = fmt(total);
+    if (this.changed('scrapAdd', add)) {
+      q.scrapadd.textContent = add > 0 ? ` +${fmt(add)}` : '';
+      const b = q.scrapbox;
+      b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
+    }
+  }
+
   // view: { tilt, indicator } aus Eingabe und Kamera
   update(stage, view) {
     const q = this.q;
     const aiming = stage.phase === 'aim';
     if (this.changed('aiming', aiming)) {
+      if (!aiming && this.bannerOn) show(q.banner, false);
       show(q.aim, aiming);
       show(q.bars, !aiming);
       for (let i = 0; i < MAX_ABILITY_BUTTONS; i++) show(q[`ab${i}`], !aiming && i < this.abilityCount);
@@ -228,6 +263,12 @@ export class Hud {
       const b = q.bolts.parentElement;
       b.classList.remove('bump'); void b.offsetWidth; b.classList.add('bump');
     }
+    // Schrott dieser Etappe (Weite × Wertung + Pickups) und Vorspulen/Knapp
+    if (this.scrap) this.setScrap(this.scrap.total, liveStageScrap(this.scrap.act, this.scrap.kind, v.maxX, this.goal ? this.goal.medals : null, stage.scrap + stage.scrapBonus));
+    const ffOn = stage.phase === 'fly' && (stage.fastForward || !!stage.settle);
+    if (this.changed('ffOn', ffOn)) show(q.ff, ffOn);
+    const fft = stage.knapp ? `📉 Knapp: ${stage.knapp.pct} %` : stage.settle ? `⏩ ${fmt(stage.settle.dist)} m` : `⏩ ×${STAGE.fastForward.scale}`;
+    if (ffOn && this.changed('fft', fft)) { q.fftext.textContent = fft; q.ff.classList.toggle('knapp', !!stage.knapp); }
     const alt = Math.max(0, Math.round(stage.altitude));
     if (this.changed('alt', alt)) q.alt.textContent = `↑ ${fmt(alt)} m`;
     if (this.weather) {
