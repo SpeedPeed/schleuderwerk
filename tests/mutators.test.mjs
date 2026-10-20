@@ -104,3 +104,32 @@ test('Etappe: Zeitrennen endet nach dem Zeitlimit, Höhenjagd wertet die Höhe',
   const hs = generateStageSpec({ biome: b, kind: 'stage', floor: 2, rng: makeRng('hs'), goal: 'height' });
   assert.equal(hs.goal.type, 'height');
 });
+
+// ---------- Paket D4: Ereignisse während der Etappe ----------
+import { STAGE_EVENTS, STAGE_EVENT_RULES, stageEventById } from '../www/src/data/stageEvents.js';
+
+test('Etappen-Ereignisse: ab Etage 2, Elite mehr, Boss nie, Abstand, Aufbau in der Strecke, Ankündigung', () => {
+  const b = BIOMES[1];
+  let total = 0;
+  for (let i = 0; i < 40; i++) {
+    const s0 = generateStageSpec({ biome: b, kind: 'stage', floor: 1, rng: makeRng(`ev${i}`) });
+    assert.equal(s0.events.length, 0);
+    const s = generateStageSpec({ biome: b, kind: 'stage', floor: 3, rng: makeRng(`ev${i}`) });
+    assert.ok(s.events.length >= 1 && s.events.length <= 2);
+    for (let k = 1; k < s.events.length; k++) assert.ok(s.events[k].x - s.events[k - 1].x >= STAGE_EVENT_RULES.minGap);
+    for (const e of s.events) assert.ok(stageEventById(e.type));
+    total += s.events.length;
+    const boss = generateStageSpec({ biome: b, kind: 'boss', floor: 6, rng: makeRng(`ev${i}`) });
+    assert.equal(boss.events.length, 0);
+  }
+  assert.ok(total > 40);
+  const ids = new Set(STAGE_EVENTS.map((e) => e.id));
+  assert.equal(ids.size, STAGE_EVENTS.length);
+  // Aufbau: Schraubenwolke legt Schrauben, Tornado eine Aufwind-Säule; die Etappe kündigt beides an
+  const spec = generateStageSpec({ biome: b, kind: 'stage', floor: 3, rng: makeRng('evb') });
+  spec.events = [{ type: 'schraubenwolke', x: 300, seed: 5 }, { type: 'tornado', x: 450, seed: 6 }];
+  const st = makeSimStage({ spec, biome: b, save: simSave('start'), seed: 1 }).stage;
+  assert.ok(st.objects.bolts.filter((o) => Math.abs(o.x - 300) <= 13).length >= 18);
+  assert.ok(st.objects.thermals.some((t) => t.x === 450));
+  assert.ok(st.bossWarn.some((w) => /SCHRAUBENWOLKE/.test(w.text)) && st.bossWarn.some((w) => /TORNADO/.test(w.text)));
+});

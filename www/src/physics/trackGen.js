@@ -10,6 +10,7 @@ import { FEATURES as F, TRACK, PICKUPS, ASCENSION_RULES as AR, REWARDS } from '.
 import { FEATURE_DEFAULTS, FEATURE_INFO, biomeById } from '../data/biomes.js';
 import { mutatorById } from '../data/mutators.js';
 import { makeGoal } from '../stage/goals.js';
+import { STAGE_EVENTS, STAGE_EVENT_RULES as SE } from '../data/stageEvents.js';
 import { clamp, lerp, DEG } from '../core/math.js';
 
 const STEP = TRACK.step;
@@ -287,6 +288,23 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
   const hazards = [];
   for (const f of features) if (!hazards.includes(f.type)) hazards.push(f.type);
 
+  // Paket D: Ereignisse während der Etappe (data/stageEvents.js) – eigener Zufalls-Zweig
+  const events = [];
+  if (kind !== 'boss' && floor >= SE.minFloor) {
+    const er = rng.fork('ereignisse');
+    const actN = act ?? bio.act;
+    let n = SE.count[0] + (er.chance(SE.secondChance) ? SE.count[1] - SE.count[0] : 0) + (kind === 'elite' ? SE.eliteExtra : 0);
+    const list = STAGE_EVENTS.filter((e) => !e.minAct || actN >= e.minAct);
+    for (let k = 0; k < 8 && events.length < n; k++) {
+      const e = er.weighted(list.filter((x) => !events.some((y) => y.type === x.id)).map((x) => [x, x.weight]));
+      if (!e) break;
+      const x = snap(er.range(target * SE.region[0], target * SE.region[1]));
+      if (events.some((y) => Math.abs(y.x - x) < SE.minGap)) continue;
+      events.push({ type: e.id, x, seed: er.int(1, 2 ** 30) });
+    }
+    events.sort((a, b) => a.x - b.x);
+  }
+
   // Elite: manchmal liegt eine Blaupause in der Strecke
   const pr = rng.fork('pickups');
   const blueprintX = kind === 'elite' && pr.chance(PICKUPS.blueprintChance) ? snap(pr.range(target * 0.45, target * 0.9)) : null;
@@ -310,6 +328,7 @@ export function generateStageSpec({ biome, kind = 'stage', floor = 0, act = null
     weather,
     blueprintX,
     mutator: mut ? mut.id : null,
+    events,
     goal: kind === 'boss' ? null : makeGoal(goal, target, kind),   // Paket D: Etappen-Art (stage/goals.js)
   };
 }

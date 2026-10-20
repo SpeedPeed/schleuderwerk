@@ -1,5 +1,6 @@
 import { el, fmt, show, icon, cur } from './dom.js';
 import { mutatorById } from '../data/mutators.js';
+import { stageEventById } from '../data/stageEvents.js';
 import { GOAL_INFO, goalOf, goalMedals, goalUnit, goalRule } from '../stage/goals.js';
 import { NODE_TYPES } from '../data/nodes.js';
 import { biomeById, bossById, FEATURE_INFO } from '../data/biomes.js';
@@ -61,7 +62,9 @@ export function introBannerHtml(d) {
   const gi = GOAL_INFO[goal.type];
   const goalHtml = goal.type !== 'distance' ? `<div class="ri-art">${icon(gi.iconId)}<div><b>${esc(gi.name)}</b><span>${esc(goalRule(goal))}</span></div></div>` : '';
   const hz = s.hazards.map((h) => FEATURE_INFO[h]).filter(Boolean)
-    .map((f) => `<span class="chip ${f.danger ? 'danger' : ''}">${f.icon} ${f.name}</span>`).join('') || '<span class="chip">keine Besonderheiten</span>';
+    .map((f) => `<span class="chip ${f.danger ? 'danger' : ''}">${f.icon} ${f.name}</span>`).join('')
+    + (s.events || []).map((e) => stageEventById(e.type)).filter(Boolean).map((e) => `<span class="chip good">${icon(e.iconId)} ${esc(e.name)}</span>`).join('')
+    || '<span class="chip">keine Besonderheiten</span>';
   const traits = biomeTraits(b).map((t) => `<span class="chip">${esc(t)}</span>`).join('');
   const tired = s.kind === 'boss' && d.attempts > 0 ? ` · Boss müde: Ziel −${Math.round(RUN.bossRetry.targetCut * Math.min(RUN.bossRetry.maxCuts, d.attempts) * 100)} %` : '';
   const retry = d.attempts > 0 ? `<div class="ri-retry">Neuversuch ${d.attempts + 1} – neue Strecke${tired}</div>` : '';

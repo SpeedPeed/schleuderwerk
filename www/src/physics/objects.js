@@ -1,5 +1,6 @@
 import { makeRng } from '../core/rng.js';
 import { PHYSICS, OBJECTS, SPAWN, RULES, FEATURES, PICKUPS, TESTDRIVE } from '../data/balance.js';
+import { stageEventById } from '../data/stageEvents.js';
 
 // Hitbox-Größen (auch für die Darstellung)
 export const OBJ = OBJECTS;
@@ -165,6 +166,48 @@ export class Objects {
       }
     }
     if (spec.blueprintX) this.addPickup(spec.blueprintX, this.refGround(spec.blueprintX) + 4, 'blueprint', 1);
+    this.setupEvents(spec);
+  }
+
+  // Paket D: Ereignisse während der Etappe (data/stageEvents.js) aus vorhandenen Bausteinen
+  setupEvents(spec) {
+    for (const ev of spec.events || []) {
+      const d = stageEventById(ev.type);
+      if (!d) continue;
+      const r = makeRng(ev.seed >>> 0);
+      const alt = (a) => (Array.isArray(a) ? r.range(a[0], a[1]) : a || 0);
+      const x0 = ev.x;
+      switch (d.build) {
+        case 'boltCloud':
+          for (let i = 0; i < d.n; i++) this.bolt(x0 + r.range(-12, 12), this.refGround(x0) + alt(d.alt) + r.range(-4, 4), d.value);
+          break;
+        case 'tornado':
+          this.thermals.push({ x: x0, w: d.w, strength: d.strength, top: d.top });
+          break;
+        case 'fuelRow':
+          for (let i = 0; i < d.n; i++) { const x = x0 + i * d.spacing; this.addPickup(x, this.refGround(x) + alt(d.alt), 'fuel', 1); }
+          break;
+        case 'scrapShower':
+          for (let i = 0; i < d.n; i++) { const x = x0 + r.range(0, d.spread); this.addPickup(x, this.refGround(x) + alt(d.alt), 'scrap', PICKUPS.scrap); }
+          break;
+        case 'ringParade':
+          for (let i = 0; i < d.n; i++) { const x = x0 + i * d.spacing; this.ring(x, alt(d.alt)); }
+          break;
+        case 'flyingCrate':
+          this.addPickup(x0, this.refGround(x0) + alt(d.alt), 'crate', 1);
+          break;
+        case 'storm': {
+          const zr = makeRng((ev.seed ^ 0x51ed27) >>> 0);
+          this.lightning.push({ x0, x1: x0 + d.len, rng: zr, t: zr.range(0.2, 0.8), every: FEATURES.lightning.every });
+          break;
+        }
+        case 'repairDrop':
+          for (let i = 0; i < d.n; i++) { const x = x0 + i * d.spacing; this.addPickup(x, this.refGround(x) + alt(d.alt), 'repair', 1); }
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   addObstacle(x, type, w = OBJ[type].w, h = OBJ[type].h) {

@@ -5,6 +5,7 @@ import { Track, PLATEAU_H } from '../physics/track.js';
 import { generateStageSpec, medalFor, gradeFor } from '../physics/trackGen.js';
 import { BIOMES } from '../data/biomes.js';
 import { mutatorById } from '../data/mutators.js';
+import { stageEventById, STAGE_EVENT_RULES } from '../data/stageEvents.js';
 import { goalOf, goalValue, goalMedal, goalMedals, isDistanceGoal } from './goals.js';
 import { makeRng } from '../core/rng.js';
 import { DEG } from '../core/math.js';
@@ -171,6 +172,12 @@ export class Stage {
     this.boss = this.spec.bossId ? (bio.bosses || []).find((b) => b.id === this.spec.bossId) || null : null;
     const warn = (this.boss && this.boss.warnings) || {};
     this.bossWarn = (this.spec.features || []).filter((f) => warn[f.type]).map((f) => ({ x: f.x0, text: warn[f.type] }));
+    // Paket D: Ereignisse während der Etappe kündigen sich an (data/stageEvents.js)
+    for (const e of this.spec.events || []) {
+      const d = stageEventById(e.type);
+      if (d) this.bossWarn.push({ x: e.x - STAGE_EVENT_RULES.warnLead + STAGE.bossWarnLead, text: d.warn, event: e.type });
+    }
+    this.bossWarn.sort((a, b) => a.x - b.x);
     this.bossWarnIdx = 0;
 
     // Ziel und Medaillen
