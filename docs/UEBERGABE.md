@@ -39,7 +39,7 @@ Zuerst lesen: diese Datei → `docs/OVERHAUL.md` (Plan + Umsetzungsstände) → 
 | **D** Abwechslung | ✅ weitgehend fertig („Umsetzungsstand Paket D“, Lücken dort aufgeführt) |
 | **E** Meta | ✅ Werkstatt-Stufe, Aufträge, Album, Tagesstrecke, Chassis-Meisterschaft; offen: Sonderprüfungen, Endlos-Garage |
 | **F** Etappen-Gefühl & Kalibrierung | 🟡 Überdruck-Zone, Kombo-Momente, Kalibrierung; Lücken im „Umsetzungsstand Paket F“ |
-| APK + PC-Datei bauen und schicken | ✅ Zwischenstand nach B+C verschickt (APK 1.0.0.120); am Ende nochmal |
+| APK + PC-Datei bauen und schicken | ✅ nach B+C (1.0.0.120) und nach D–F (1.0.0.121) verschickt |
 
 ### Paket B – was noch fehlt
 
@@ -88,5 +88,12 @@ dl.google.com, `sdkmanager "platform-tools" "platforms;android-35" "build-tools;
 `echo sdk.dir=/tmp/android-sdk > android/local.properties`, `./gradlew assembleDebug --no-daemon --max-workers=1
 --init-script <mirror.gradle>` – das Init-Skript ersetzt `repo.maven.apache.org` durch den Google-Spiegel
 `https://maven-central.storage-download.googleapis.com/maven2/` (Maven Central gab dauerhaft 429). Build-Nummern:
-GitHub-Releases bis 2, lokal zuletzt **120** – die nächste APK braucht eine höhere Nummer. Signatur prüfen:
+GitHub-Releases bis 2, lokal zuletzt **121** (21.10., alle Pakete A–F) – die nächste APK braucht eine höhere Nummer. Signatur prüfen:
 `apksigner verify --print-certs` = SHA-256 78ee3533… (keystore/debug.keystore). Dateien zum Verschicken: `ausgabe/`.
+
+## Bekannte Eigenheiten (21.10.)
+- `tools/smoke-final.mjs` scheitert selten bei 360 px an „Tippen beim Ausrollen beendet die Etappe sofort“ – ein
+  Zeit-Rennen mit der langsamen Software-Grafik (der Tipp kommt in einem Bild an, in dem Beenden noch nicht erlaubt ist).
+  Wiederholen (`node tools/smoke-final.mjs 360`) besteht.
+- Simulator-Korridore immer mit ≥ 24 Karrieren prüfen (Skript-Vorlage: `progression.mjs` + `summarizeCareers`) – mit 8
+  Karrieren streuen „erster Sieg“ und „Schrottstufe 15“ stark.
