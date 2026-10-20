@@ -34,7 +34,7 @@ Zuerst lesen: diese Datei → `docs/OVERHAUL.md` (Plan + Umsetzungsstände) → 
 |---|---|
 | Playtest + Plan | ✅ fertig (`docs/OVERHAUL.md`, Messskripte `tools/playtest/*`) |
 | **A** Tempo & Belohnung | ✅ fertig, gemessen, dokumentiert („Umsetzungsstand Paket A“) |
-| **B** UI-Stil „Schrottplatz-Werkstatt“ | 🟡 **weit fortgeschritten, als WIP committet** (siehe unten) |
+| **B** UI-Stil „Schrottplatz-Werkstatt“ | ✅ fertig („Umsetzungsstand Paket B“, `docs/STIL.md`) |
 | **C** Synergien | 🟡 **angefangen, als Patch gesichert** `wip/paket-c-wip.patch` (siehe unten) |
 | **D** Abwechslung | ⬜ offen |
 | **E** Meta | ⬜ offen |

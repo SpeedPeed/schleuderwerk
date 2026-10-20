@@ -502,6 +502,36 @@ fallen mit Rotation ein, Währung fliegt als Schraube zum Zähler, Knöpfe wacke
 - Blindtest mit 5 Personen (Fotos alt/neu): „wirkt eigenständig/handgemacht“ ≥ 4 von 5 Punkten, „wirkt wie KI/Standard-App“
   ≤ 2 von 5.
 
+### Umsetzungsstand Paket B
+
+> Stand 20.10.2026. Leitfaden für alle neuen Oberflächen: [`docs/STIL.md`](STIL.md).
+
+**Umgesetzt**
+- **Tokens & Komponenten** (`www/style.css`): Farb-Tokens wie oben plus abgeleitete Werkstatt-Farben (Klemmbrett,
+  Papier, Stempel, Schatten); Knöpfe als Blechschilder mit Nieten, Hauptaktion mit Warnband, Panels als
+  Werkzeugkasten-Deckel, Items/Angebote als Karteikarten mit Kreppband, Seltenheit als Stempel, Karte als Blaupause,
+  HUD als Armaturenbrett (Rundinstrumente, Rollen-Zählwerk, Blech-Druckknöpfe), Ergebnis als gestempelte Karte.
+- **Schriften** lokal (`www/fonts/`, SIL OFL): Saira Stencil One, Barlow Semi Condensed 500/700, Kalam 400/700.
+- **Icons**: Sprite `www/assets/icons.svg` mit 70 handgezeichneten Symbolen (Generator `tools/make-icons.mjs`), Helfer
+  `icon(id)` in `ui/dom.js`; `iconId` in `data/tags.js`, `nodes.js`, `biomes.js`, `items.js`.
+- **Stimme**: alle UI-Texte zentral in `data/texts.js`, Opa Gerd als Erzähler (Notizzettel), Kalles Laden.
+- **Ton**: neue Klänge `metalButton`, `ratchet`, `stamp`, `tapeTear`, `screwDrop` (`audio/sfx.js`).
+- **PC-Datei**: `tools/build-pc.mjs` bettet Schriften (data-URI) und Sprite ein – weiterhin eine Datei, keine Anfragen.
+
+**Erfolgskriterien**
+
+| Kriterium | Ziel | Stand |
+|---|---|---|
+| Emoji im UI-Code (`www/src/ui/*.js`, `index.html`) | ≤ 20 (vorher ≈ 300) | **7** (nur ★/☆/✗ als Schriftzeichen) |
+| Hex-Farben in `style.css` außerhalb `:root` | ≤ 10 | **0** (auch 0 `rgba()`) |
+| Schriften + Sprite | ≤ 250 KB | **176 KB** |
+| Offline / eine Datei | keine Anfragen | ✔ (`smoke-pc.mjs`: „keine Datei-Anfragen außer der HTML-Datei“) |
+| Rauchtests | grün | ✔ `smoke-final.mjs` (3 Handy-Auflösungen, Touch-Ziele ≥ 44 px), `smoke-pc.mjs` |
+| Leistung / Blindtest | ≥ 55 Bilder/s, Blindtest ≥ 4/5 | nicht messbar in der Sitzung – beim Spieler prüfen |
+
+Kleinere Korrekturen beim Abschluss: Dev-Menü-Überschriften wieder ≥ 44 px, Tastatur-Fokus auf der Karte auch nach
+einer Beute-Auswahl, Rauchtest/Foto-Rundgang robust gegen „Rucksack voll“ und vorzeitigen Run-Sieg.
+
 ---
 
 ### Paket C – Synergien, die man spürt

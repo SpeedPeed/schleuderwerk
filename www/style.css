@@ -1359,7 +1359,7 @@ textarea {
 .dev-check { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; min-height: 40px; }
 .dev-sections { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .dev-sec { border: 1px dashed var(--steel-500); border-radius: 2px; padding: 4px 8px; }
-.dev-sec summary { font-weight: 700; font-size: 14px; min-height: 36px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.dev-sec summary { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .dev-sec summary small { color: var(--muted); font-size: 10px; font-family: monospace; }
 .dev-sec .dev-tweaks { padding: 6px 0; }
 .dev-help p { margin: 4px 0; }

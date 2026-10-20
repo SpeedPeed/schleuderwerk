@@ -121,6 +121,7 @@ async function tour(W, H, tag) {
   });
   for (const act of [1, 2, 3]) {
     await step(`boss${act}`, async () => {
+      if (!(await g(() => !!window.__game.save.run))) return;   // Run schon gewonnen (Akt-Übergang übersprungen)
       await g(() => window.__game.openMap()); await sleep(400);
       await g(() => window.__game.devToBoss()); await sleep(300);
       await shot(`akt${act}-karte-boss`, 600);

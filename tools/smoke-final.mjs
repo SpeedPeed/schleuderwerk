@@ -164,11 +164,12 @@ export async function finalTour({ browser, base, check, log, shotsDir, resolutio
       const finishResult = async () => {
         for (let k = 0; k < 6; k++) {
           const kind = await runKind();
-          if (kind !== 'result' && kind !== 'choice') return;
+          if (kind !== 'result' && kind !== 'choice' && kind !== 'replace') return;
           // erste Beute erst später (z. B. nach einer Notlandung): Hinweis „Items & Tags“ zuerst schließen
           const t = await tut();
           if (t) { seenTut.add(t); await okTut(); continue; }
-          if (await g(() => !!document.querySelector('#runui [data-pick]'))) await tapRun('[data-pick="0"]');
+          if (kind === 'replace') await tapRun('[data-rep="0"]');   // Rucksack voll: erstes Item ersetzen
+          else if (await g(() => !!document.querySelector('#runui [data-pick]'))) await tapRun('[data-pick="0"]');
           else if (await g(() => !!document.querySelector('#runui [data-a=next]'))) await tapRun('[data-a=next]');
           else if (await g(() => !!document.querySelector('#runui [data-a=land]'))) await tapRun('[data-a=land]');
           else return;

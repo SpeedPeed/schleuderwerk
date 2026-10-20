@@ -891,7 +891,8 @@ function openMap({ auto = false } = {}) {
   mapScreen.render(run);
   mapScreen.show(true);
   // PC: ersten erreichbaren Knoten markieren (Pfeiltasten wählen, Enter betritt)
-  if (inputMode.kbd) requestAnimationFrame(() => { if (state === 'map' && !runScreens.open) keyNav.autoFocus('.mnode.reach'); });
+  const focusMap = () => { if (inputMode.kbd) requestAnimationFrame(() => { if (state === 'map' && !runScreens.open) keyNav.autoFocus('.mnode.reach'); }); };
+  focusMap();
   particles.clear();
   popups.clear();
   tutorial.dropToasts();
@@ -902,7 +903,7 @@ function openMap({ auto = false } = {}) {
   // offene Item-Auswahl (z. B. nach einem Neustart der App), danach ein noch offener Sonderknoten (Fortsetzen im Shop)
   const shopOpen = () => run.current && !isStageType(run.current.type);
   if (run.current && run.current.missed) { showMissDecision(); return; }
-  if (runLogic.pendingChoice(run)) { showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); else autoAdvance(auto); }); return; }
+  if (runLogic.pendingChoice(run)) { showChoices(() => { runScreens.hide(); mapScreen.render(run); if (shopOpen()) openShop(); else { autoAdvance(auto); focusMap(); } }); return; }
   if (shopOpen()) { openShop(); return; }
   if (!autoAdvance(auto)) tutorial.trigger('map');
 }
