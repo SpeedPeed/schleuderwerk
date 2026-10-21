@@ -719,7 +719,8 @@ export class Stage {
     if (this.slowmo > 0) { this.slowmo -= realDt; this.timeScale = FX.slowmoScale; }
     else this.timeScale = Math.min(1, this.timeScale + realDt * FX.slowmoRecover);
     const v0 = this.vehicle;
-    this.fastForward = this.fastForwardEnabled && v0.onGround && !v0.loop && this.groundTime >= FF.minGroundTime && !this.abilities.boostHeld;
+    this.fastForward = this.fastForwardEnabled && v0.onGround && !v0.loop && this.groundTime >= FF.minGroundTime && !this.abilities.boostHeld
+      && Math.abs(v0.s) < FF.maxSpeed;
     this.acc += Math.min(realDt, STAGE.maxFrameDt) * this.timeScale * (this.fastForward ? FF.scale : 1);
 
     const ctl = this.ctl;
@@ -765,15 +766,15 @@ export class Stage {
 
   // Hochrechnung: ohne Treibstoff am Boden (sobald die Kiste aufsetzt) einmal je „Tank leer“-Abschnitt hochrechnen
   // (Schatten-Etappe).
-  //  - Bronze bleibt unerreichbar → „Knapp: NN %“ und Ende nach STAGE.fastForward.knappDelay
-  //  - kein weiterer Sprung mehr (Flugzeit < fastForward.minAir) → das Ergebnis steht fest: „Hochgerechnet: NN m“,
-  //    Ende nach knappDelay (sonst rollt die Kiste nur noch aus – Paket A: Auslaufen ≤ 15 % der Etappe)
+  //  - Bronze bleibt unerreichbar → „Knapp: NN %“ und Ende nach STAGE.fastForward.knappDelay – erst, wenn die Kiste
+  //    langsamer als fastForward.maxSpeed ist (schnelles Düsen am Boden bleibt spielbar)
   checkProjection() {
     if (this.shadow || !this.frames || this.settle || this.instant) return;
     const v = this.vehicle;
     if (!this.fuelOut) { this.projected = false; return; }
     // (ohne Mindest-Bodenzeit: die Hochrechnung sieht auch, ob die Kiste noch einmal abhebt)
     if (this.projected || !v.onGround || v.loop || this.wreckTimer >= 0 || this.fallTimer >= 0) return;
+    if (Math.abs(v.s) >= FF.maxSpeed) return;
     this.projected = true;
     const r = this.project();
     this.projection = r;
@@ -785,9 +786,6 @@ export class Stage {
       this.settle = { kind: 'knapp', pct, dist: r.dist, grade: 'miss', timer: FF.knappDelay };
       this.hooks.popup(`KNAPP: ${pct} %`, 'bad');
       this.hooks.knapp(pct, r);
-    } else if (r.moreAir < FF.minAir) {
-      this.settle = { kind: 'done', pct, dist: r.dist, grade: r.grade, timer: FF.settleDelay };
-      this.hooks.popup(`HOCHGERECHNET: ${r.dist} m ${MEDAL_ICON[r.grade] || ''}`, 'info');
     }
   }
 

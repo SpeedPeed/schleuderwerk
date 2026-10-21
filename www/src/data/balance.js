@@ -634,9 +634,11 @@ export const STAGE = {
   // langsamer als maxSpeedForFinish) = Sofort-Ende: der Rest wird ohne Darstellung gerechnet (Ergebnis identisch).
   // Ohne Treibstoff und ohne Bronze rechnet eine Schatten-Etappe (Wiederholung aller Eingaben) das Ende hoch: bleibt
   // Bronze unerreichbar → „Knapp: NN %“ und Ende nach knappDelay s.
-  // Steht das Ergebnis auch mit Bronze fest (Tank leer, Hochrechnung: kein Sprung mehr mit ≥ minAir s Flugzeit),
-  // endet die Etappe nach settleDelay mit „Hochgerechnet: NN m“ (nur noch Ausrollen – nichts mehr zu steuern).
-  fastForward: { minGroundTime: 0.8, scale: 4, maxSpeedForFinish: 6, knappDelay: 1, settleDelay: 0.4, minAir: 0.3, finishFrame: 0.05, maxSteps: 60000 },
+  // Vorspulen (Paket A, nach Spieler-Rückmeldung 21.10. entschärft): nur noch beim langsamen Ausrollen – unter maxSpeed
+  // m/s, mindestens minGroundTime s am Boden, ohne Boost. Wer schnell über den Boden düst, fährt in Echtzeit.
+  // Die Hochrechnung beendet die Etappe nur noch bei „Knapp“ (Bronze unerreichbar) und erst, wenn die Kiste langsamer als
+  // maxSpeed ist; das frühere Sofort-Ende „Hochgerechnet“ (Ergebnis steht fest) gibt es nicht mehr – Tippen beendet.
+  fastForward: { minGroundTime: 0.8, scale: 4, maxSpeed: 7, maxSpeedForFinish: 6, knappDelay: 1, minAir: 0.3, finishFrame: 0.05, maxSteps: 60000 },
   gust: { freqA: 0.8, freqB: 0.31, phaseB: 2, phaseRange: 10 },
   defaultWeather: { name: 'Windstill', icon: '☀️', weight: 1, wind: [0, 0] },
 };

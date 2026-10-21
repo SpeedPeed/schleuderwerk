@@ -37,17 +37,23 @@ function neutralRun(biome, i, mode) {
 }
 
 test('Vorspulen und Sofort-Ende ändern das Ergebnis nicht (gleiche Physik-Schritte)', () => {
+  // 21.10.: Vorspulen nur noch beim langsamen Ausrollen – Läufe ohne Ausroll-Phase (Schlucht, Totalschaden) spulen nicht
+  let runs = 0, withFF = 0;
   for (const b of BIOMES) {
     for (let i = 0; i < 4; i++) {
       const w = neutralRun(b, i, 'watch'), f = neutralRun(b, i, 'ff'), s = neutralRun(b, i, 'instant');
       assert.deepEqual(pick(f.r), pick(w.r), `${b.id} ${i}: Vorspulen`);
       assert.deepEqual(pick(s.r), pick(w.r), `${b.id} ${i}: Sofort-Ende`);
-      assert.ok(f.frames < w.frames, `${b.id} ${i}: vorgespult kürzer (${f.frames} < ${w.frames} Bilder)`);
-      assert.ok(f.ffFrames > 0, 'Vorspulen war aktiv');
-      assert.equal(s.st.instantDone, true);
-      assert.equal(s.r.instant, true);
+      assert.ok(f.frames <= w.frames, `${b.id} ${i}: vorgespult nicht länger (${f.frames} ≤ ${w.frames} Bilder)`);
+      runs++;
+      if (f.ffFrames > 0) {
+        withFF++;
+        assert.equal(s.st.instantDone, true);
+        assert.equal(s.r.instant, true);
+      }
     }
   }
+  assert.ok(withFF >= runs / 2, `Vorspulen in ${withFF}/${runs} Läufen`);
 });
 
 test('Vorspulen: erst nach STAGE.fastForward.minGroundTime am Boden, nicht mit gehaltenem Boost, ×scale je Bild', () => {
